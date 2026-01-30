@@ -2,9 +2,12 @@ package scanner
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	ahocorasick "github.com/pgavlin/aho-corasick"
+	re2 "github.com/wasilibs/go-re2"
+
 	"github.com/sansecio/yargo/ast"
 )
 
@@ -32,7 +35,17 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 		rules.rules = append(rules.rules, cr)
 
 		for strIdx, s := range r.Strings {
-			patterns, forceFullword := generatePatterns(s)
+			patterns, forceFullword, isComplexRegex := generatePatterns(s)
+			if isComplexRegex {
+				// Complex regex - compile with go-re2
+				v := s.Value.(ast.RegexString)
+				rp, err := compileRegexPattern(v, ruleIdx, strIdx, s.Name)
+				if err != nil {
+					return nil, fmt.Errorf("rule %q string %s: %w", r.Name, s.Name, err)
+				}
+				rules.regexPatterns = append(rules.regexPatterns, rp)
+				continue
+			}
 			for _, p := range patterns {
 				rules.patternMap = append(rules.patternMap, patternRef{
 					ruleIndex:   ruleIdx,
@@ -56,25 +69,27 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 }
 
 // generatePatterns generates byte patterns for a string definition.
-// Returns patterns and whether fullword matching should be forced.
+// Returns patterns, whether fullword matching should be forced, and whether this is a complex regex.
 // For TextString with base64 modifier, it generates 3 rotations.
 // For RegexString with \bLITERAL\b pattern, extracts the literal.
-func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
+// For complex RegexString patterns, returns isComplexRegex=true.
+func generatePatterns(s *ast.StringDef) (patterns [][]byte, forceFullword bool, isComplexRegex bool) {
 	switch v := s.Value.(type) {
 	case ast.TextString:
 		if s.Modifiers.Base64 {
-			return generateBase64Patterns([]byte(v.Value)), false
+			return generateBase64Patterns([]byte(v.Value)), false, false
 		}
-		return [][]byte{[]byte(v.Value)}, false
+		return [][]byte{[]byte(v.Value)}, false, false
 
 	case ast.RegexString:
 		if literal, ok := extractWordBoundaryLiteral(v.Pattern); ok {
-			return [][]byte{[]byte(literal)}, true
+			return [][]byte{[]byte(literal)}, true, false
 		}
-		return nil, false
+		// Complex regex - signal to caller to compile it separately
+		return nil, false, true
 
 	default:
-		return nil, false
+		return nil, false, false
 	}
 }
 
@@ -140,4 +155,34 @@ func trimBase64Padding(s string) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// compileRegexPattern compiles a complex regex pattern using go-re2.
+func compileRegexPattern(v ast.RegexString, ruleIdx, strIdx int, name string) (*regexPattern, error) {
+	pattern := buildRE2Pattern(v.Pattern, v.Modifiers)
+	compiled, err := re2.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex: %w", err)
+	}
+	return &regexPattern{
+		re:          compiled,
+		ruleIndex:   ruleIdx,
+		stringIndex: strIdx,
+		stringName:  name,
+	}, nil
+}
+
+// buildRE2Pattern builds a RE2 pattern string with modifier flags.
+func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
+	var prefix string
+	if mods.CaseInsensitive {
+		prefix += "(?i)"
+	}
+	if mods.DotMatchesAll {
+		prefix += "(?s)"
+	}
+	if mods.Multiline {
+		prefix += "(?m)"
+	}
+	return prefix + pattern
 }

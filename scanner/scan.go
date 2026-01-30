@@ -26,7 +26,7 @@ func checkWordBoundary(buf []byte, start, end int) bool {
 
 // ScanMem scans a byte buffer for matching rules.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
-	if r.matcher == nil || len(r.patterns) == 0 {
+	if (r.matcher == nil || len(r.patterns) == 0) && len(r.regexPatterns) == 0 {
 		return nil
 	}
 
@@ -44,24 +44,36 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	ruleMatches := make(map[int]map[string]bool)
 
 	// Run Aho-Corasick matching using iterator
-	iter := r.matcher.IterOverlappingByte(buf)
-	for {
-		match := iter.Next()
-		if match == nil {
-			break
-		}
-		patternIdx := match.Pattern()
-		ref := r.patternMap[patternIdx]
+	if r.matcher != nil {
+		iter := r.matcher.IterOverlappingByte(buf)
+		for {
+			match := iter.Next()
+			if match == nil {
+				break
+			}
+			patternIdx := match.Pattern()
+			ref := r.patternMap[patternIdx]
 
-		// Check word boundaries if required
-		if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
-			continue
-		}
+			// Check word boundaries if required
+			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
+				continue
+			}
 
-		if ruleMatches[ref.ruleIndex] == nil {
-			ruleMatches[ref.ruleIndex] = make(map[string]bool)
+			if ruleMatches[ref.ruleIndex] == nil {
+				ruleMatches[ref.ruleIndex] = make(map[string]bool)
+			}
+			ruleMatches[ref.ruleIndex][ref.stringName] = true
 		}
-		ruleMatches[ref.ruleIndex][ref.stringName] = true
+	}
+
+	// Run regex pattern matching
+	for _, rp := range r.regexPatterns {
+		if rp.re.Match(buf) {
+			if ruleMatches[rp.ruleIndex] == nil {
+				ruleMatches[rp.ruleIndex] = make(map[string]bool)
+			}
+			ruleMatches[rp.ruleIndex][rp.stringName] = true
+		}
 	}
 
 	// Call callback for each matching rule

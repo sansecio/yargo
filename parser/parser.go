@@ -196,7 +196,8 @@ func (p *Parser) convertStringDef(s *StringDefGrammar) (*ast.StringDef, error) {
 		}
 		def.Value = hex
 	case s.Regex != nil:
-		def.Value = ast.RegexString{Pattern: parseRegex(*s.Regex)}
+		pattern, mods := parseRegex(*s.Regex)
+		def.Value = ast.RegexString{Pattern: pattern, Modifiers: mods}
 	}
 
 	return def, nil
@@ -220,12 +221,23 @@ func (p *Parser) convertHexString(h *HexStringGrammar) (ast.HexString, error) {
 	return ast.HexString{Tokens: tokens}, nil
 }
 
-func parseRegex(s string) string {
+func parseRegex(s string) (string, ast.RegexModifiers) {
 	s = s[1:] // remove leading /
+	var mods ast.RegexModifiers
 	if idx := strings.LastIndex(s, "/"); idx >= 0 {
+		for _, c := range s[idx+1:] {
+			switch c {
+			case 'i':
+				mods.CaseInsensitive = true
+			case 's':
+				mods.DotMatchesAll = true
+			case 'm':
+				mods.Multiline = true
+			}
+		}
 		s = s[:idx]
 	}
-	return s
+	return s, mods
 }
 
 func parseHexAlt(s string) ast.HexAlt {

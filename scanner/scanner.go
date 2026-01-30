@@ -3,6 +3,7 @@ package scanner
 
 import (
 	ahocorasick "github.com/pgavlin/aho-corasick"
+	re2 "github.com/wasilibs/go-re2"
 )
 
 // ScanFlags controls scanning behavior.
@@ -48,6 +49,14 @@ type patternRef struct {
 	fullword    bool
 }
 
+// regexPattern holds a compiled regex for complex regex matching.
+type regexPattern struct {
+	re          *re2.Regexp
+	ruleIndex   int
+	stringIndex int
+	stringName  string
+}
+
 // compiledRule holds the compiled form of a single YARA rule.
 type compiledRule struct {
 	name  string
@@ -56,8 +65,9 @@ type compiledRule struct {
 
 // Rules holds compiled YARA rules ready for scanning.
 type Rules struct {
-	rules      []*compiledRule
-	matcher    *ahocorasick.AhoCorasick
-	patterns   [][]byte
-	patternMap []patternRef
+	rules         []*compiledRule
+	matcher       *ahocorasick.AhoCorasick
+	patterns      [][]byte
+	patternMap    []patternRef
+	regexPatterns []*regexPattern
 }

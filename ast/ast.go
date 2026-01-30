@@ -58,9 +58,17 @@ type HexString struct {
 
 func (HexString) stringValue() {}
 
+// RegexModifiers represents the inline modifiers for a regex pattern.
+type RegexModifiers struct {
+	CaseInsensitive bool // i flag
+	DotMatchesAll   bool // s flag
+	Multiline       bool // m flag
+}
+
 // RegexString represents a regular expression pattern.
 type RegexString struct {
-	Pattern string
+	Pattern   string
+	Modifiers RegexModifiers
 }
 
 func (RegexString) stringValue() {}
