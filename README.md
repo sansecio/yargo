@@ -7,7 +7,8 @@ Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencie
 - Pure Go - no cgo dependencies
 - YARA rule parser with full syntax support
 - Fast multi-pattern scanner using Aho-Corasick
-- Support for `base64` string modifier
+- Support for `base64` and `fullword` string modifiers
+- Regex patterns like `/\bdomain\.com\b/` handled efficiently via AC
 - go-yara compatible API
 
 ## Installation
@@ -76,7 +77,7 @@ Benchmarked with 106,962 YARA rules scanning a 79KB PHP file:
 | Library | Options | Compile Time | Scan Time | Notes |
 |---------|---------|--------------|-----------|-------|
 | cloudflare/ahocorasick | - | 18.5s | 21ms | |
-| pgavlin/aho-corasick | DFA: false | 2.0s | 1.7ms | **Current choice** |
+| pgavlin/aho-corasick | DFA: false | 2.3s | 2.2ms | **Current choice** |
 | pgavlin/aho-corasick | DFA: true | 33s | 0.6ms | Faster scans, slower builds |
 
 The `pgavlin/aho-corasick` library with `DFA: false` provides the best balance of compile time and scan performance. Use `DFA: true` if you're compiling rules once and scanning many files.
@@ -89,10 +90,12 @@ The `pgavlin/aho-corasick` library with `DFA: false` provides the best balance o
 
 ## Current Limitations
 
-- Only `TextString` patterns are supported (no hex strings or regex yet)
+- `TextString` patterns fully supported
+- `RegexString` patterns: only `/\bLITERAL\b/` form (word boundary literals)
+- `HexString` patterns not yet supported
 - Only `any of them` condition is fully supported
-- Modifiers supported: `base64`
-- Modifiers not yet implemented: `wide`, `nocase`, `fullword`, `xor`, `base64wide`
+- Modifiers supported: `base64`, `fullword`
+- Modifiers not yet implemented: `wide`, `nocase`, `xor`, `base64wide`
 
 ## License
 
