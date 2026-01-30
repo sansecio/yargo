@@ -393,36 +393,57 @@ func (a *abortCallback) RuleMatching(r *MatchRule) (abort bool, err error) {
 }
 
 func TestIntegrationWithRealYaraFile(t *testing.T) {
-	yaraFile := "/home/daniel/Code/ecomscan-signatures/build/ecomscan.yar"
+	yaraFile := "../fixture/ecomscan.yar"
+	phpFile := "../fixture/Product.php"
+
 	if _, err := os.Stat(yaraFile); os.IsNotExist(err) {
-		t.Skip("Real YARA file not available, skipping integration test")
+		t.Skip("fixture/ecomscan.yar not available, skipping integration test")
+	}
+	if _, err := os.Stat(phpFile); os.IsNotExist(err) {
+		t.Skip("fixture/Product.php not available, skipping integration test")
 	}
 
+	// Parse YARA rules
 	p, err := parser.New()
 	if err != nil {
 		t.Fatalf("parser.New() error = %v", err)
 	}
 
+	parseStart := time.Now()
 	rs, err := p.ParseFile(yaraFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
+	parseTime := time.Since(parseStart)
+	t.Logf("Parse time: %v (%d rules)", parseTime, len(rs.Rules))
 
+	// Compile rules
+	compileStart := time.Now()
 	rules, err := Compile(rs)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
+	compileTime := time.Since(compileStart)
+	t.Logf("Compile time: %v", compileTime)
 
-	// Scan some PHP code that should match common webshell signatures
-	testData := []byte(`<?php eval(base64_decode($_POST['cmd'])); ?>`)
+	// Load PHP file to scan
+	testData, err := os.ReadFile(phpFile)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	t.Logf("Scanning %d bytes (%s)", len(testData), phpFile)
 
+	// Scan the file
+	scanStart := time.Now()
 	var matches MatchRules
-	err = rules.ScanMem(testData, 0, 5*time.Second, &matches)
+	err = rules.ScanMem(testData, 0, 30*time.Second, &matches)
 	if err != nil {
 		t.Fatalf("ScanMem() error = %v", err)
 	}
+	scanTime := time.Since(scanStart)
+	t.Logf("Scan time: %v", scanTime)
 
-	t.Logf("Compiled %d rules, found %d matches", len(rs.Rules), len(matches))
+	t.Logf("Found %d matches:", len(matches))
 	for _, m := range matches {
 		t.Logf("  - %s (strings: %v)", m.Rule, m.Strings)
 	}
