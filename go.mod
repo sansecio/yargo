@@ -5,7 +5,6 @@ go 1.25.6
 require github.com/alecthomas/participle/v2 v2.1.4
 
 require (
-	github.com/hillu/go-yara/v4 v4.3.4
 	github.com/pgavlin/aho-corasick v0.5.1
 	github.com/wasilibs/go-re2 v1.10.0
 )

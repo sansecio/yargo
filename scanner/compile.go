@@ -60,14 +60,36 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		for strIdx, s := range r.Strings {
 			patterns, isComplexRegex := generatePatterns(s)
 			if isComplexRegex {
-				// Complex regex - compile with go-re2
-				v := s.Value.(ast.RegexString)
-				rp, err := compileRegexPattern(v, ruleIdx, strIdx, s.Name)
+				var rePattern string
+				var caseInsensitive bool
+
+				switch v := s.Value.(type) {
+				case ast.RegexString:
+					rePattern = buildRE2Pattern(v.Pattern, v.Modifiers)
+					caseInsensitive = v.Modifiers.CaseInsensitive
+				case ast.HexString:
+					// Complex hex strings (with wildcards/jumps) can't be converted to RE2
+					// because RE2 requires valid UTF-8 and hex patterns contain raw bytes
+					rules.warnings = append(rules.warnings,
+						fmt.Sprintf("rule %q: skipping complex hex string (wildcards/jumps not supported)", r.Name))
+					continue
+				default:
+					continue
+				}
+
+				compiled, err := re2.Compile(rePattern)
 				if err != nil {
 					if opts.SkipInvalidRegex {
 						continue
 					}
-					return nil, fmt.Errorf("rule %q string %s: %w", r.Name, s.Name, err)
+					return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", r.Name, s.Name, err)
+				}
+
+				rp := &regexPattern{
+					re:          compiled,
+					ruleIndex:   ruleIdx,
+					stringIndex: strIdx,
+					stringName:  s.Name,
 				}
 
 				regexIdx := len(rules.regexPatterns)
@@ -75,8 +97,8 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 				// Extract atoms from regex pattern for acceleration
 				// Skip atom extraction for case-insensitive patterns since AC is case-sensitive
-				atoms, hasAtoms := ExtractAtoms(v.Pattern, 3)
-				if hasAtoms && !v.Modifiers.CaseInsensitive {
+				atoms, hasAtoms := ExtractAtoms(rePattern, 3)
+				if hasAtoms && !caseInsensitive {
 					rp.hasAtom = true
 					for _, atom := range atoms {
 						rules.patternMap = append(rules.patternMap, patternRef{
@@ -85,8 +107,11 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 						})
 						allPatterns = append(allPatterns, atom.Bytes)
 					}
+				} else {
+					// Warn about regexes that require full buffer scan
+					rules.warnings = append(rules.warnings,
+						fmt.Sprintf("rule %q: regex has no extractable atoms, requires full buffer scan (slow)", r.Name))
 				}
-				// Regexes without atoms will be scanned against the full buffer
 				continue
 			}
 			for _, p := range patterns {
@@ -103,7 +128,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 	rules.patterns = allPatterns
 	if len(allPatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{DFA: true})
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{DFA: false})
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
 	}
@@ -115,6 +140,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 // Returns patterns and whether this is a complex regex.
 // For TextString with base64 modifier, it generates 3 rotations.
 // For RegexString patterns, returns isComplexRegex=true.
+// For HexString patterns, returns literal bytes if simple, or isComplexRegex=true if complex.
 func generatePatterns(s *ast.StringDef) (patterns [][]byte, isComplexRegex bool) {
 	switch v := s.Value.(type) {
 	case ast.TextString:
@@ -127,9 +153,38 @@ func generatePatterns(s *ast.StringDef) (patterns [][]byte, isComplexRegex bool)
 		_ = v // unused, but type switch needs it
 		return nil, true
 
+	case ast.HexString:
+		// Check if hex string is simple (all literal bytes)
+		if isSimpleHexString(v) {
+			return [][]byte{hexStringToBytes(v)}, false
+		}
+		// Complex hex string - needs regex
+		return nil, true
+
 	default:
 		return nil, false
 	}
+}
+
+// isSimpleHexString returns true if hex string contains only literal bytes.
+func isSimpleHexString(h ast.HexString) bool {
+	for _, t := range h.Tokens {
+		if _, ok := t.(ast.HexByte); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// hexStringToBytes converts a simple hex string to bytes.
+func hexStringToBytes(h ast.HexString) []byte {
+	result := make([]byte, 0, len(h.Tokens))
+	for _, t := range h.Tokens {
+		if b, ok := t.(ast.HexByte); ok {
+			result = append(result, b.Value)
+		}
+	}
+	return result
 }
 
 // generateBase64Patterns generates 3 base64 patterns to handle all alignments.
@@ -204,5 +259,20 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 	if mods.Multiline {
 		prefix += "(?m)"
 	}
+	// Fix {,N} quantifiers to {0,N} for RE2 compatibility
+	pattern = fixQuantifiers(pattern)
 	return prefix + pattern
+}
+
+// fixQuantifiers converts {,N} to {0,N} for RE2 compatibility.
+func fixQuantifiers(pattern string) string {
+	var result []byte
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] == '{' && i+1 < len(pattern) && pattern[i+1] == ',' {
+			result = append(result, '{', '0')
+		} else {
+			result = append(result, pattern[i])
+		}
+	}
+	return string(result)
 }

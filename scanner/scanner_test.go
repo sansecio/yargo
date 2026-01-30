@@ -734,6 +734,11 @@ func TestRegexCaseInsensitive(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
+	// Should have a warning about full buffer scan
+	if len(rules.Warnings()) == 0 {
+		t.Error("expected warning about full buffer scan for case-insensitive regex")
+	}
+
 	tests := []struct {
 		name string
 		data []byte
@@ -906,14 +911,14 @@ func TestRegexComplexPatterns(t *testing.T) {
 	}{
 		{"alternation", `cat|dog`, []byte("I have a dog"), true},
 		{"alternation_no_match", `cat|dog`, []byte("I have a bird"), false},
-		{"character_class_skipped", `[aeiou]+`, []byte("hello"), false}, // skipped: no atoms
-		{"quantifier_star_skipped", `ab*c`, []byte("ac"), false},        // skipped: no atoms
-		{"quantifier_plus", `ab+c`, []byte("ac"), false},                // skipped: no atoms (also wouldn't match)
-		{"quantifier_plus_skipped", `ab+c`, []byte("abbc"), false},      // skipped: no atoms
-		{"optional", `colou?r`, []byte("color"), true},                  // has atom "colo"
-		{"optional_match", `colou?r`, []byte("colour"), true},           // has atom "colo"
-		{"repetition_skipped", `a{3}`, []byte("aaa"), false},            // skipped: no atoms
-		{"repetition_no_match_skipped", `a{3}`, []byte("aa"), false},    // skipped: no atoms
+		{"character_class", `[aeiou]+`, []byte("hello"), true},    // full buffer scan
+		{"quantifier_star", `ab*c`, []byte("ac"), true},           // full buffer scan
+		{"quantifier_plus_no_match", `ab+c`, []byte("ac"), false}, // no match
+		{"quantifier_plus", `ab+c`, []byte("abbc"), true},         // full buffer scan
+		{"optional", `colou?r`, []byte("color"), true},            // has atom "colo"
+		{"optional_match", `colou?r`, []byte("colour"), true},     // has atom "colo"
+		{"repetition", `a{3}`, []byte("aaa"), true},               // full buffer scan
+		{"repetition_no_match", `a{3}`, []byte("aa"), false},      // no match
 	}
 
 	for _, tt := range tests {
@@ -974,7 +979,7 @@ func TestRegexInvalidPattern(t *testing.T) {
 }
 
 func TestRegexWordBoundaryBackwardCompatibility(t *testing.T) {
-	// Tests that \bLITERAL\b patterns still use the optimized AC path
+	// Tests that \bLITERAL\b patterns work correctly
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
@@ -995,12 +1000,9 @@ func TestRegexWordBoundaryBackwardCompatibility(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	// Check that this went through AC (no regex patterns)
-	if len(rules.regexPatterns) != 0 {
-		t.Errorf("expected 0 regex patterns (should use AC), got %d", len(rules.regexPatterns))
-	}
-	if len(rules.patterns) != 1 {
-		t.Errorf("expected 1 AC pattern, got %d", len(rules.patterns))
+	// Pattern with word boundaries goes through regex path with atom extraction
+	if len(rules.regexPatterns) != 1 {
+		t.Errorf("expected 1 regex pattern, got %d", len(rules.regexPatterns))
 	}
 
 	// Verify matching still works
