@@ -113,7 +113,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 	rules.patterns = allPatterns
 	if len(allPatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{DFA: true})
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
 	}
@@ -122,7 +122,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	rules.atomPatterns = allAtomPatterns
 	rules.atomMap = atomRefs
 	if len(allAtomPatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{DFA: true})
 		ac := builder.BuildByte(allAtomPatterns)
 		rules.atomMatcher = &ac
 	}
