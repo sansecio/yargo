@@ -98,17 +98,17 @@ go-re2 is ~4x faster for matching, making it ideal for YARA scanning where rules
 
 Full pipeline with 106,962 YARA rules scanning a 79KB PHP file:
 
-| Phase | Time | Details |
-|-------|------|---------|
-| Parse | 4.7s | 106,962 rules |
-| Compile | 2.4s | 134,385 AC patterns + 1,043 regex patterns |
-| Scan | 140ms | 79KB file |
+| Phase | go-re2 | stdlib regexp |
+|-------|--------|---------------|
+| Parse | 4.7s | 4.7s |
+| Compile | 2.4s | 2.2s |
+| Scan | **140ms** | 277ms |
 
-The scan phase breaks down as:
+Both engines compile 134,385 AC patterns + 1,043 regex patterns. The scan phase breaks down as:
 - Aho-Corasick matching (134k patterns): ~2ms
-- Regex matching (1,043 patterns): ~138ms
+- Regex matching (1,043 patterns): ~138ms (go-re2) vs ~275ms (stdlib)
 
-For rulesets with fewer complex regexes, scan times will be closer to the AC-only performance.
+go-re2 provides ~2x faster scanning, which matters when scanning many files.
 
 ### Recommendations
 
