@@ -226,9 +226,88 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 	return prefix + fixQuantifiers(pattern)
 }
 
+const maxRepetition = 1000
+
 func fixQuantifiers(pattern string) string {
-	if !strings.Contains(pattern, "{,") {
-		return pattern
+	var result strings.Builder
+	result.Grow(len(pattern))
+
+	i := 0
+	for i < len(pattern) {
+		if pattern[i] == '\\' && i+1 < len(pattern) {
+			result.WriteByte(pattern[i])
+			result.WriteByte(pattern[i+1])
+			i += 2
+			continue
+		}
+
+		if pattern[i] == '{' {
+			end := strings.IndexByte(pattern[i:], '}')
+			if end == -1 {
+				result.WriteByte(pattern[i])
+				i++
+				continue
+			}
+			end += i
+
+			inner := pattern[i+1 : end]
+			fixed := fixRepetition(inner)
+			result.WriteByte('{')
+			result.WriteString(fixed)
+			result.WriteByte('}')
+
+			i = end + 1
+			if i < len(pattern) && pattern[i] == '?' {
+				result.WriteByte('?')
+				i++
+			}
+			continue
+		}
+
+		result.WriteByte(pattern[i])
+		i++
 	}
-	return strings.ReplaceAll(pattern, "{,", "{0,")
+
+	return result.String()
+}
+
+func fixRepetition(inner string) string {
+	if strings.HasPrefix(inner, ",") {
+		inner = "0" + inner
+	}
+
+	commaIdx := strings.IndexByte(inner, ',')
+	if commaIdx == -1 {
+		n := parseIntCapped(inner)
+		return fmt.Sprintf("%d", n)
+	}
+
+	minStr := inner[:commaIdx]
+	maxStr := inner[commaIdx+1:]
+
+	minVal := parseIntCapped(minStr)
+
+	if maxStr == "" {
+		return fmt.Sprintf("%d,", minVal)
+	}
+
+	maxVal := parseIntCapped(maxStr)
+	return fmt.Sprintf("%d,%d", minVal, maxVal)
+}
+
+func parseIntCapped(s string) int {
+	if s == "" {
+		return 0
+	}
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+		if n > maxRepetition {
+			return maxRepetition
+		}
+	}
+	return n
 }
