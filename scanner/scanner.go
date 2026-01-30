@@ -55,12 +55,19 @@ type regexPattern struct {
 	ruleIndex   int
 	stringIndex int
 	stringName  string
+	hasAtom     bool // true if this regex has atoms in atomMatcher
 }
 
 // compiledRule holds the compiled form of a single YARA rule.
 type compiledRule struct {
 	name  string
 	metas []Meta
+}
+
+// atomRef maps an atom pattern index to its source regex pattern.
+type atomRef struct {
+	regexIdx   int // index into regexPatterns
+	atomOffset int // where atom appears in the regex match
 }
 
 // Rules holds compiled YARA rules ready for scanning.
@@ -71,6 +78,12 @@ type Rules struct {
 	patternMap    []patternRef
 	regexPatterns []*regexPattern
 	warnings      []string
+
+	// Atom-based regex optimization
+	atomMatcher   *ahocorasick.AhoCorasick
+	atomPatterns  [][]byte
+	atomMap       []atomRef       // maps atom index to regex pattern
+	noAtomRegexes []*regexPattern // regexes with no extractable atoms (fallback)
 }
 
 // Warnings returns any warnings generated during compilation.

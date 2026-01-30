@@ -29,6 +29,8 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	var allPatterns [][]byte
+	var allAtomPatterns [][]byte
+	var atomRefs []atomRef
 
 	// Track actual rule index (after skipping unsupported conditions)
 	actualRuleIdx := 0
@@ -70,7 +72,25 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 					}
 					return nil, fmt.Errorf("rule %q string %s: %w", r.Name, s.Name, err)
 				}
+
+				regexIdx := len(rules.regexPatterns)
 				rules.regexPatterns = append(rules.regexPatterns, rp)
+
+				// Extract atoms from regex pattern
+				// Skip atom extraction for case-insensitive patterns since AC is case-sensitive
+				atoms, hasAtoms := extractAtoms(v.Pattern, 3)
+				if hasAtoms && !v.Modifiers.CaseInsensitive {
+					rp.hasAtom = true
+					for _, atom := range atoms {
+						allAtomPatterns = append(allAtomPatterns, atom.Bytes)
+						atomRefs = append(atomRefs, atomRef{
+							regexIdx:   regexIdx,
+							atomOffset: atom.Offset,
+						})
+					}
+				} else {
+					rules.noAtomRegexes = append(rules.noAtomRegexes, rp)
+				}
 				continue
 			}
 			for _, p := range patterns {
@@ -90,6 +110,15 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
+	}
+
+	// Build atom matcher for regex optimization
+	rules.atomPatterns = allAtomPatterns
+	rules.atomMap = atomRefs
+	if len(allAtomPatterns) > 0 {
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
+		ac := builder.BuildByte(allAtomPatterns)
+		rules.atomMatcher = &ac
 	}
 
 	return rules, nil

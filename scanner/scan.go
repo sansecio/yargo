@@ -2,8 +2,13 @@ package scanner
 
 import (
 	"context"
+	"sort"
 	"time"
 )
+
+// maxMatchLen is the maximum window size for regex verification.
+// Most YARA regex patterns match within a reasonable window.
+const maxMatchLen = 4096
 
 // isWordChar returns true if b is alphanumeric or underscore (YARA word character).
 func isWordChar(b byte) bool {
@@ -22,6 +27,21 @@ func checkWordBoundary(buf []byte, start, end int) bool {
 		return false
 	}
 	return true
+}
+
+// dedupePositions removes duplicate positions and sorts them.
+func dedupePositions(positions []int) []int {
+	if len(positions) <= 1 {
+		return positions
+	}
+	sort.Ints(positions)
+	result := positions[:1]
+	for i := 1; i < len(positions); i++ {
+		if positions[i] != result[len(result)-1] {
+			result = append(result, positions[i])
+		}
+	}
+	return result
 }
 
 // ScanMem scans a byte buffer for matching rules.
@@ -66,8 +86,51 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 	}
 
-	// Run regex pattern matching
-	for _, rp := range r.regexPatterns {
+	// Atom-based regex matching: use atoms to filter which regexes to run
+	if r.atomMatcher != nil {
+		// Collect candidate positions for each regex
+		candidates := make(map[int][]int) // regexIdx -> candidate start positions
+
+		iter := r.atomMatcher.IterOverlappingByte(buf)
+		for {
+			match := iter.Next()
+			if match == nil {
+				break
+			}
+			ref := r.atomMap[match.Pattern()]
+			startPos := match.Start() - ref.atomOffset
+			if startPos < 0 {
+				startPos = 0
+			}
+			candidates[ref.regexIdx] = append(candidates[ref.regexIdx], startPos)
+		}
+
+		// Verify each regex only at candidate positions
+		for regexIdx, positions := range candidates {
+			rp := r.regexPatterns[regexIdx]
+			positions = dedupePositions(positions)
+
+			for _, pos := range positions {
+				// Create a window around the candidate position
+				end := pos + maxMatchLen
+				if end > len(buf) {
+					end = len(buf)
+				}
+				window := buf[pos:end]
+
+				if rp.re.Match(window) {
+					if ruleMatches[rp.ruleIndex] == nil {
+						ruleMatches[rp.ruleIndex] = make(map[string]bool)
+					}
+					ruleMatches[rp.ruleIndex][rp.stringName] = true
+					break // found a match, no need to check more positions
+				}
+			}
+		}
+	}
+
+	// Fallback: run regexes with no atoms against the full buffer
+	for _, rp := range r.noAtomRegexes {
 		if rp.re.Match(buf) {
 			if ruleMatches[rp.ruleIndex] == nil {
 				ruleMatches[rp.ruleIndex] = make(map[string]bool)
