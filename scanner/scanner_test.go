@@ -712,8 +712,8 @@ func TestRegexBasicMatching(t *testing.T) {
 	}
 }
 
-func TestRegexCaseInsensitiveSkipped(t *testing.T) {
-	// Case-insensitive regexes are skipped (no atom extraction possible with AC)
+func TestRegexCaseInsensitive(t *testing.T) {
+	// Case-insensitive regexes work via full buffer scan (no atom acceleration)
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
@@ -734,20 +734,29 @@ func TestRegexCaseInsensitiveSkipped(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	// Should emit a warning about skipping the pattern
-	warnings := rules.Warnings()
-	if len(warnings) == 0 {
-		t.Error("expected warning for skipped case-insensitive regex")
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"lowercase", []byte("this is malware"), true},
+		{"uppercase", []byte("this is MALWARE"), true},
+		{"mixedcase", []byte("this is MaLwArE"), true},
+		{"no_match", []byte("this is clean"), false},
 	}
 
-	// Should not match (pattern is skipped)
-	var matches MatchRules
-	err = rules.ScanMem([]byte("this is malware"), 0, time.Second, &matches)
-	if err != nil {
-		t.Fatalf("ScanMem() error = %v", err)
-	}
-	if len(matches) > 0 {
-		t.Error("expected no matches for skipped pattern")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -897,14 +906,14 @@ func TestRegexComplexPatterns(t *testing.T) {
 	}{
 		{"alternation", `cat|dog`, []byte("I have a dog"), true},
 		{"alternation_no_match", `cat|dog`, []byte("I have a bird"), false},
-		{"character_class_skipped", `[aeiou]+`, []byte("hello"), false},       // skipped: no atoms
-		{"quantifier_star_skipped", `ab*c`, []byte("ac"), false},              // skipped: no atoms
-		{"quantifier_plus", `ab+c`, []byte("ac"), false},                      // skipped: no atoms (also wouldn't match)
-		{"quantifier_plus_skipped", `ab+c`, []byte("abbc"), false},            // skipped: no atoms
-		{"optional", `colou?r`, []byte("color"), true},                        // has atom "colo"
-		{"optional_match", `colou?r`, []byte("colour"), true},                 // has atom "colo"
-		{"repetition_skipped", `a{3}`, []byte("aaa"), false},                  // skipped: no atoms
-		{"repetition_no_match_skipped", `a{3}`, []byte("aa"), false},          // skipped: no atoms
+		{"character_class_skipped", `[aeiou]+`, []byte("hello"), false}, // skipped: no atoms
+		{"quantifier_star_skipped", `ab*c`, []byte("ac"), false},        // skipped: no atoms
+		{"quantifier_plus", `ab+c`, []byte("ac"), false},                // skipped: no atoms (also wouldn't match)
+		{"quantifier_plus_skipped", `ab+c`, []byte("abbc"), false},      // skipped: no atoms
+		{"optional", `colou?r`, []byte("color"), true},                  // has atom "colo"
+		{"optional_match", `colou?r`, []byte("colour"), true},           // has atom "colo"
+		{"repetition_skipped", `a{3}`, []byte("aaa"), false},            // skipped: no atoms
+		{"repetition_no_match_skipped", `a{3}`, []byte("aa"), false},    // skipped: no atoms
 	}
 
 	for _, tt := range tests {

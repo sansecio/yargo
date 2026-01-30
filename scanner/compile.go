@@ -73,7 +73,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				regexIdx := len(rules.regexPatterns)
 				rules.regexPatterns = append(rules.regexPatterns, rp)
 
-				// Extract atoms from regex pattern
+				// Extract atoms from regex pattern for acceleration
 				// Skip atom extraction for case-insensitive patterns since AC is case-sensitive
 				atoms, hasAtoms := ExtractAtoms(v.Pattern, 3)
 				if hasAtoms && !v.Modifiers.CaseInsensitive {
@@ -85,15 +85,8 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 						})
 						allPatterns = append(allPatterns, atom.Bytes)
 					}
-				} else {
-					// Skip regexes without extractable atoms - too expensive to scan full buffer
-					reason := "no extractable atom"
-					if v.Modifiers.CaseInsensitive {
-						reason = "case-insensitive"
-					}
-					rules.warnings = append(rules.warnings,
-						fmt.Sprintf("rule %q string %s: skipping regex, %s", r.Name, s.Name, reason))
 				}
+				// Regexes without atoms will be scanned against the full buffer
 				continue
 			}
 			for _, p := range patterns {
