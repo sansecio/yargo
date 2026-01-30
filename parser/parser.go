@@ -14,13 +14,13 @@ import (
 
 // Parser parses YARA rules.
 type Parser struct {
-	parser   *participle.Parser[File]
+	parser   *participle.Parser[file]
 	warnings []string
 }
 
 // New creates a new YARA parser.
 func New() (*Parser, error) {
-	yaraLexer := lexer.MustStateful(lexer.Rules{
+	lex := lexer.MustStateful(lexer.Rules{
 		"Common": {
 			{Name: "LineComment", Pattern: `//[^\n]*`},
 			{Name: "BlockComment", Pattern: `/\*(?:[^*]|\*[^/])*\*/`},
@@ -46,7 +46,7 @@ func New() (*Parser, error) {
 		},
 		"StringValue": {
 			{Name: "Equals", Pattern: `=`},
-			lexer.Include("Common"), // Must come before Regex to handle /* comments */
+			lexer.Include("Common"),
 			{Name: "String", Pattern: `"(?:[^"\\]|\\.)*"`},
 			{Name: "Regex", Pattern: `/(?:[^/\\]|\\.)+/[sim]*`},
 			{Name: "HexOpen", Pattern: `\{`, Action: lexer.Push("HexString")},
@@ -72,8 +72,8 @@ func New() (*Parser, error) {
 		},
 	})
 
-	p, err := participle.Build[File](
-		participle.Lexer(yaraLexer),
+	p, err := participle.Build[file](
+		participle.Lexer(lex),
 		participle.Elide("Whitespace", "LineComment", "BlockComment", "CondLineComment", "CondBlockComment"),
 		participle.UseLookahead(5),
 	)
@@ -84,14 +84,14 @@ func New() (*Parser, error) {
 	return &Parser{parser: p}, nil
 }
 
-// Parse parses YARA rules from a string and returns the AST.
+// Parse parses YARA rules from a string.
 func (p *Parser) Parse(input string) (*ast.RuleSet, error) {
 	p.warnings = nil
-	file, err := p.parser.ParseString("", input)
+	f, err := p.parser.ParseString("", input)
 	if err != nil {
 		return nil, err
 	}
-	return p.convertToAST(file)
+	return p.convertToAST(f)
 }
 
 // ParseFile parses YARA rules from a file.
@@ -101,11 +101,11 @@ func (p *Parser) ParseFile(filename string) (*ast.RuleSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
-	file, err := p.parser.ParseBytes(filename, content)
+	f, err := p.parser.ParseBytes(filename, content)
 	if err != nil {
 		return nil, err
 	}
-	return p.convertToAST(file)
+	return p.convertToAST(f)
 }
 
 // Warnings returns any warnings generated during the last parse.
@@ -113,19 +113,19 @@ func (p *Parser) Warnings() []string {
 	return p.warnings
 }
 
-func (p *Parser) convertToAST(file *File) (*ast.RuleSet, error) {
-	ruleSet := &ast.RuleSet{Rules: make([]*ast.Rule, 0, len(file.Rules))}
-	for _, r := range file.Rules {
+func (p *Parser) convertToAST(f *file) (*ast.RuleSet, error) {
+	rs := &ast.RuleSet{Rules: make([]*ast.Rule, 0, len(f.Rules))}
+	for _, r := range f.Rules {
 		rule, err := p.convertRule(r)
 		if err != nil {
 			return nil, err
 		}
-		ruleSet.Rules = append(ruleSet.Rules, rule)
+		rs.Rules = append(rs.Rules, rule)
 	}
-	return ruleSet, nil
+	return rs, nil
 }
 
-func (p *Parser) convertRule(r *RuleGrammar) (*ast.Rule, error) {
+func (p *Parser) convertRule(r *ruleGrammar) (*ast.Rule, error) {
 	rule := &ast.Rule{Name: r.Name}
 
 	if r.Meta != nil {
@@ -142,7 +142,7 @@ func (p *Parser) convertRule(r *RuleGrammar) (*ast.Rule, error) {
 
 	if r.Strings != nil {
 		for _, s := range r.Strings.Defs {
-			def, err := p.convertStringDef(s)
+			def, err := convertStringDef(s)
 			if err != nil {
 				return nil, err
 			}
@@ -152,7 +152,7 @@ func (p *Parser) convertRule(r *RuleGrammar) (*ast.Rule, error) {
 
 	if r.Condition != nil {
 		rule.Condition = strings.TrimSpace(strings.Join(r.Condition.Parts, ""))
-		if !isSimpleCondition(rule.Condition) {
+		if rule.Condition != "any of them" && rule.Condition != "all of them" {
 			p.warnings = append(p.warnings,
 				fmt.Sprintf("rule %q: complex condition %q (only 'any of them' is fully supported)",
 					rule.Name, rule.Condition))
@@ -162,7 +162,7 @@ func (p *Parser) convertRule(r *RuleGrammar) (*ast.Rule, error) {
 	return rule, nil
 }
 
-func (p *Parser) convertStringDef(s *StringDefGrammar) (*ast.StringDef, error) {
+func convertStringDef(s *stringDefGrammar) (*ast.StringDef, error) {
 	def := &ast.StringDef{Name: s.Name}
 
 	for _, mod := range s.Modifiers {
@@ -190,11 +190,7 @@ func (p *Parser) convertStringDef(s *StringDefGrammar) (*ast.StringDef, error) {
 	case s.Text != nil:
 		def.Value = ast.TextString{Value: unquoteString(*s.Text)}
 	case s.Hex != nil:
-		hex, err := p.convertHexString(s.Hex)
-		if err != nil {
-			return nil, err
-		}
-		def.Value = hex
+		def.Value = convertHexString(s.Hex)
 	case s.Regex != nil:
 		pattern, mods := parseRegex(*s.Regex)
 		def.Value = ast.RegexString{Pattern: pattern, Modifiers: mods}
@@ -203,8 +199,8 @@ func (p *Parser) convertStringDef(s *StringDefGrammar) (*ast.StringDef, error) {
 	return def, nil
 }
 
-func (p *Parser) convertHexString(h *HexStringGrammar) (ast.HexString, error) {
-	var tokens []ast.HexToken
+func convertHexString(h *hexStringGrammar) ast.HexString {
+	tokens := make([]ast.HexToken, 0, len(h.Tokens))
 	for _, t := range h.Tokens {
 		switch {
 		case t.Byte != nil:
@@ -218,11 +214,11 @@ func (p *Parser) convertHexString(h *HexStringGrammar) (ast.HexString, error) {
 			tokens = append(tokens, parseHexAlt(*t.Alt))
 		}
 	}
-	return ast.HexString{Tokens: tokens}, nil
+	return ast.HexString{Tokens: tokens}
 }
 
 func parseRegex(s string) (string, ast.RegexModifiers) {
-	s = s[1:] // remove leading /
+	s = s[1:]
 	var mods ast.RegexModifiers
 	if idx := strings.LastIndex(s, "/"); idx >= 0 {
 		for _, c := range s[idx+1:] {
@@ -241,7 +237,7 @@ func parseRegex(s string) (string, ast.RegexModifiers) {
 }
 
 func parseHexAlt(s string) ast.HexAlt {
-	s = s[1 : len(s)-1] // remove ( and )
+	s = s[1 : len(s)-1]
 	parts := strings.Split(s, "|")
 	items := make([]ast.HexAltItem, len(parts))
 	for i, part := range parts {
@@ -261,7 +257,6 @@ func parseHexJump(s string) ast.HexJump {
 	if s == "-" {
 		return ast.HexJump{}
 	}
-
 	if idx := strings.Index(s, "-"); idx >= 0 {
 		var jump ast.HexJump
 		if minStr := strings.TrimSpace(s[:idx]); minStr != "" {
@@ -274,7 +269,6 @@ func parseHexJump(s string) ast.HexJump {
 		}
 		return jump
 	}
-
 	n, _ := strconv.Atoi(s)
 	return ast.HexJump{Min: &n, Max: &n}
 }
@@ -283,7 +277,7 @@ func unquoteString(s string) string {
 	if len(s) < 2 {
 		return s
 	}
-	s = s[1 : len(s)-1] // remove quotes
+	s = s[1 : len(s)-1]
 
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -319,8 +313,4 @@ func unquoteString(s string) string {
 		}
 	}
 	return b.String()
-}
-
-func isSimpleCondition(cond string) bool {
-	return cond == "any of them" || cond == "all of them"
 }

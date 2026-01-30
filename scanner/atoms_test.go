@@ -4,208 +4,57 @@ import (
 	"testing"
 )
 
-func TestExtractAtoms(t *testing.T) {
+func Test_extractAtoms(t *testing.T) {
 	tests := []struct {
 		name     string
 		pattern  string
 		minLen   int
 		wantOk   bool
-		wantAtom string // expected atom bytes as string (for simple cases)
+		wantAtom string
 	}{
-		{
-			name:     "simple literal",
-			pattern:  "hello",
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "literal with escaped dot",
-			pattern:  `foo\.bar`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "foo.bar",
-		},
-		{
-			name:     "hex escape",
-			pattern:  `\x41\x42\x43`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "ABC",
-		},
-		{
-			name:     "mixed hex and literal",
-			pattern:  `test\x2Eexe`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "test.exe",
-		},
-		{
-			name:     "literal before character class",
-			pattern:  `hello[0-9]+worldly`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "worldly", // "worldly" is longer than "hello"
-		},
-		{
-			name:     "literal after quantifier",
-			pattern:  `a+longword`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "longword",
-		},
-		{
-			name:     "alternation picks longest branch",
-			pattern:  `(foo|barbaz)`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "barbaz",
-		},
-		{
-			name:     "word boundary pattern",
-			pattern:  `\bhello\b`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "digit class breaks run",
-			pattern:  `hello\dworldly`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "worldly",
-		},
-		{
-			name:     "word class breaks run",
-			pattern:  `abc\wdef`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "abc",
-		},
-		{
-			name:     "no long enough atom",
-			pattern:  `[a-z]+`,
-			minLen:   3,
-			wantOk:   false,
-			wantAtom: "",
-		},
-		{
-			name:     "only short literals",
-			pattern:  `a[0-9]b[0-9]c`,
-			minLen:   3,
-			wantOk:   false,
-			wantAtom: "",
-		},
-		{
-			name:     "optional breaks run",
-			pattern:  `hello?world`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "world",
-		},
-		{
-			name:     "star breaks run",
-			pattern:  `hello*world`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "world",
-		},
-		{
-			name:     "plus breaks run",
-			pattern:  `hello+world`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "world",
-		},
-		{
-			name:     "curly brace quantifier",
-			pattern:  `a{2,5}hello`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "dot breaks run",
-			pattern:  `hello.worldly`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "worldly",
-		},
-		{
-			name:     "caret anchor",
-			pattern:  `^hello`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "dollar anchor",
-			pattern:  `hello$`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "escaped backslash",
-			pattern:  `foo\\bar`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "foo\\bar",
-		},
-		{
-			name:     "pipe outside group picks best from each branch",
-			pattern:  `foo|barbaz`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "foo", // First branch atom (both branches have qualifying atoms)
-		},
-		{
-			name:     "nested groups",
-			pattern:  `((abc))`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "abc",
-		},
-		{
-			name:     "non-capturing group",
-			pattern:  `(?:hello)`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "case insensitive flag",
-			pattern:  `(?i)hello`,
-			minLen:   3,
-			wantOk:   true,
-			wantAtom: "hello",
-		},
-		{
-			name:     "minLen 2",
-			pattern:  `ab[0-9]cd`,
-			minLen:   2,
-			wantOk:   true,
-			wantAtom: "ab",
-		},
+		{"simple literal", "hello", 3, true, "hello"},
+		{"literal with escaped dot", `foo\.bar`, 3, true, "foo.bar"},
+		{"hex escape", `\x41\x42\x43`, 3, true, "ABC"},
+		{"mixed hex and literal", `test\x2Eexe`, 3, true, "test.exe"},
+		{"literal before character class", `hello[0-9]+worldly`, 3, true, "worldly"},
+		{"literal after quantifier", `a+longword`, 3, true, "longword"},
+		{"alternation picks longest branch", `(foo|barbaz)`, 3, true, "barbaz"},
+		{"word boundary pattern", `\bhello\b`, 3, true, "hello"},
+		{"digit class breaks run", `hello\dworldly`, 3, true, "worldly"},
+		{"word class breaks run", `abc\wdef`, 3, true, "abc"},
+		{"no long enough atom", `[a-z]+`, 3, false, ""},
+		{"only short literals", `a[0-9]b[0-9]c`, 3, false, ""},
+		{"optional breaks run", `hello?world`, 3, true, "world"},
+		{"star breaks run", `hello*world`, 3, true, "world"},
+		{"plus breaks run", `hello+world`, 3, true, "world"},
+		{"curly brace quantifier", `a{2,5}hello`, 3, true, "hello"},
+		{"dot breaks run", `hello.worldly`, 3, true, "worldly"},
+		{"caret anchor", `^hello`, 3, true, "hello"},
+		{"dollar anchor", `hello$`, 3, true, "hello"},
+		{"escaped backslash", `foo\\bar`, 3, true, "foo\\bar"},
+		{"pipe outside group picks best from each branch", `foo|barbaz`, 3, true, "foo"},
+		{"nested groups", `((abc))`, 3, true, "abc"},
+		{"non-capturing group", `(?:hello)`, 3, true, "hello"},
+		{"case insensitive flag", `(?i)hello`, 3, true, "hello"},
+		{"minLen 2", `ab[0-9]cd`, 2, true, "ab"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			atoms, ok := ExtractAtoms(tt.pattern, tt.minLen)
+			atoms, ok := extractAtoms(tt.pattern, tt.minLen)
 			if ok != tt.wantOk {
-				t.Errorf("ExtractAtoms(%q, %d) ok = %v, want %v", tt.pattern, tt.minLen, ok, tt.wantOk)
+				t.Errorf("extractAtoms(%q, %d) ok = %v, want %v", tt.pattern, tt.minLen, ok, tt.wantOk)
 				return
 			}
 			if !ok {
 				return
 			}
 			if len(atoms) == 0 {
-				t.Errorf("ExtractAtoms(%q, %d) returned ok=true but no atoms", tt.pattern, tt.minLen)
+				t.Errorf("extractAtoms(%q, %d) returned ok=true but no atoms", tt.pattern, tt.minLen)
 				return
 			}
-			got := string(atoms[0].Bytes)
-			if got != tt.wantAtom {
-				t.Errorf("ExtractAtoms(%q, %d) atom = %q, want %q", tt.pattern, tt.minLen, got, tt.wantAtom)
+			if got := string(atoms[0]); got != tt.wantAtom {
+				t.Errorf("extractAtoms(%q, %d) atom = %q, want %q", tt.pattern, tt.minLen, got, tt.wantAtom)
 			}
 		})
 	}
@@ -215,46 +64,24 @@ func TestAtomQuality(t *testing.T) {
 	tests := []struct {
 		name   string
 		atom   []byte
-		wantGT []byte // should have higher quality than this
-		wantLT []byte // should have lower quality than this (optional)
+		wantGT []byte
 	}{
-		{
-			name:   "longer is better",
-			atom:   []byte("hello"),
-			wantGT: []byte("hel"),
-		},
-		{
-			name:   "uncommon bytes better than common",
-			atom:   []byte("xyz"),
-			wantGT: []byte{0x00, 0x00, 0x00},
-		},
-		{
-			name:   "alphabetic better than whitespace",
-			atom:   []byte("abc"),
-			wantGT: []byte("   "),
-		},
+		{"longer is better", []byte("hello"), []byte("hel")},
+		{"uncommon bytes better than common", []byte("xyz"), []byte{0x00, 0x00, 0x00}},
+		{"alphabetic better than whitespace", []byte("abc"), []byte("   ")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q := atomQuality(tt.atom)
-			qGT := atomQuality(tt.wantGT)
-			if q <= qGT {
+			if q, qGT := atomQuality(tt.atom), atomQuality(tt.wantGT); q <= qGT {
 				t.Errorf("atomQuality(%q) = %d, want > atomQuality(%q) = %d", tt.atom, q, tt.wantGT, qGT)
-			}
-			if tt.wantLT != nil {
-				qLT := atomQuality(tt.wantLT)
-				if q >= qLT {
-					t.Errorf("atomQuality(%q) = %d, want < atomQuality(%q) = %d", tt.atom, q, tt.wantLT, qLT)
-				}
 			}
 		})
 	}
 }
 
-func TestExtractAtomsMultiple(t *testing.T) {
-	// Test that top-level alternation extracts atoms from all branches
-	atoms, ok := ExtractAtoms(`cat|dog|bird`, 3)
+func Test_extractAtomsMultiple(t *testing.T) {
+	atoms, ok := extractAtoms(`cat|dog|bird`, 3)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -262,29 +89,22 @@ func TestExtractAtomsMultiple(t *testing.T) {
 		t.Fatalf("expected 3 atoms for 3 branches, got %d", len(atoms))
 	}
 
-	// Verify we have atoms from each branch
 	found := make(map[string]bool)
 	for _, a := range atoms {
-		found[string(a.Bytes)] = true
+		found[string(a)] = true
 	}
-	if !found["cat"] {
-		t.Error("expected atom 'cat'")
-	}
-	if !found["dog"] {
-		t.Error("expected atom 'dog'")
-	}
-	if !found["bird"] {
-		t.Error("expected atom 'bird'")
+	for _, want := range []string{"cat", "dog", "bird"} {
+		if !found[want] {
+			t.Errorf("expected atom %q", want)
+		}
 	}
 }
 
-func TestExtractAtomsGroupedAlternation(t *testing.T) {
-	// Alternation inside a group is not top-level, picks best atom
-	atoms, ok := ExtractAtoms(`prefix(foo|bar|baz)suffix`, 3)
+func Test_extractAtomsGroupedAlternation(t *testing.T) {
+	atoms, ok := extractAtoms(`prefix(foo|bar|baz)suffix`, 3)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
-	// Should pick "prefix" or "suffix" (both 6 chars, same quality)
 	if len(atoms) != 1 {
 		t.Fatalf("expected 1 atom for grouped alternation, got %d", len(atoms))
 	}

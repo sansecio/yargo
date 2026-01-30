@@ -43,21 +43,19 @@ func (m *MatchRules) RuleMatching(r *MatchRule) (abort bool, err error) {
 
 // patternRef maps a pattern index back to its source rule and string.
 type patternRef struct {
-	ruleIndex   int
-	stringIndex int
-	stringName  string
-	fullword    bool
-	isAtom      bool // true if this is an atom for regex filtering
-	regexIdx    int  // if isAtom, index into regexPatterns
+	ruleIndex  int
+	stringName string
+	fullword   bool
+	isAtom     bool
+	regexIdx   int
 }
 
 // regexPattern holds a compiled regex for complex regex matching.
 type regexPattern struct {
-	re          *re2.Regexp
-	ruleIndex   int
-	stringIndex int
-	stringName  string
-	hasAtom     bool // true if this regex has atoms in atomMatcher
+	re         *re2.Regexp
+	ruleIndex  int
+	stringName string
+	hasAtom    bool
 }
 
 // compiledRule holds the compiled form of a single YARA rule.
@@ -82,6 +80,6 @@ func (r *Rules) Warnings() []string {
 }
 
 // Stats returns compilation statistics.
-func (r *Rules) Stats() (acPatterns, regexWithAtoms int) {
+func (r *Rules) Stats() (acPatterns, regexPatterns int) {
 	return len(r.patterns), len(r.regexPatterns)
 }
