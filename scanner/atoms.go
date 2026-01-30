@@ -7,19 +7,36 @@ import (
 // extractAtoms parses a regex and extracts literal atoms for matching.
 // For alternation patterns (a|b|c), returns atoms from all branches.
 // For patterns with nested alternations like "prefix(a|b|c)suffix", returns
-// atoms from all branches of the alternation.
+// atoms from all branches of the alternation when they're the best choice.
 // Returns the atoms and whether any were found meeting minLen.
 func extractAtoms(pattern string, minLen int) ([][]byte, bool) {
 	if isTopLevelAlternation(pattern) {
 		return extractAlternationAtoms(pattern, minLen)
 	}
 
-	// Check for nested alternations and extract atoms from all branches
-	if altAtoms := extractNestedAlternationAtoms(pattern, minLen); len(altAtoms) > 0 {
-		return altAtoms, true
+	// Find all literal runs and check for nested alternations
+	runs := extractLiteralRuns(pattern)
+	altAtoms := extractNestedAlternationAtoms(pattern, minLen)
+
+	// Find best atom from OUTSIDE alternation groups (the required literals)
+	outsideRuns := extractLiteralRunsOutsideAlternations(pattern)
+	bestOutside := findBestRun(outsideRuns, minLen)
+
+	// If alternation atoms exist and are better than outside literals, use them
+	// This handles "prefix(a|b|c)" where we need to match any branch
+	if len(altAtoms) > 0 {
+		bestAlt := findBestRun(altAtoms, minLen)
+		if bestAlt != nil && (bestOutside == nil || atomQuality(bestAlt) > atomQuality(bestOutside)) {
+			return altAtoms, true
+		}
 	}
 
-	runs := extractLiteralRuns(pattern)
+	// Use the best outside literal if available
+	if bestOutside != nil {
+		return [][]byte{bestOutside}, true
+	}
+
+	// Fall back to best overall atom
 	best := findBestRun(runs, minLen)
 	if best == nil {
 		return nil, false
@@ -172,6 +189,30 @@ func splitAlternation(s string) []string {
 		}
 	}
 	return append(parts, s[start:])
+}
+
+// extractLiteralRunsOutsideAlternations extracts literals from parts of the
+// pattern that are not inside alternation groups. These are "required" literals
+// that must appear in any match.
+func extractLiteralRunsOutsideAlternations(pattern string) [][]byte {
+	// Find alternation groups to exclude
+	groups := findAlternationGroups(pattern)
+	if len(groups) == 0 {
+		return extractLiteralRuns(pattern)
+	}
+
+	// Build pattern with alternation groups replaced by a placeholder
+	// that won't produce literal runs
+	modified := []byte(pattern)
+	for i := len(groups) - 1; i >= 0; i-- {
+		g := groups[i]
+		// Replace the group (including parens) with dots to break literal runs
+		for j := g.start; j <= g.end && j < len(modified); j++ {
+			modified[j] = '.'
+		}
+	}
+
+	return extractLiteralRuns(string(modified))
 }
 
 // splitTopLevelAlternation splits a pattern by top-level | characters.

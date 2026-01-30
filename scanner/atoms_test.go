@@ -18,7 +18,7 @@ func Test_extractAtoms(t *testing.T) {
 		{"mixed hex and literal", `test\x2Eexe`, 3, true, "test.exe"},
 		{"literal before character class", `hello[0-9]+worldly`, 3, true, "worldly"},
 		{"literal after quantifier", `a+longword`, 3, true, "longword"},
-		{"alternation extracts all branches", `(foo|barbaz)`, 3, true, "foo"}, // now returns atoms from all branches
+		{"nested alternation", `(foo|barbaz)`, 3, true, "foo"}, // returns all branches; first is "foo"
 		{"word boundary pattern", `\bhello\b`, 3, true, "hello"},
 		{"digit class breaks run", `hello\dworldly`, 3, true, "worldly"},
 		{"word class breaks run", `abc\wdef`, 3, true, "abc"},
@@ -101,19 +101,38 @@ func Test_extractAtomsMultiple(t *testing.T) {
 }
 
 func Test_extractAtomsGroupedAlternation(t *testing.T) {
+	// When outside literals are better than alternation branches, use outside
 	atoms, ok := extractAtoms(`prefix(foo|bar|baz)suffix`, 3)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
-	// Now extracts atoms from all branches of nested alternation
-	if len(atoms) != 3 {
-		t.Fatalf("expected 3 atoms for grouped alternation (one per branch), got %d", len(atoms))
+	// "prefix" and "suffix" (6 chars) are better than "foo"/"bar"/"baz" (3 chars)
+	// so we use the required literal instead of alternation atoms
+	if len(atoms) != 1 {
+		t.Fatalf("expected 1 atom (best outside literal), got %d", len(atoms))
+	}
+	atom := string(atoms[0])
+	if atom != "prefix" && atom != "suffix" {
+		t.Errorf("expected 'prefix' or 'suffix', got %q", atom)
+	}
+}
+
+func Test_extractAtomsNestedAlternationBetter(t *testing.T) {
+	// When alternation branches are better than outside literals, use all branches
+	// Pattern: short prefix, longer alternation options
+	atoms, ok := extractAtoms(`go(unlink|fwrite|password|eval)`, 3)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+	// "unlink", "fwrite", "password" are better than "go" (2 chars, below minLen)
+	if len(atoms) != 4 {
+		t.Fatalf("expected 4 atoms (all alternation branches), got %d", len(atoms))
 	}
 	found := make(map[string]bool)
 	for _, a := range atoms {
 		found[string(a)] = true
 	}
-	for _, want := range []string{"foo", "bar", "baz"} {
+	for _, want := range []string{"unlink", "fwrite", "password", "eval"} {
 		if !found[want] {
 			t.Errorf("expected atom %q", want)
 		}
