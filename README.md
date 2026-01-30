@@ -110,6 +110,18 @@ Both engines compile 134,385 AC patterns + 1,043 regex patterns. The scan phase 
 
 go-re2 provides ~2x faster scanning, which matters when scanning many files.
 
+### Comparison with YARA
+
+Scan-only performance (pre-compiled rules, 106,962 rules, 79KB file):
+
+| Tool | Scan Time |
+|------|-----------|
+| YARA 4.5.0 | **83ms** |
+| Yargo (go-re2) | 140ms |
+| Yargo (stdlib) | 277ms |
+
+YARA is ~1.7x faster than Yargo for scanning. Yargo's pure Go implementation trades some performance for easier deployment (no cgo/libyara dependency).
+
 ### Recommendations
 
 - **One-time scan**: Use default settings (DFA: false) for fast compilation
