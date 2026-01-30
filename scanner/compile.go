@@ -83,10 +83,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 					rp.hasAtom = true
 					for _, atom := range atoms {
 						allAtomPatterns = append(allAtomPatterns, atom.Bytes)
-						atomRefs = append(atomRefs, atomRef{
-							regexIdx:   regexIdx,
-							atomOffset: atom.Offset,
-						})
+						atomRefs = append(atomRefs, atomRef{regexIdx: regexIdx})
 					}
 				} else {
 					// Skip regexes without extractable atoms - too expensive to scan full buffer

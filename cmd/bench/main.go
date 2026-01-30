@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"time"
 
 	"github.com/hillu/go-yara/v4"
@@ -16,6 +17,7 @@ func main() {
 	rulesPath := flag.String("rules", "fixture/ecomscan.yar", "path to YARA rules file")
 	scanPath := flag.String("scan", "fixture/Product.php", "path to file to scan")
 	iterations := flag.Int("n", 1, "number of iterations")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file (scan only)")
 	flag.Parse()
 
 	// Load file to scan
@@ -31,7 +33,7 @@ func main() {
 	goYaraTime, goYaraMatches := benchGoYara(*rulesPath, data, *iterations)
 
 	// Benchmark yargo
-	yargoTime, yargoMatches, warnings := benchYargo(*rulesPath, data, *iterations)
+	yargoTime, yargoMatches, warnings := benchYargo(*rulesPath, data, *iterations, *cpuprofile)
 
 	// Print warnings
 	for _, w := range warnings {
@@ -89,7 +91,7 @@ func benchGoYara(rulesPath string, data []byte, iterations int) (time.Duration, 
 	return elapsed / time.Duration(iterations), len(lastMatches)
 }
 
-func benchYargo(rulesPath string, data []byte, iterations int) (time.Duration, int, []string) {
+func benchYargo(rulesPath string, data []byte, iterations int, cpuprofile string) (time.Duration, int, []string) {
 	p, err := parser.New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "yargo: failed to create parser: %v\n", err)
@@ -112,6 +114,21 @@ func benchYargo(rulesPath string, data []byte, iterations int) (time.Duration, i
 	for i := 0; i < 3; i++ {
 		var matches scanner.MatchRules
 		rules.ScanMem(data, 0, time.Minute, &matches)
+	}
+
+	// Start CPU profiling if requested (scan only)
+	if cpuprofile != "" {
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		defer pprof.StopCPUProfile()
 	}
 
 	// Benchmark

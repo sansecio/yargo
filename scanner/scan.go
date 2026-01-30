@@ -98,25 +98,28 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 				break
 			}
 			ref := r.atomMap[match.Pattern()]
-			startPos := match.Start() - ref.atomOffset
-			if startPos < 0 {
-				startPos = 0
-			}
-			candidates[ref.regexIdx] = append(candidates[ref.regexIdx], startPos)
+			// Store the atom match position - we'll center the window around it
+			candidates[ref.regexIdx] = append(candidates[ref.regexIdx], match.Start())
 		}
 
 		// Verify each regex only at candidate positions
+		halfWindow := maxMatchLen / 2
 		for regexIdx, positions := range candidates {
 			rp := r.regexPatterns[regexIdx]
 			positions = dedupePositions(positions)
 
-			for _, pos := range positions {
-				// Create a window around the candidate position
-				end := pos + maxMatchLen
+			for _, atomPos := range positions {
+				// Center the window around the atom position to capture
+				// content both before and after the atom
+				start := atomPos - halfWindow
+				if start < 0 {
+					start = 0
+				}
+				end := atomPos + halfWindow
 				if end > len(buf) {
 					end = len(buf)
 				}
-				window := buf[pos:end]
+				window := buf[start:end]
 
 				if rp.re.Match(window) {
 					if ruleMatches[rp.ruleIndex] == nil {

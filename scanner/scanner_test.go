@@ -1248,6 +1248,163 @@ func TestNoWarningForSupportedCondition(t *testing.T) {
 	}
 }
 
+func TestRegexWindowCentering(t *testing.T) {
+	// Test that regex matching works when there's content BEFORE the atom.
+	// The atom is used to find candidate positions, but the full regex
+	// may need to match content before and after the atom position.
+
+	tests := []struct {
+		name    string
+		pattern string
+		data    []byte
+		want    bool
+	}{
+		// Content AFTER the atom - should work with forward-only window
+		{
+			name:    "content_after_atom",
+			pattern: `atom.*suffix`,
+			data:    []byte("here is atom and then suffix"),
+			want:    true,
+		},
+		// Content BEFORE the atom - requires looking backward
+		{
+			name:    "content_before_atom",
+			pattern: `prefix.*atom`,
+			data:    []byte("here is prefix and then atom"),
+			want:    true,
+		},
+		// Content on BOTH sides of the atom
+		{
+			name:    "content_both_sides",
+			pattern: `prefix.*atom.*suffix`,
+			data:    []byte("prefix in the middle atom and suffix"),
+			want:    true,
+		},
+		// Large gap before atom (within window)
+		{
+			name:    "large_gap_before_atom",
+			pattern: `START.*atom`,
+			data:    append([]byte("START"), append(make([]byte, 200), []byte("atom")...)...),
+			want:    true,
+		},
+		// Large gap after atom (within window)
+		{
+			name:    "large_gap_after_atom",
+			pattern: `atom.*END`,
+			data:    append([]byte("atom"), append(make([]byte, 200), []byte("END")...)...),
+			want:    true,
+		},
+		// No match - pattern doesn't exist
+		{
+			name:    "no_match",
+			pattern: `prefix.*atom`,
+			data:    []byte("no matching content here"),
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := &ast.RuleSet{
+				Rules: []*ast.Rule{
+					{
+						Name: "test",
+						Strings: []*ast.StringDef{
+							{
+								Name:  "$s",
+								Value: ast.RegexString{Pattern: tt.pattern},
+							},
+						},
+						Condition: "any of them",
+					},
+				},
+			}
+
+			rules, err := Compile(rs)
+			if err != nil {
+				t.Fatalf("Compile() error = %v", err)
+			}
+
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegexWindowCenteringEdgeCases(t *testing.T) {
+	// Test edge cases for window positioning
+
+	tests := []struct {
+		name    string
+		pattern string
+		data    []byte
+		want    bool
+	}{
+		// Atom at very beginning of buffer - can't look back
+		{
+			name:    "atom_at_start",
+			pattern: `atom.*suffix`,
+			data:    []byte("atom then suffix"),
+			want:    true,
+		},
+		// Atom at very end of buffer - can't look forward much
+		{
+			name:    "atom_at_end",
+			pattern: `prefix.*atom`,
+			data:    []byte("prefix then atom"),
+			want:    true,
+		},
+		// Atom near start, pattern needs to look backward
+		{
+			name:    "atom_near_start_lookback",
+			pattern: `pre.*atom`,
+			data:    []byte("pre atom"),
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := &ast.RuleSet{
+				Rules: []*ast.Rule{
+					{
+						Name: "test",
+						Strings: []*ast.StringDef{
+							{
+								Name:  "$s",
+								Value: ast.RegexString{Pattern: tt.pattern},
+							},
+						},
+						Condition: "any of them",
+					},
+				},
+			}
+
+			rules, err := Compile(rs)
+			if err != nil {
+				t.Fatalf("Compile() error = %v", err)
+			}
+
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIntegrationWithRealYaraFile(t *testing.T) {
 	yaraFile := "../fixture/ecomscan.yar"
 	phpFile := "../fixture/Product.php"

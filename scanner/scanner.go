@@ -66,8 +66,7 @@ type compiledRule struct {
 
 // atomRef maps an atom pattern index to its source regex pattern.
 type atomRef struct {
-	regexIdx   int // index into regexPatterns
-	atomOffset int // where atom appears in the regex match
+	regexIdx int // index into regexPatterns
 }
 
 // Rules holds compiled YARA rules ready for scanning.
