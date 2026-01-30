@@ -5,6 +5,25 @@ import (
 	"time"
 )
 
+// isWordChar returns true if b is alphanumeric or underscore (YARA word character).
+func isWordChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '_'
+}
+
+// checkWordBoundary returns true if the match at [start:end) has word boundaries.
+func checkWordBoundary(buf []byte, start, end int) bool {
+	if start > 0 && isWordChar(buf[start-1]) {
+		return false
+	}
+	if end < len(buf) && isWordChar(buf[end]) {
+		return false
+	}
+	return true
+}
+
 // ScanMem scans a byte buffer for matching rules.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
 	if r.matcher == nil || len(r.patterns) == 0 {
@@ -33,6 +52,12 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 		patternIdx := match.Pattern()
 		ref := r.patternMap[patternIdx]
+
+		// Check word boundaries if required
+		if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
+			continue
+		}
+
 		if ruleMatches[ref.ruleIndex] == nil {
 			ruleMatches[ref.ruleIndex] = make(map[string]bool)
 		}

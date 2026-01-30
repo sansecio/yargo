@@ -392,6 +392,200 @@ func (a *abortCallback) RuleMatching(r *MatchRule) (abort bool, err error) {
 	return a.callback(r)
 }
 
+func TestFullwordModifier(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "fullword_test",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "test"},
+						Modifiers: ast.StringModifiers{Fullword: true},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"standalone_word", []byte("this is a test here"), true},
+		{"at_start", []byte("test is at start"), true},
+		{"at_end", []byte("ends with test"), true},
+		{"whole_buffer", []byte("test"), true},
+		{"with_punctuation", []byte("run test."), true},
+		{"with_comma", []byte("test, more"), true},
+		{"prefix_no_match", []byte("testing should not match"), false},
+		{"suffix_no_match", []byte("a pretest example"), false},
+		{"embedded_no_match", []byte("attestation"), false},
+		{"with_underscore_no_match", []byte("unit_test here"), false},
+		{"with_digit_no_match", []byte("test123 should not"), false},
+		{"digit_prefix_no_match", []byte("123test should not"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFullwordWithMultipleMatches(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "fullword_multi",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "test"},
+						Modifiers: ast.StringModifiers{Fullword: true},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// First occurrence is embedded (no match), second is standalone (match)
+	data := []byte("testing is different from test")
+
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Errorf("expected 1 match (for standalone 'test'), got %d", len(matches))
+	}
+}
+
+func TestFullwordAtBufferBoundaries(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "boundary_test",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "abc"},
+						Modifiers: ast.StringModifiers{Fullword: true},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"exactly_buffer", []byte("abc"), true},
+		{"start_of_buffer_word", []byte("abc def"), true},
+		{"end_of_buffer_word", []byte("def abc"), true},
+		{"start_of_buffer_no_word", []byte("abcd"), false},
+		{"end_of_buffer_no_word", []byte("dabc"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFullwordMixedWithRegular(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "mixed_test",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$fullword",
+						Value:     ast.TextString{Value: "test"},
+						Modifiers: ast.StringModifiers{Fullword: true},
+					},
+					{
+						Name:  "$regular",
+						Value: ast.TextString{Value: "test"},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// "testing" should match $regular but not $fullword
+	data := []byte("testing")
+
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 rule match, got %d", len(matches))
+	}
+
+	// Check that only $regular matched
+	stringNames := make(map[string]bool)
+	for _, s := range matches[0].Strings {
+		stringNames[s.Name] = true
+	}
+
+	if !stringNames["$regular"] {
+		t.Error("expected $regular to match")
+	}
+	if stringNames["$fullword"] {
+		t.Error("expected $fullword NOT to match")
+	}
+}
+
 func TestIntegrationWithRealYaraFile(t *testing.T) {
 	yaraFile := "../fixture/ecomscan.yar"
 	phpFile := "../fixture/Product.php"

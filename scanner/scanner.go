@@ -45,6 +45,7 @@ type patternRef struct {
 	ruleIndex   int
 	stringIndex int
 	stringName  string
+	fullword    bool
 }
 
 // compiledRule holds the compiled form of a single YARA rule.

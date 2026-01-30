@@ -37,6 +37,7 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 					ruleIndex:   ruleIdx,
 					stringIndex: strIdx,
 					stringName:  s.Name,
+					fullword:    s.Modifiers.Fullword,
 				})
 				allPatterns = append(allPatterns, p)
 			}
