@@ -129,16 +129,6 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 	}
 
-	// Fallback: run regexes with no atoms against the full buffer
-	for _, rp := range r.noAtomRegexes {
-		if rp.re.Match(buf) {
-			if ruleMatches[rp.ruleIndex] == nil {
-				ruleMatches[rp.ruleIndex] = make(map[string]bool)
-			}
-			ruleMatches[rp.ruleIndex][rp.stringName] = true
-		}
-	}
-
 	// Call callback for each matching rule
 	for ruleIdx, matchedStrings := range ruleMatches {
 		select {

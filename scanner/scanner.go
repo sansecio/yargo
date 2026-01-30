@@ -80,13 +80,17 @@ type Rules struct {
 	warnings      []string
 
 	// Atom-based regex optimization
-	atomMatcher   *ahocorasick.AhoCorasick
-	atomPatterns  [][]byte
-	atomMap       []atomRef       // maps atom index to regex pattern
-	noAtomRegexes []*regexPattern // regexes with no extractable atoms (fallback)
+	atomMatcher  *ahocorasick.AhoCorasick
+	atomPatterns [][]byte
+	atomMap      []atomRef // maps atom index to regex pattern
 }
 
 // Warnings returns any warnings generated during compilation.
 func (r *Rules) Warnings() []string {
 	return r.warnings
+}
+
+// Stats returns compilation statistics.
+func (r *Rules) Stats() (acPatterns, regexWithAtoms int) {
+	return len(r.patterns), len(r.regexPatterns)
 }

@@ -10,11 +10,11 @@ type Atom struct {
 	Offset int // Position in regex where atom starts (approximate)
 }
 
-// extractAtoms parses a regex and extracts literal atoms for matching.
+// ExtractAtoms parses a regex and extracts literal atoms for matching.
 // For alternation patterns (a|b|c), returns atoms from all branches.
 // For sequential patterns, returns the single best atom.
 // Returns the atoms and whether any were found meeting minLen.
-func extractAtoms(pattern string, minLen int) ([]Atom, bool) {
+func ExtractAtoms(pattern string, minLen int) ([]Atom, bool) {
 	// Check if this is a top-level alternation (e.g., "cat|dog|bird")
 	if isTopLevelAlternation(pattern) {
 		return extractAlternationAtoms(pattern, minLen)
@@ -250,15 +250,24 @@ func extractLiteralRuns(pattern string) []literalRun {
 			currentOffset = i
 
 		case '{':
-			// Curly brace quantifier {n} or {n,m}
-			// Remove the last byte from current run
-			if len(current) > 0 {
-				current = current[:len(current)-1]
+			// Check if this is actually a quantifier {n} or {n,m}
+			if isQuantifier(pattern, i) {
+				// Remove the last byte from current run
+				if len(current) > 0 {
+					current = current[:len(current)-1]
+				}
+				runs = appendRun(runs, current, currentOffset)
+				current = nil
+				i = skipQuantifier(pattern, i)
+				currentOffset = i
+			} else {
+				// Literal {
+				if current == nil {
+					currentOffset = i
+				}
+				current = append(current, c)
+				i++
 			}
-			runs = appendRun(runs, current, currentOffset)
-			current = nil
-			i = skipQuantifier(pattern, i)
-			currentOffset = i
 
 		case '.':
 			// Dot matches any character - break the run
@@ -345,6 +354,45 @@ func skipQuantifier(pattern string, i int) int {
 		i++ // skip '}'
 	}
 	return i
+}
+
+// isQuantifier checks if pattern[i] starts a valid quantifier {n} or {n,m}.
+func isQuantifier(pattern string, i int) bool {
+	if i >= len(pattern) || pattern[i] != '{' {
+		return false
+	}
+	i++ // skip '{'
+
+	// Must start with a digit
+	if i >= len(pattern) || (pattern[i] < '0' || pattern[i] > '9') {
+		return false
+	}
+
+	// Skip digits
+	for i < len(pattern) && pattern[i] >= '0' && pattern[i] <= '9' {
+		i++
+	}
+
+	if i >= len(pattern) {
+		return false
+	}
+
+	// Either } or ,
+	if pattern[i] == '}' {
+		return true
+	}
+	if pattern[i] != ',' {
+		return false
+	}
+	i++ // skip ','
+
+	// Optional digits after comma
+	for i < len(pattern) && pattern[i] >= '0' && pattern[i] <= '9' {
+		i++
+	}
+
+	// Must end with }
+	return i < len(pattern) && pattern[i] == '}'
 }
 
 // atomQuality scores an atom - longer + uncommon bytes = better.

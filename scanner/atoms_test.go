@@ -191,21 +191,21 @@ func TestExtractAtoms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			atoms, ok := extractAtoms(tt.pattern, tt.minLen)
+			atoms, ok := ExtractAtoms(tt.pattern, tt.minLen)
 			if ok != tt.wantOk {
-				t.Errorf("extractAtoms(%q, %d) ok = %v, want %v", tt.pattern, tt.minLen, ok, tt.wantOk)
+				t.Errorf("ExtractAtoms(%q, %d) ok = %v, want %v", tt.pattern, tt.minLen, ok, tt.wantOk)
 				return
 			}
 			if !ok {
 				return
 			}
 			if len(atoms) == 0 {
-				t.Errorf("extractAtoms(%q, %d) returned ok=true but no atoms", tt.pattern, tt.minLen)
+				t.Errorf("ExtractAtoms(%q, %d) returned ok=true but no atoms", tt.pattern, tt.minLen)
 				return
 			}
 			got := string(atoms[0].Bytes)
 			if got != tt.wantAtom {
-				t.Errorf("extractAtoms(%q, %d) atom = %q, want %q", tt.pattern, tt.minLen, got, tt.wantAtom)
+				t.Errorf("ExtractAtoms(%q, %d) atom = %q, want %q", tt.pattern, tt.minLen, got, tt.wantAtom)
 			}
 		})
 	}
@@ -254,7 +254,7 @@ func TestAtomQuality(t *testing.T) {
 
 func TestExtractAtomsMultiple(t *testing.T) {
 	// Test that top-level alternation extracts atoms from all branches
-	atoms, ok := extractAtoms(`cat|dog|bird`, 3)
+	atoms, ok := ExtractAtoms(`cat|dog|bird`, 3)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -280,7 +280,7 @@ func TestExtractAtomsMultiple(t *testing.T) {
 
 func TestExtractAtomsGroupedAlternation(t *testing.T) {
 	// Alternation inside a group is not top-level, picks best atom
-	atoms, ok := extractAtoms(`prefix(foo|bar|baz)suffix`, 3)
+	atoms, ok := ExtractAtoms(`prefix(foo|bar|baz)suffix`, 3)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}

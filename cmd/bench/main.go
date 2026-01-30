@@ -15,7 +15,7 @@ import (
 func main() {
 	rulesPath := flag.String("rules", "fixture/ecomscan.yar", "path to YARA rules file")
 	scanPath := flag.String("scan", "fixture/Product.php", "path to file to scan")
-	iterations := flag.Int("n", 100, "number of iterations")
+	iterations := flag.Int("n", 1, "number of iterations")
 	flag.Parse()
 
 	// Load file to scan
@@ -31,7 +31,15 @@ func main() {
 	goYaraTime, goYaraMatches := benchGoYara(*rulesPath, data, *iterations)
 
 	// Benchmark yargo
-	yargoTime, yargoMatches := benchYargo(*rulesPath, data, *iterations)
+	yargoTime, yargoMatches, warnings := benchYargo(*rulesPath, data, *iterations)
+
+	// Print warnings
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
+	if len(warnings) > 0 {
+		fmt.Fprintln(os.Stderr)
+	}
 
 	// Output results
 	fmt.Printf("go-yara:  %v  (%.2f MB/s)  %d matches\n",
@@ -81,7 +89,7 @@ func benchGoYara(rulesPath string, data []byte, iterations int) (time.Duration, 
 	return elapsed / time.Duration(iterations), len(lastMatches)
 }
 
-func benchYargo(rulesPath string, data []byte, iterations int) (time.Duration, int) {
+func benchYargo(rulesPath string, data []byte, iterations int) (time.Duration, int, []string) {
 	p, err := parser.New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "yargo: failed to create parser: %v\n", err)
@@ -116,5 +124,5 @@ func benchYargo(rulesPath string, data []byte, iterations int) (time.Duration, i
 	}
 	elapsed := time.Since(start)
 
-	return elapsed / time.Duration(iterations), len(lastMatches)
+	return elapsed / time.Duration(iterations), len(lastMatches), rules.Warnings()
 }
