@@ -1163,31 +1163,35 @@ func TestIntegrationWithRealYaraFile(t *testing.T) {
 		t.Fatalf("parser.New() error = %v", err)
 	}
 
+	parseStart := time.Now()
 	rs, err := p.ParseFile(yaraFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
-	t.Logf("Parsed %d rules", len(rs.Rules))
+	t.Logf("Parse: %v (%d rules)", time.Since(parseStart), len(rs.Rules))
 
-	// Compile rules (may fail if file contains RE2-incompatible regexes)
-	rules, err := Compile(rs)
+	// Compile rules (skip invalid regexes for RE2 incompatibility)
+	compileStart := time.Now()
+	rules, err := CompileWithOptions(rs, CompileOptions{SkipInvalidRegex: true})
 	if err != nil {
-		t.Skipf("Compile() error (RE2 incompatibility expected): %v", err)
+		t.Fatalf("Compile() error = %v", err)
 	}
+	t.Logf("Compile: %v (%d AC patterns, %d regex patterns)", time.Since(compileStart), len(rules.patterns), len(rules.regexPatterns))
 
 	// Load PHP file to scan
 	testData, err := os.ReadFile(phpFile)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	t.Logf("Scanning %d bytes (%s)", len(testData), phpFile)
 
 	// Scan the file
+	scanStart := time.Now()
 	var matches MatchRules
 	err = rules.ScanMem(testData, 0, 30*time.Second, &matches)
 	if err != nil {
 		t.Fatalf("ScanMem() error = %v", err)
 	}
+	t.Logf("Scan: %v (%d bytes)", time.Since(scanStart), len(testData))
 
 	t.Logf("Found %d matches:", len(matches))
 	for _, m := range matches {

@@ -1,14 +1,15 @@
 # Yargo
 
-Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencies. Currently provides a parser and scanner; the scanner uses the Aho-Corasick algorithm for efficient multi-pattern string matching.
+Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencies. Currently provides a parser and scanner; the scanner uses the Aho-Corasick algorithm for efficient multi-pattern string matching and go-re2 for full regex support.
 
 ## Features
 
 - Pure Go - no cgo dependencies
 - YARA rule parser with full syntax support
 - Fast multi-pattern scanner using Aho-Corasick
+- Full regex support via go-re2 with `/i`, `/s`, `/m` modifiers
 - Support for `base64` and `fullword` string modifiers
-- Regex patterns like `/\bdomain\.com\b/` handled efficiently via AC
+- Regex patterns like `/\bdomain\.com\b/` optimized via literal extraction
 - go-yara compatible API
 
 ## Installation
@@ -82,6 +83,33 @@ Benchmarked with 106,962 YARA rules scanning a 79KB PHP file:
 
 The `pgavlin/aho-corasick` library with `DFA: false` provides the best balance of compile time and scan performance. Use `DFA: true` if you're compiling rules once and scanning many files.
 
+### Regex Engine Comparison
+
+Benchmarked go-re2 vs Go's standard library regexp (6 patterns, 1MB data):
+
+| Engine | Compile (6 patterns) | Match (1MB) | Throughput |
+|--------|---------------------|-------------|------------|
+| go-re2 | 126μs | 513μs | 2043 MB/s |
+| stdlib regexp | 9μs | 1997μs | 525 MB/s |
+
+go-re2 is ~4x faster for matching, making it ideal for YARA scanning where rules are compiled once and used to scan many files.
+
+### Real-World Performance
+
+Full pipeline with 106,962 YARA rules scanning a 79KB PHP file:
+
+| Phase | Time | Details |
+|-------|------|---------|
+| Parse | 4.7s | 106,962 rules |
+| Compile | 2.4s | 134,385 AC patterns + 1,043 regex patterns |
+| Scan | 140ms | 79KB file |
+
+The scan phase breaks down as:
+- Aho-Corasick matching (134k patterns): ~2ms
+- Regex matching (1,043 patterns): ~138ms
+
+For rulesets with fewer complex regexes, scan times will be closer to the AC-only performance.
+
 ### Recommendations
 
 - **One-time scan**: Use default settings (DFA: false) for fast compilation
@@ -91,7 +119,9 @@ The `pgavlin/aho-corasick` library with `DFA: false` provides the best balance o
 ## Current Limitations
 
 - `TextString` patterns fully supported
-- `RegexString` patterns: only `/\bLITERAL\b/` form (word boundary literals)
+- `RegexString` patterns fully supported via go-re2 (RE2 syntax, not PCRE)
+  - `/\bLITERAL\b/` patterns optimized via Aho-Corasick
+  - Modifiers `/i` (case-insensitive), `/s` (dot-all), `/m` (multiline) supported
 - `HexString` patterns not yet supported
 - Only `any of them` condition is fully supported
 - Modifiers supported: `base64`, `fullword`

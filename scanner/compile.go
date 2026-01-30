@@ -11,8 +11,19 @@ import (
 	"github.com/sansecio/yargo/ast"
 )
 
+// CompileOptions configures compilation behavior.
+type CompileOptions struct {
+	// SkipInvalidRegex skips regexes that fail to compile instead of returning an error.
+	SkipInvalidRegex bool
+}
+
 // Compile compiles an AST RuleSet into Rules ready for scanning.
 func Compile(rs *ast.RuleSet) (*Rules, error) {
+	return CompileWithOptions(rs, CompileOptions{})
+}
+
+// CompileWithOptions compiles an AST RuleSet with the given options.
+func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	rules := &Rules{
 		rules: make([]*compiledRule, 0, len(rs.Rules)),
 	}
@@ -41,6 +52,9 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 				v := s.Value.(ast.RegexString)
 				rp, err := compileRegexPattern(v, ruleIdx, strIdx, s.Name)
 				if err != nil {
+					if opts.SkipInvalidRegex {
+						continue
+					}
 					return nil, fmt.Errorf("rule %q string %s: %w", r.Name, s.Name, err)
 				}
 				rules.regexPatterns = append(rules.regexPatterns, rp)
