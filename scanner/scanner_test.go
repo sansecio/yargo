@@ -1146,6 +1146,116 @@ func TestFullwordMixedWithRegular(t *testing.T) {
 	}
 }
 
+func TestSkipUnsupportedCondition(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "supported",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "match"}},
+				},
+				Condition: "any of them",
+			},
+			{
+				Name: "complex_condition",
+				Strings: []*ast.StringDef{
+					{Name: "$a", Value: ast.TextString{Value: "also_match"}},
+				},
+				Condition: "$a and filesize > 100",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// Should have a warning about skipping the rule with complex condition
+	if len(rules.Warnings()) != 1 {
+		t.Errorf("expected 1 warning, got %d", len(rules.Warnings()))
+	}
+	if len(rules.Warnings()) > 0 && rules.Warnings()[0] != `rule "complex_condition": skipping, unsupported condition "$a and filesize > 100" (only "any of them" is supported)` {
+		t.Errorf("unexpected warning: %s", rules.Warnings()[0])
+	}
+
+	// Scan data that matches both rules' strings
+	data := []byte("match also_match")
+
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	// Only the supported rule should match (the other was skipped)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match (complex condition rule should be skipped), got %d", len(matches))
+	}
+	if matches[0].Rule != "supported" {
+		t.Errorf("expected rule 'supported', got %q", matches[0].Rule)
+	}
+}
+
+func TestSkipAllOfThemCondition(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "all_of_them",
+				Strings: []*ast.StringDef{
+					{Name: "$a", Value: ast.TextString{Value: "test"}},
+				},
+				Condition: "all of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// "all of them" is not supported, should have a warning
+	if len(rules.Warnings()) != 1 {
+		t.Errorf("expected 1 warning, got %d", len(rules.Warnings()))
+	}
+
+	data := []byte("test")
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	// Rule should be skipped, no matches
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches (all of them rule should be skipped), got %d", len(matches))
+	}
+}
+
+func TestNoWarningForSupportedCondition(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "supported",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "test"}},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	if len(rules.Warnings()) != 0 {
+		t.Errorf("expected 0 warnings for supported condition, got %d: %v", len(rules.Warnings()), rules.Warnings())
+	}
+}
+
 func TestIntegrationWithRealYaraFile(t *testing.T) {
 	yaraFile := "../fixture/ecomscan.yar"
 	phpFile := "../fixture/Product.php"

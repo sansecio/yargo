@@ -30,7 +30,18 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 	var allPatterns [][]byte
 
-	for ruleIdx, r := range rs.Rules {
+	// Track actual rule index (after skipping unsupported conditions)
+	actualRuleIdx := 0
+
+	for _, r := range rs.Rules {
+		// Skip rules with unsupported conditions
+		if r.Condition != "any of them" {
+			rules.warnings = append(rules.warnings,
+				fmt.Sprintf("rule %q: skipping, unsupported condition %q (only \"any of them\" is supported)",
+					r.Name, r.Condition))
+			continue
+		}
+
 		cr := &compiledRule{
 			name:  r.Name,
 			metas: make([]Meta, 0, len(r.Meta)),
@@ -44,6 +55,8 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		}
 
 		rules.rules = append(rules.rules, cr)
+		ruleIdx := actualRuleIdx
+		actualRuleIdx++
 
 		for strIdx, s := range r.Strings {
 			patterns, forceFullword, isComplexRegex := generatePatterns(s)
