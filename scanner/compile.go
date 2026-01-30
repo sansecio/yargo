@@ -171,8 +171,8 @@ func generateBase64Patterns(data []byte) [][]byte {
 	}
 
 	padded2 := append([]byte{0, 0}, data...)
-	if enc := base64.StdEncoding.EncodeToString(padded2); len(enc) > 4 {
-		if trimmed := strings.TrimRight(enc[4:], "="); len(trimmed) > 0 {
+	if enc := base64.StdEncoding.EncodeToString(padded2); len(enc) > 3 {
+		if trimmed := strings.TrimRight(enc[3:], "="); len(trimmed) > 0 {
 			patterns = append(patterns, []byte(trimmed))
 		}
 	}
