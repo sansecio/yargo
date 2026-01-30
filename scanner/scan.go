@@ -21,13 +21,17 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	default:
 	}
 
-	// Run Aho-Corasick matching
-	matchedPatterns := r.matcher.MatchThreadSafe(buf)
-
 	// Track which rules had matches and which strings matched per rule
 	ruleMatches := make(map[int]map[string]bool)
 
-	for _, patternIdx := range matchedPatterns {
+	// Run Aho-Corasick matching using iterator
+	iter := r.matcher.IterOverlappingByte(buf)
+	for {
+		match := iter.Next()
+		if match == nil {
+			break
+		}
+		patternIdx := match.Pattern()
 		ref := r.patternMap[patternIdx]
 		if ruleMatches[ref.ruleIndex] == nil {
 			ruleMatches[ref.ruleIndex] = make(map[string]bool)

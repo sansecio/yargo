@@ -2,7 +2,7 @@
 package scanner
 
 import (
-	ahocorasick "github.com/cloudflare/ahocorasick"
+	ahocorasick "github.com/pgavlin/aho-corasick"
 )
 
 // ScanFlags controls scanning behavior.
@@ -56,7 +56,7 @@ type compiledRule struct {
 // Rules holds compiled YARA rules ready for scanning.
 type Rules struct {
 	rules      []*compiledRule
-	matcher    *ahocorasick.Matcher
+	matcher    *ahocorasick.AhoCorasick
 	patterns   [][]byte
 	patternMap []patternRef
 }

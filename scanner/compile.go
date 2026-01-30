@@ -3,7 +3,7 @@ package scanner
 import (
 	"encoding/base64"
 
-	ahocorasick "github.com/cloudflare/ahocorasick"
+	ahocorasick "github.com/pgavlin/aho-corasick"
 	"github.com/sansecio/yargo/ast"
 )
 
@@ -45,7 +45,9 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 
 	rules.patterns = allPatterns
 	if len(allPatterns) > 0 {
-		rules.matcher = ahocorasick.NewMatcher(allPatterns)
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
+		ac := builder.BuildByte(allPatterns)
+		rules.matcher = &ac
 	}
 
 	return rules, nil
