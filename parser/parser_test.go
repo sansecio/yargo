@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"os"
@@ -8,12 +8,11 @@ import (
 	"testing"
 
 	"github.com/sansecio/yargo/ast"
-	"github.com/sansecio/yargo/parser"
 )
 
 func mustParse(t *testing.T, input string) *ast.RuleSet {
 	t.Helper()
-	p, err := parser.New()
+	p, err := New()
 	if err != nil {
 		t.Fatalf("failed to create parser: %v", err)
 	}
@@ -216,7 +215,7 @@ func TestParseComments(t *testing.T) {
 }
 
 func TestWarnings(t *testing.T) {
-	p, _ := parser.New()
+	p, _ := New()
 
 	// Simple conditions - no warning
 	for _, cond := range []string{"any of them", "all of them"} {
@@ -241,7 +240,7 @@ func TestParseFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, _ := parser.New()
+	p, _ := New()
 	rs, err := p.ParseFile(path)
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
@@ -252,7 +251,7 @@ func TestParseFile(t *testing.T) {
 }
 
 func TestParseFileNotFound(t *testing.T) {
-	p, _ := parser.New()
+	p, _ := New()
 	_, err := p.ParseFile("/nonexistent/file.yar")
 	if err == nil {
 		t.Error("expected error for missing file")
@@ -269,8 +268,8 @@ func TestParseConditionWithBraces(t *testing.T) {
 
 // Helpers
 
-func intPtr(i int) *int     { return &i }
-func bytePtr(b byte) *byte  { return &b }
+func intPtr(i int) *int    { return &i }
+func bytePtr(b byte) *byte { return &b }
 
 func hexTokensEqual(a, b []ast.HexToken) bool {
 	if len(a) != len(b) {
