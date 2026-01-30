@@ -6,11 +6,17 @@ import (
 
 // extractAtoms parses a regex and extracts literal atoms for matching.
 // For alternation patterns (a|b|c), returns atoms from all branches.
-// For sequential patterns, returns the single best atom.
+// For patterns with nested alternations like "prefix(a|b|c)suffix", returns
+// atoms from all branches of the alternation.
 // Returns the atoms and whether any were found meeting minLen.
 func extractAtoms(pattern string, minLen int) ([][]byte, bool) {
 	if isTopLevelAlternation(pattern) {
 		return extractAlternationAtoms(pattern, minLen)
+	}
+
+	// Check for nested alternations and extract atoms from all branches
+	if altAtoms := extractNestedAlternationAtoms(pattern, minLen); len(altAtoms) > 0 {
+		return altAtoms, true
 	}
 
 	runs := extractLiteralRuns(pattern)
@@ -69,6 +75,103 @@ func extractAlternationAtoms(pattern string, minLen int) ([][]byte, bool) {
 		return nil, false
 	}
 	return atoms, true
+}
+
+// extractNestedAlternationAtoms finds alternation groups within the pattern
+// and extracts atoms from all branches. For example, "prefix(a|b|c)suffix"
+// would extract atoms from "prefixa", "prefixb", "prefixc" (or their suffixes).
+func extractNestedAlternationAtoms(pattern string, minLen int) [][]byte {
+	// Find all alternation groups (content between matching parens that contains |)
+	groups := findAlternationGroups(pattern)
+	if len(groups) == 0 {
+		return nil
+	}
+
+	var allAtoms [][]byte
+	for _, g := range groups {
+		branches := splitAlternation(g.content)
+		for _, branch := range branches {
+			runs := extractLiteralRuns(branch)
+			if best := findBestRun(runs, minLen); best != nil {
+				allAtoms = append(allAtoms, best)
+			}
+		}
+	}
+	return allAtoms
+}
+
+type altGroup struct {
+	start, end int
+	content    string
+}
+
+// findAlternationGroups finds parenthesized groups that contain alternation.
+func findAlternationGroups(pattern string) []altGroup {
+	var groups []altGroup
+	var stack []int // stack of '(' positions
+
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			i++ // skip escaped char
+		case '(':
+			stack = append(stack, i)
+		case ')':
+			if len(stack) > 0 {
+				start := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				content := pattern[start+1 : i]
+				// Check if this group contains alternation at its level
+				if containsAlternationAtDepth0(content) {
+					groups = append(groups, altGroup{start, i, content})
+				}
+			}
+		}
+	}
+	return groups
+}
+
+// containsAlternationAtDepth0 checks if the string has | at depth 0.
+func containsAlternationAtDepth0(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case '|':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitAlternation splits a string by | at depth 0.
+func splitAlternation(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case '|':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, s[start:])
 }
 
 // splitTopLevelAlternation splits a pattern by top-level | characters.

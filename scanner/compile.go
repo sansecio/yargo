@@ -161,23 +161,55 @@ func hexStringToBytes(h ast.HexString) []byte {
 func generateBase64Patterns(data []byte) [][]byte {
 	patterns := make([][]byte, 0, 3)
 
-	patterns = append(patterns, []byte(base64.StdEncoding.EncodeToString(data)))
+	// Offset 0: full encoding, trim trailing context-dependent char if needed
+	enc0 := base64.StdEncoding.EncodeToString(data)
+	enc0 = strings.TrimRight(enc0, "=")
+	if trim := trailingUnstableChars(len(data)); trim > 0 && len(enc0) > trim {
+		enc0 = enc0[:len(enc0)-trim]
+	}
+	if len(enc0) > 0 {
+		patterns = append(patterns, []byte(enc0))
+	}
 
+	// Offset 1: skip first 2 chars (depend on prefix), trim trailing unstable
 	padded1 := append([]byte{0}, data...)
 	if enc := base64.StdEncoding.EncodeToString(padded1); len(enc) > 2 {
-		if trimmed := strings.TrimRight(enc[2:], "="); len(trimmed) > 0 {
+		trimmed := strings.TrimRight(enc[2:], "=")
+		if trim := trailingUnstableChars(len(data) + 1); trim > 0 && len(trimmed) > trim {
+			trimmed = trimmed[:len(trimmed)-trim]
+		}
+		if len(trimmed) > 0 {
 			patterns = append(patterns, []byte(trimmed))
 		}
 	}
 
+	// Offset 2: skip first 3 chars (depend on prefix), trim trailing unstable
 	padded2 := append([]byte{0, 0}, data...)
 	if enc := base64.StdEncoding.EncodeToString(padded2); len(enc) > 3 {
-		if trimmed := strings.TrimRight(enc[3:], "="); len(trimmed) > 0 {
+		trimmed := strings.TrimRight(enc[3:], "=")
+		if trim := trailingUnstableChars(len(data) + 2); trim > 0 && len(trimmed) > trim {
+			trimmed = trimmed[:len(trimmed)-trim]
+		}
+		if len(trimmed) > 0 {
 			patterns = append(patterns, []byte(trimmed))
 		}
 	}
 
 	return patterns
+}
+
+// trailingUnstableChars returns how many trailing base64 chars depend on
+// what follows the data. When data length isn't a multiple of 3, the final
+// base64 chars encode partial bytes that include bits from following data.
+func trailingUnstableChars(dataLen int) int {
+	switch dataLen % 3 {
+	case 1:
+		return 1 // last char encodes 2 bits of data + 4 bits of next byte
+	case 2:
+		return 1 // last char encodes 4 bits of data + 2 bits of next byte
+	default:
+		return 0 // complete 3-byte groups, fully stable
+	}
 }
 
 func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {

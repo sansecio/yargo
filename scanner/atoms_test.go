@@ -18,7 +18,7 @@ func Test_extractAtoms(t *testing.T) {
 		{"mixed hex and literal", `test\x2Eexe`, 3, true, "test.exe"},
 		{"literal before character class", `hello[0-9]+worldly`, 3, true, "worldly"},
 		{"literal after quantifier", `a+longword`, 3, true, "longword"},
-		{"alternation picks longest branch", `(foo|barbaz)`, 3, true, "barbaz"},
+		{"alternation extracts all branches", `(foo|barbaz)`, 3, true, "foo"}, // now returns atoms from all branches
 		{"word boundary pattern", `\bhello\b`, 3, true, "hello"},
 		{"digit class breaks run", `hello\dworldly`, 3, true, "worldly"},
 		{"word class breaks run", `abc\wdef`, 3, true, "abc"},
@@ -105,7 +105,17 @@ func Test_extractAtomsGroupedAlternation(t *testing.T) {
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
-	if len(atoms) != 1 {
-		t.Fatalf("expected 1 atom for grouped alternation, got %d", len(atoms))
+	// Now extracts atoms from all branches of nested alternation
+	if len(atoms) != 3 {
+		t.Fatalf("expected 3 atoms for grouped alternation (one per branch), got %d", len(atoms))
+	}
+	found := make(map[string]bool)
+	for _, a := range atoms {
+		found[string(a)] = true
+	}
+	for _, want := range []string{"foo", "bar", "baz"} {
+		if !found[want] {
+			t.Errorf("expected atom %q", want)
+		}
 	}
 }
