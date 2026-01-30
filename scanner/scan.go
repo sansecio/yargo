@@ -8,7 +8,7 @@ import (
 
 // maxMatchLen is the maximum window size for regex verification.
 // Most YARA regex patterns match within a reasonable window.
-const maxMatchLen = 4096
+const maxMatchLen = 512
 
 // isWordChar returns true if b is alphanumeric or underscore (YARA word character).
 func isWordChar(b byte) bool {
