@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"encoding/base64"
+	"strings"
 
 	ahocorasick "github.com/pgavlin/aho-corasick"
 	"github.com/sansecio/yargo/ast"
@@ -31,13 +32,13 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 		rules.rules = append(rules.rules, cr)
 
 		for strIdx, s := range r.Strings {
-			patterns := generatePatterns(s)
+			patterns, forceFullword := generatePatterns(s)
 			for _, p := range patterns {
 				rules.patternMap = append(rules.patternMap, patternRef{
 					ruleIndex:   ruleIdx,
 					stringIndex: strIdx,
 					stringName:  s.Name,
-					fullword:    s.Modifiers.Fullword,
+					fullword:    s.Modifiers.Fullword || forceFullword,
 				})
 				allPatterns = append(allPatterns, p)
 			}
@@ -55,19 +56,45 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 }
 
 // generatePatterns generates byte patterns for a string definition.
+// Returns patterns and whether fullword matching should be forced.
 // For TextString with base64 modifier, it generates 3 rotations.
-func generatePatterns(s *ast.StringDef) [][]byte {
-	ts, ok := s.Value.(ast.TextString)
-	if !ok {
-		// Only TextString supported for now
-		return nil
+// For RegexString with \bLITERAL\b pattern, extracts the literal.
+func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
+	switch v := s.Value.(type) {
+	case ast.TextString:
+		if s.Modifiers.Base64 {
+			return generateBase64Patterns([]byte(v.Value)), false
+		}
+		return [][]byte{[]byte(v.Value)}, false
+
+	case ast.RegexString:
+		if literal, ok := extractWordBoundaryLiteral(v.Pattern); ok {
+			return [][]byte{[]byte(literal)}, true
+		}
+		return nil, false
+
+	default:
+		return nil, false
+	}
+}
+
+// extractWordBoundaryLiteral extracts the literal from a \bLITERAL\b regex pattern.
+// Returns the unescaped literal and true if successful.
+func extractWordBoundaryLiteral(pattern string) (string, bool) {
+	if len(pattern) < 5 ||
+		pattern[0] != '\\' || pattern[1] != 'b' ||
+		pattern[len(pattern)-2] != '\\' || pattern[len(pattern)-1] != 'b' {
+		return "", false
 	}
 
-	if s.Modifiers.Base64 {
-		return generateBase64Patterns([]byte(ts.Value))
+	inner := pattern[2 : len(pattern)-2]
+	if len(inner) == 0 {
+		return "", false
 	}
 
-	return [][]byte{[]byte(ts.Value)}
+	// Unescape \. to .
+	literal := strings.ReplaceAll(inner, `\.`, ".")
+	return literal, true
 }
 
 // generateBase64Patterns generates 3 base64 patterns to handle all alignments.

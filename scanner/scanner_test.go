@@ -533,6 +533,138 @@ func TestFullwordAtBufferBoundaries(t *testing.T) {
 	}
 }
 
+func TestRegexWordBoundary(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "regex_wordboundary",
+				Strings: []*ast.StringDef{
+					{
+						Name:  "$s",
+						Value: ast.RegexString{Pattern: `\bmalware\b`},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"standalone", []byte("this is malware here"), true},
+		{"at_start", []byte("malware detected"), true},
+		{"at_end", []byte("found malware"), true},
+		{"whole_buffer", []byte("malware"), true},
+		{"prefix_no_match", []byte("malwarebytes"), false},
+		{"suffix_no_match", []byte("antimalware"), false},
+		{"embedded_no_match", []byte("testmalwaretest"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegexWordBoundaryWithDot(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "domain_match",
+				Strings: []*ast.StringDef{
+					{
+						Name:  "$s",
+						Value: ast.RegexString{Pattern: `\bevil\.com\b`},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"match", []byte("visit evil.com today"), true},
+		{"at_start", []byte("evil.com is bad"), true},
+		{"at_end", []byte("go to evil.com"), true},
+		{"no_match_prefix", []byte("notevil.com"), false},
+		{"no_match_suffix", []byte("evil.comstuff"), false},
+		{"no_match_unescaped", []byte("evilXcom"), false}, // dot must be literal
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegexWordBoundaryWithDash(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "dash_domain",
+				Strings: []*ast.StringDef{
+					{
+						Name:  "$s",
+						Value: ast.RegexString{Pattern: `\bevil-site\.com\b`},
+					},
+				},
+				Condition: "any of them",
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	data := []byte("check evil-site.com now")
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Errorf("expected 1 match, got %d", len(matches))
+	}
+}
+
 func TestFullwordMixedWithRegular(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
