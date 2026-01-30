@@ -63,7 +63,10 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	// Track which rules had matches and which strings matched per rule
 	ruleMatches := make(map[int]map[string]bool)
 
-	// Run Aho-Corasick matching using iterator
+	// Collect atom candidate positions for regex verification
+	atomCandidates := make(map[int][]int) // regexIdx -> candidate start positions
+
+	// Run Aho-Corasick matching using iterator (handles both literals and atoms)
 	if r.matcher != nil {
 		iter := r.matcher.IterOverlappingByte(buf)
 		for {
@@ -74,7 +77,13 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 			patternIdx := match.Pattern()
 			ref := r.patternMap[patternIdx]
 
-			// Check word boundaries if required
+			if ref.isAtom {
+				// Atom match - store position for regex verification
+				atomCandidates[ref.regexIdx] = append(atomCandidates[ref.regexIdx], match.Start())
+				continue
+			}
+
+			// Literal match - check word boundaries if required
 			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
 				continue
 			}
@@ -86,48 +95,31 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 	}
 
-	// Atom-based regex matching: use atoms to filter which regexes to run
-	if r.atomMatcher != nil {
-		// Collect candidate positions for each regex
-		candidates := make(map[int][]int) // regexIdx -> candidate start positions
+	// Verify regexes at atom candidate positions
+	halfWindow := maxMatchLen / 2
+	for regexIdx, positions := range atomCandidates {
+		rp := r.regexPatterns[regexIdx]
+		positions = dedupePositions(positions)
 
-		iter := r.atomMatcher.IterOverlappingByte(buf)
-		for {
-			match := iter.Next()
-			if match == nil {
-				break
+		for _, atomPos := range positions {
+			// Center the window around the atom position to capture
+			// content both before and after the atom
+			start := atomPos - halfWindow
+			if start < 0 {
+				start = 0
 			}
-			ref := r.atomMap[match.Pattern()]
-			// Store the atom match position - we'll center the window around it
-			candidates[ref.regexIdx] = append(candidates[ref.regexIdx], match.Start())
-		}
+			end := atomPos + halfWindow
+			if end > len(buf) {
+				end = len(buf)
+			}
+			window := buf[start:end]
 
-		// Verify each regex only at candidate positions
-		halfWindow := maxMatchLen / 2
-		for regexIdx, positions := range candidates {
-			rp := r.regexPatterns[regexIdx]
-			positions = dedupePositions(positions)
-
-			for _, atomPos := range positions {
-				// Center the window around the atom position to capture
-				// content both before and after the atom
-				start := atomPos - halfWindow
-				if start < 0 {
-					start = 0
+			if rp.re.Match(window) {
+				if ruleMatches[rp.ruleIndex] == nil {
+					ruleMatches[rp.ruleIndex] = make(map[string]bool)
 				}
-				end := atomPos + halfWindow
-				if end > len(buf) {
-					end = len(buf)
-				}
-				window := buf[start:end]
-
-				if rp.re.Match(window) {
-					if ruleMatches[rp.ruleIndex] == nil {
-						ruleMatches[rp.ruleIndex] = make(map[string]bool)
-					}
-					ruleMatches[rp.ruleIndex][rp.stringName] = true
-					break // found a match, no need to check more positions
-				}
+				ruleMatches[rp.ruleIndex][rp.stringName] = true
+				break // found a match, no need to check more positions
 			}
 		}
 	}

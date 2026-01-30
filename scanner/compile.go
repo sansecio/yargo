@@ -3,7 +3,6 @@ package scanner
 import (
 	"encoding/base64"
 	"fmt"
-	"strings"
 
 	ahocorasick "github.com/pgavlin/aho-corasick"
 	re2 "github.com/wasilibs/go-re2"
@@ -29,8 +28,6 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	var allPatterns [][]byte
-	var allAtomPatterns [][]byte
-	var atomRefs []atomRef
 
 	// Track actual rule index (after skipping unsupported conditions)
 	actualRuleIdx := 0
@@ -61,7 +58,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		actualRuleIdx++
 
 		for strIdx, s := range r.Strings {
-			patterns, forceFullword, isComplexRegex := generatePatterns(s)
+			patterns, isComplexRegex := generatePatterns(s)
 			if isComplexRegex {
 				// Complex regex - compile with go-re2
 				v := s.Value.(ast.RegexString)
@@ -82,8 +79,11 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				if hasAtoms && !v.Modifiers.CaseInsensitive {
 					rp.hasAtom = true
 					for _, atom := range atoms {
-						allAtomPatterns = append(allAtomPatterns, atom.Bytes)
-						atomRefs = append(atomRefs, atomRef{regexIdx: regexIdx})
+						rules.patternMap = append(rules.patternMap, patternRef{
+							isAtom:   true,
+							regexIdx: regexIdx,
+						})
+						allPatterns = append(allPatterns, atom.Bytes)
 					}
 				} else {
 					// Skip regexes without extractable atoms - too expensive to scan full buffer
@@ -101,7 +101,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 					ruleIndex:   ruleIdx,
 					stringIndex: strIdx,
 					stringName:  s.Name,
-					fullword:    s.Modifiers.Fullword || forceFullword,
+					fullword:    s.Modifiers.Fullword,
 				})
 				allPatterns = append(allPatterns, p)
 			}
@@ -115,60 +115,28 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		rules.matcher = &ac
 	}
 
-	// Build atom matcher for regex optimization
-	rules.atomPatterns = allAtomPatterns
-	rules.atomMap = atomRefs
-	if len(allAtomPatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{DFA: true})
-		ac := builder.BuildByte(allAtomPatterns)
-		rules.atomMatcher = &ac
-	}
-
 	return rules, nil
 }
 
 // generatePatterns generates byte patterns for a string definition.
-// Returns patterns, whether fullword matching should be forced, and whether this is a complex regex.
+// Returns patterns and whether this is a complex regex.
 // For TextString with base64 modifier, it generates 3 rotations.
-// For RegexString with \bLITERAL\b pattern, extracts the literal.
-// For complex RegexString patterns, returns isComplexRegex=true.
-func generatePatterns(s *ast.StringDef) (patterns [][]byte, forceFullword bool, isComplexRegex bool) {
+// For RegexString patterns, returns isComplexRegex=true.
+func generatePatterns(s *ast.StringDef) (patterns [][]byte, isComplexRegex bool) {
 	switch v := s.Value.(type) {
 	case ast.TextString:
 		if s.Modifiers.Base64 {
-			return generateBase64Patterns([]byte(v.Value)), false, false
+			return generateBase64Patterns([]byte(v.Value)), false
 		}
-		return [][]byte{[]byte(v.Value)}, false, false
+		return [][]byte{[]byte(v.Value)}, false
 
 	case ast.RegexString:
-		if literal, ok := extractWordBoundaryLiteral(v.Pattern); ok {
-			return [][]byte{[]byte(literal)}, true, false
-		}
-		// Complex regex - signal to caller to compile it separately
-		return nil, false, true
+		_ = v // unused, but type switch needs it
+		return nil, true
 
 	default:
-		return nil, false, false
+		return nil, false
 	}
-}
-
-// extractWordBoundaryLiteral extracts the literal from a \bLITERAL\b regex pattern.
-// Returns the unescaped literal and true if successful.
-func extractWordBoundaryLiteral(pattern string) (string, bool) {
-	if len(pattern) < 5 ||
-		pattern[0] != '\\' || pattern[1] != 'b' ||
-		pattern[len(pattern)-2] != '\\' || pattern[len(pattern)-1] != 'b' {
-		return "", false
-	}
-
-	inner := pattern[2 : len(pattern)-2]
-	if len(inner) == 0 {
-		return "", false
-	}
-
-	// Unescape \. to .
-	literal := strings.ReplaceAll(inner, `\.`, ".")
-	return literal, true
 }
 
 // generateBase64Patterns generates 3 base64 patterns to handle all alignments.
