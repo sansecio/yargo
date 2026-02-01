@@ -79,14 +79,19 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 }
 
 func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, allPatterns [][]byte, opts CompileOptions) ([][]byte, error) {
-	v, ok := s.Value.(ast.RegexString)
-	if !ok {
-		rules.warnings = append(rules.warnings,
-			fmt.Sprintf("rule %q: skipping complex hex string", ruleName))
+	var rePattern string
+	var caseInsensitive bool
+
+	switch v := s.Value.(type) {
+	case ast.RegexString:
+		rePattern = buildRE2Pattern(v.Pattern, v.Modifiers)
+		caseInsensitive = v.Modifiers.CaseInsensitive
+	case ast.HexString:
+		rePattern = "(?s)" + hexStringToRegex(v)
+		caseInsensitive = false
+	default:
 		return allPatterns, nil
 	}
-
-	rePattern := buildRE2Pattern(v.Pattern, v.Modifiers)
 	compiled, err := experimental.CompileLatin1(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
@@ -104,7 +109,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	rules.regexPatterns = append(rules.regexPatterns, rp)
 
 	atoms, hasAtoms := extractAtoms(rePattern, 3)
-	if hasAtoms && !v.Modifiers.CaseInsensitive {
+	if hasAtoms && !caseInsensitive {
 		rp.hasAtom = true
 		for _, atom := range atoms {
 			rules.patternMap = append(rules.patternMap, patternRef{
@@ -156,6 +161,72 @@ func hexStringToBytes(h ast.HexString) []byte {
 		}
 	}
 	return result
+}
+
+func hexStringToRegex(h ast.HexString) string {
+	var sb strings.Builder
+
+	// Coalesce consecutive wildcards into a single .{n}
+	i := 0
+	for i < len(h.Tokens) {
+		switch t := h.Tokens[i].(type) {
+		case ast.HexByte:
+			fmt.Fprintf(&sb, "\\x%02x", t.Value)
+		case ast.HexWildcard:
+			// Count consecutive wildcards
+			count := 1
+			for i+count < len(h.Tokens) {
+				if _, ok := h.Tokens[i+count].(ast.HexWildcard); ok {
+					count++
+				} else {
+					break
+				}
+			}
+			if count == 1 {
+				sb.WriteByte('.')
+			} else {
+				fmt.Fprintf(&sb, ".{%d}", count)
+			}
+			i += count - 1 // -1 because the loop will increment
+		case ast.HexJump:
+			writeJump(&sb, t)
+		case ast.HexAlt:
+			writeAlt(&sb, t)
+		}
+		i++
+	}
+
+	return sb.String()
+}
+
+func writeJump(sb *strings.Builder, j ast.HexJump) {
+	switch {
+	case j.Min == nil && j.Max == nil:
+		sb.WriteString(".*")
+	case j.Min != nil && j.Max != nil && *j.Min == *j.Max:
+		fmt.Fprintf(sb, ".{%d}", *j.Min)
+	case j.Min != nil && j.Max != nil:
+		fmt.Fprintf(sb, ".{%d,%d}", *j.Min, *j.Max)
+	case j.Min != nil:
+		fmt.Fprintf(sb, ".{%d,}", *j.Min)
+	case j.Max != nil:
+		fmt.Fprintf(sb, ".{0,%d}", *j.Max)
+	}
+}
+
+func writeAlt(sb *strings.Builder, a ast.HexAlt) {
+	sb.WriteString("(?:")
+	for i, item := range a.Alternatives {
+		if i > 0 {
+			sb.WriteByte('|')
+		}
+		if item.Wildcard {
+			sb.WriteByte('.')
+		} else if item.Byte != nil {
+			fmt.Fprintf(sb, "\\x%02x", *item.Byte)
+		}
+	}
+	sb.WriteByte(')')
 }
 
 func generateBase64Patterns(data []byte) [][]byte {
