@@ -138,3 +138,76 @@ func Test_extractAtomsNestedAlternationBetter(t *testing.T) {
 		}
 	}
 }
+
+func Test_extractAtomsOptionalGroup(t *testing.T) {
+	// Atoms from optional groups should NOT be used - they might not appear in matches
+	// Pattern: (window\.)?atob\( - "window." is optional, "atob(" is required
+	atoms, ok := extractAtoms(`(window\.)?atob\(`, 3)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+	if len(atoms) != 1 {
+		t.Fatalf("expected 1 atom, got %d", len(atoms))
+	}
+	// Should extract "atob(" (required), NOT "window." (optional)
+	if got := string(atoms[0]); got != "atob(" {
+		t.Errorf("expected atom 'atob(' (required), got %q (likely from optional group)", got)
+	}
+}
+
+func Test_extractAtomsOptionalGroupStar(t *testing.T) {
+	// Groups followed by * are optional (0 or more)
+	atoms, ok := extractAtoms(`(prefix)*suffix`, 3)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+	if len(atoms) != 1 {
+		t.Fatalf("expected 1 atom, got %d", len(atoms))
+	}
+	// Should extract "suffix" (required), NOT "prefix" (optional via *)
+	if got := string(atoms[0]); got != "suffix" {
+		t.Errorf("expected atom 'suffix' (required), got %q", got)
+	}
+}
+
+func Test_extractAtomsOptionalGroupZeroMin(t *testing.T) {
+	// Groups followed by {0,N} are optional
+	atoms, ok := extractAtoms(`(optional){0,5}required`, 3)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+	if len(atoms) != 1 {
+		t.Fatalf("expected 1 atom, got %d", len(atoms))
+	}
+	// Should extract "required", NOT "optional"
+	if got := string(atoms[0]); got != "required" {
+		t.Errorf("expected atom 'required', got %q", got)
+	}
+}
+
+func Test_extractAtomsRealPattern(t *testing.T) {
+	// Real pattern from base64_obfuscated_inclusion rules
+	// The file has "atob(" without "window." prefix
+	atoms, ok := extractAtoms(`\.src ?= ?(window\.)?atob\(['"][^\)]{4,250}\)`, 3)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+	// Should NOT extract "window." since it's optional
+	for _, a := range atoms {
+		if string(a) == "window." {
+			t.Errorf("should not extract 'window.' from optional group")
+		}
+	}
+	// Should extract something required like "atob(" or ".src"
+	found := false
+	for _, a := range atoms {
+		s := string(a)
+		if s == "atob(" || s == ".src" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected to find required atom like 'atob(' or '.src', got %q", atoms)
+	}
+}

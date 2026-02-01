@@ -192,27 +192,82 @@ func splitAlternation(s string) []string {
 }
 
 // extractLiteralRunsOutsideAlternations extracts literals from parts of the
-// pattern that are not inside alternation groups. These are "required" literals
-// that must appear in any match.
+// pattern that are not inside alternation groups or optional groups.
+// These are "required" literals that must appear in any match.
 func extractLiteralRunsOutsideAlternations(pattern string) [][]byte {
-	// Find alternation groups to exclude
-	groups := findAlternationGroups(pattern)
-	if len(groups) == 0 {
+	// Find groups to exclude: alternations and optional groups
+	altGroups := findAlternationGroups(pattern)
+	optGroups := findOptionalGroups(pattern)
+
+	if len(altGroups) == 0 && len(optGroups) == 0 {
 		return extractLiteralRuns(pattern)
 	}
 
-	// Build pattern with alternation groups replaced by a placeholder
-	// that won't produce literal runs
+	// Build pattern with excluded groups replaced by dots to break literal runs
 	modified := []byte(pattern)
-	for i := len(groups) - 1; i >= 0; i-- {
-		g := groups[i]
-		// Replace the group (including parens) with dots to break literal runs
+
+	// Replace alternation groups
+	for i := len(altGroups) - 1; i >= 0; i-- {
+		g := altGroups[i]
+		for j := g.start; j <= g.end && j < len(modified); j++ {
+			modified[j] = '.'
+		}
+	}
+
+	// Replace optional groups
+	for i := len(optGroups) - 1; i >= 0; i-- {
+		g := optGroups[i]
 		for j := g.start; j <= g.end && j < len(modified); j++ {
 			modified[j] = '.'
 		}
 	}
 
 	return extractLiteralRuns(string(modified))
+}
+
+// findOptionalGroups finds parenthesized groups that are optional
+// (followed by ?, *, or {0,N}).
+func findOptionalGroups(pattern string) []altGroup {
+	var groups []altGroup
+	var stack []int // stack of '(' positions
+
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			i++ // skip escaped char
+		case '(':
+			stack = append(stack, i)
+		case ')':
+			if len(stack) > 0 {
+				start := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				// Check if this group is followed by an optional quantifier
+				if isOptionalQuantifier(pattern, i+1) {
+					groups = append(groups, altGroup{start, i, pattern[start+1 : i]})
+				}
+			}
+		}
+	}
+	return groups
+}
+
+// isOptionalQuantifier checks if position i starts an optional quantifier (?, *, {0,N}).
+func isOptionalQuantifier(pattern string, i int) bool {
+	if i >= len(pattern) {
+		return false
+	}
+	switch pattern[i] {
+	case '?', '*':
+		return true
+	case '{':
+		// Check for {0 or {,N} patterns
+		if i+1 < len(pattern) {
+			if pattern[i+1] == '0' || pattern[i+1] == ',' {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // splitTopLevelAlternation splits a pattern by top-level | characters.
