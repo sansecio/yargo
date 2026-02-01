@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"syscall"
 	"time"
 
@@ -18,7 +20,11 @@ type corpusFile struct {
 	data []byte
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo scan only)")
+
 func main() {
+	flag.Parse()
+
 	yaraFile := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/build/ecomscan.yar")
 	corpusBase := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/corpus")
 	corpusDirs := []string{
@@ -80,6 +86,15 @@ func main() {
 	goYaraDuration := time.Since(start)
 
 	// Benchmark yargo
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating profile: %v\n", err)
+			os.Exit(1)
+		}
+		pprof.StartCPUProfile(f)
+	}
+
 	start = time.Now()
 	var yargoMatches int
 	for _, file := range files {
@@ -90,6 +105,10 @@ func main() {
 		yargoMatches += len(matches)
 	}
 	yargoDuration := time.Since(start)
+
+	if *cpuprofile != "" {
+		pprof.StopCPUProfile()
+	}
 
 	fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, goYaraMatches)
 	fmt.Printf("yargo:               %v (%d matches)\n", yargoDuration, yargoMatches)
