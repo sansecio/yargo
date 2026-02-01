@@ -8,6 +8,8 @@ github.com/coregx/ahocorasick v0.1.0 h1:CiCQwQ/Gu6pahlO3u4jrPo8q0Tb8pLknU7tzqiLR
 github.com/coregx/ahocorasick v0.1.0/go.mod h1:SDcS9KTiwLP8FHNpYSO3Q3mRqrK8SYJAYpygrhcIils=
 github.com/coregx/coregex v0.11.4 h1:e1KgY4erplSznW/NSIXC5s2aWtBjJZpB3JbySJ3mMyU=
 github.com/coregx/coregex v0.11.4/go.mod h1:K+BrFVuOaFseP4gc4/d/GveYFe4JB95FHW3kNNJaTXg=
+github.com/coregx/coregex v0.11.5 h1:9gc1lkelqAalOPplc0Zqd0wWYsXsNtKIHU+U8JxRar4=
+github.com/coregx/coregex v0.11.5/go.mod h1:K+BrFVuOaFseP4gc4/d/GveYFe4JB95FHW3kNNJaTXg=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
