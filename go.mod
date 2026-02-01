@@ -11,6 +11,8 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
 	golang.org/x/sys v0.40.0 // indirect
