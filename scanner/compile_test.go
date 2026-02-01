@@ -2,6 +2,44 @@ package scanner
 
 import "testing"
 
+func Test_isValidQuantifier(t *testing.T) {
+	tests := []struct {
+		inner string
+		want  bool
+	}{
+		// Valid quantifiers
+		{"5", true},
+		{"0", true},
+		{"123", true},
+		{"5,", true},
+		{"5,10", true},
+		{"0,100", true},
+		{",5", true},
+		{",100", true},
+
+		// Invalid - not quantifiers
+		{"", false},
+		{"abc", false},
+		{"..", false},
+		{"5a", false},
+		{"a5", false},
+		{",", false},
+		{",,", false},
+		{"5,,10", false},
+		{"..:function\\(x,y\\){return x!==y;", false},
+		{"bar", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.inner, func(t *testing.T) {
+			got := isValidQuantifier(tt.inner)
+			if got != tt.want {
+				t.Errorf("isValidQuantifier(%q) = %v, want %v", tt.inner, got, tt.want)
+			}
+		})
+	}
+}
+
 func Test_fixQuantifiers(t *testing.T) {
 	tests := []struct {
 		name    string
