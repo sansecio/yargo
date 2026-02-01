@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	ahocorasick "github.com/pgavlin/aho-corasick"
-	regexp "github.com/wasilibs/go-re2"
+	"github.com/wasilibs/go-re2/experimental"
 
 	"github.com/sansecio/yargo/ast"
 )
@@ -87,7 +87,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	}
 
 	rePattern := buildRE2Pattern(v.Pattern, v.Modifiers)
-	compiled, err := regexp.Compile(rePattern)
+	compiled, err := experimental.CompileLatin1(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
 			return allPatterns, nil

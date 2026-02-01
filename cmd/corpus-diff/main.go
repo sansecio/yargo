@@ -70,16 +70,16 @@ func main() {
 			for rule := range yargoSet {
 				if !goYaraSet[rule] {
 					yargoOnly[rule]++
-					if _, ok := exampleFiles[rule]; !ok {
-						exampleFiles[rule] = path
+					if _, ok := exampleFiles["yargo:"+rule]; !ok {
+						exampleFiles["yargo:"+rule] = path
 					}
 				}
 			}
 			for rule := range goYaraSet {
 				if !yargoSet[rule] {
 					goYaraOnly[rule]++
-					if _, ok := exampleFiles[rule]; !ok {
-						exampleFiles[rule] = path
+					if _, ok := exampleFiles["goyara:"+rule]; !ok {
+						exampleFiles["goyara:"+rule] = path
 					}
 				}
 			}
@@ -91,12 +91,12 @@ func main() {
 	// Sort and print yargo-only matches
 	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
 	for _, rule := range sortByCount(yargoOnly) {
-		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, yargoOnly[rule], filepath.Base(exampleFiles[rule]))
+		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, yargoOnly[rule], filepath.Base(exampleFiles["yargo:"+rule]))
 	}
 
 	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", sumValues(goYaraOnly))
 	for _, rule := range sortByCount(goYaraOnly) {
-		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, goYaraOnly[rule], filepath.Base(exampleFiles[rule]))
+		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, goYaraOnly[rule], filepath.Base(exampleFiles["goyara:"+rule]))
 	}
 }
 
