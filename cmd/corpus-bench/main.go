@@ -49,6 +49,9 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if len(files) > 10 {
+		files = files[:10]
+	}
 	fmt.Printf("Loaded %d corpus files\n", len(files))
 
 	// Compile go-yara rules (suppress absl/RE2 stderr noise)

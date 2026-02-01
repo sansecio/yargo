@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	re2 "github.com/wasilibs/go-re2"
+	"github.com/coregx/coregex"
 )
 
 var testPatterns = []string{
@@ -28,10 +28,10 @@ func init() {
 	copy(testData[500000:], []byte("start middle end"))
 }
 
-func BenchmarkRegexCompile_GoRe2(b *testing.B) {
+func BenchmarkRegexCompile_Coregex(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, p := range testPatterns {
-			_, err := re2.Compile(p)
+			_, err := coregex.Compile(p)
 			if err != nil {
 				b.Fatalf("compile error: %v", err)
 			}
@@ -50,10 +50,10 @@ func BenchmarkRegexCompile_Stdlib(b *testing.B) {
 	}
 }
 
-func BenchmarkRegexMatch_GoRe2(b *testing.B) {
-	compiled := make([]*re2.Regexp, len(testPatterns))
+func BenchmarkRegexMatch_Coregex(b *testing.B) {
+	compiled := make([]*coregex.Regexp, len(testPatterns))
 	for i, p := range testPatterns {
-		compiled[i] = re2.MustCompile(p)
+		compiled[i] = coregex.MustCompile(p)
 	}
 
 	b.ResetTimer()

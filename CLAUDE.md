@@ -11,3 +11,5 @@ When implementing features, write the tests first, then write the implementation
 When writing Go code, prefer early returns over nested conditionals. Keep the happy path to the left with minimal indentation.
 
 Never use `go build`. Use `go run .` instead.
+
+To swap the regex library, only change the import path and keep the `regexp` alias. For example, to switch from coregex to go-re2, change `regexp "github.com/coregx/coregex"` to `regexp "github.com/wasilibs/go-re2"`.

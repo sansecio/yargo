@@ -3,7 +3,7 @@ package scanner
 
 import (
 	ahocorasick "github.com/pgavlin/aho-corasick"
-	re2 "github.com/wasilibs/go-re2"
+	regexp "github.com/wasilibs/go-re2"
 )
 
 // ScanFlags controls scanning behavior.
@@ -52,7 +52,7 @@ type patternRef struct {
 
 // regexPattern holds a compiled regex for complex regex matching.
 type regexPattern struct {
-	re         *re2.Regexp
+	re         *regexp.Regexp
 	ruleIndex  int
 	stringName string
 	hasAtom    bool
