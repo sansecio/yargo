@@ -10,7 +10,6 @@ Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencie
 - Full regex support via go-re2 with `/i`, `/s`, `/m` modifiers
 - Condition evaluation: `and`, `or`, `at`, `uint32be`, `any of`, wildcards
 - Support for `base64` and `fullword` string modifiers
-- Regex patterns like `/\bdomain\.com\b/` optimized via literal extraction
 - go-yara compatible API
 
 ## Installation
@@ -154,20 +153,10 @@ Not yet supported (rules with these are skipped with a warning):
 
 **TextString** - Fully supported, including `base64` and `fullword` modifiers.
 
-**RegexString** - Supported via go-re2 (RE2 syntax, not PCRE), with the following restrictions:
-
-- **Atom requirement**: Regex patterns must contain an extractable literal atom (≥3 bytes) for performance. Patterns without atoms are skipped. Examples of patterns that would be skipped:
-  - `/[a-z]+/` - only character classes, no literals
-  - `/\d{4}-\d{2}-\d{2}/` - no literal atoms
-  - `/a?b?c?/` - all characters are optional
-
-- **Case-insensitive patterns**: The `/i` modifier causes patterns to be skipped because the Aho-Corasick matcher is case-sensitive and atoms can't accelerate the search.
-
-- **RE2 limitations**: Some PCRE features are not supported by RE2:
-  - Backreferences (`\1`, `\2`, etc.)
-  - Lookahead/lookbehind (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`)
-  - Possessive quantifiers (`*+`, `++`, `?+`)
-  - Large bounded repetitions (e.g., `{1,5000}` may fail)
+**RegexString** - Supported via go-re2 (RE2 syntax, not PCRE). RE2 limitations:
+- Backreferences (`\1`, `\2`, etc.)
+- Lookahead/lookbehind (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`)
+- Possessive quantifiers (`*+`, `++`, `?+`)
 
 **HexString** - Simple hex strings (literal bytes only) are supported. Complex hex strings with wildcards (`??`), jumps (`[4-8]`), or alternations (`(AB|CD)`) are skipped because RE2 requires valid UTF-8 and raw bytes ≥0x80 cannot be represented.
 
