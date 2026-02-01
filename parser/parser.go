@@ -63,18 +63,26 @@ func New() (*Parser, error) {
 		},
 		"ConditionExpr": {
 			{Name: "Colon", Pattern: `:`},
-			{Name: "CondString", Pattern: `"(?:[^"\\]|\\.)*"`},
 			{Name: "CondLineComment", Pattern: `//[^\n]*`},
 			{Name: "CondBlockComment", Pattern: `/\*(?:[^*]|\*[^/])*\*/`},
-			{Name: "CondRegex", Pattern: `/(?:[^/\\]|\\.)+/[sim]*`},
+			{Name: "CondWhitespace", Pattern: `[\s]+`},
+			{Name: "StringPattern", Pattern: `\$[a-zA-Z0-9_]*\*`},
+			{Name: "CondStringID", Pattern: `\$[a-zA-Z0-9_]*`},
+			{Name: "HexInt", Pattern: `0x[0-9A-Fa-f]+`},
+			{Name: "CondInt", Pattern: `[0-9]+`},
+			{Name: "CondKeyword", Pattern: `\b(and|or|at|any|all|of|them)\b`},
+			{Name: "CondIdent", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
+			{Name: "CondEq", Pattern: `==`},
+			{Name: "LParen", Pattern: `\(`},
+			{Name: "RParen", Pattern: `\)`},
+			{Name: "Comma", Pattern: `,`},
 			{Name: "RBrace", Pattern: `\}`, Action: lexer.Pop()},
-			{Name: "CondChar", Pattern: `[\s\S]`},
 		},
 	})
 
 	p, err := participle.Build[file](
 		participle.Lexer(lex),
-		participle.Elide("Whitespace", "LineComment", "BlockComment", "CondLineComment", "CondBlockComment"),
+		participle.Elide("Whitespace", "LineComment", "BlockComment", "CondLineComment", "CondBlockComment", "CondWhitespace"),
 		participle.UseLookahead(5),
 	)
 	if err != nil {
@@ -150,13 +158,12 @@ func (p *Parser) convertRule(r *ruleGrammar) (*ast.Rule, error) {
 		}
 	}
 
-	if r.Condition != nil {
-		rule.Condition = strings.TrimSpace(strings.Join(r.Condition.Parts, ""))
-		if rule.Condition != "any of them" && rule.Condition != "all of them" {
-			p.warnings = append(p.warnings,
-				fmt.Sprintf("rule %q: complex condition %q (only 'any of them' is fully supported)",
-					rule.Name, rule.Condition))
+	if r.Condition != nil && r.Condition.Expr != nil {
+		cond, err := convertCondition(r.Condition.Expr)
+		if err != nil {
+			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
+		rule.Condition = cond
 	}
 
 	return rule, nil
@@ -313,4 +320,116 @@ func unquoteString(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// Condition conversion functions
+
+func convertCondition(e *condOrExpr) (ast.Expr, error) {
+	if e == nil {
+		return nil, fmt.Errorf("empty condition")
+	}
+	return convertOrExpr(e)
+}
+
+func convertOrExpr(e *condOrExpr) (ast.Expr, error) {
+	left, err := convertAndExpr(e.Left)
+	if err != nil {
+		return nil, err
+	}
+	for _, right := range e.Right {
+		r, err := convertAndExpr(right)
+		if err != nil {
+			return nil, err
+		}
+		left = ast.BinaryExpr{Op: "or", Left: left, Right: r}
+	}
+	return left, nil
+}
+
+func convertAndExpr(e *condAndExpr) (ast.Expr, error) {
+	left, err := convertCmpExpr(e.Left)
+	if err != nil {
+		return nil, err
+	}
+	for _, right := range e.Right {
+		r, err := convertCmpExpr(right)
+		if err != nil {
+			return nil, err
+		}
+		left = ast.BinaryExpr{Op: "and", Left: left, Right: r}
+	}
+	return left, nil
+}
+
+func convertCmpExpr(e *condCmpExpr) (ast.Expr, error) {
+	left, err := convertPrimary(e.Left)
+	if err != nil {
+		return nil, err
+	}
+	if e.Op != nil && e.Right != nil {
+		right, err := convertPrimary(e.Right)
+		if err != nil {
+			return nil, err
+		}
+		return ast.BinaryExpr{Op: *e.Op, Left: left, Right: right}, nil
+	}
+	return left, nil
+}
+
+func convertPrimary(p *condPrimary) (ast.Expr, error) {
+	switch {
+	case p.Paren != nil:
+		inner, err := convertOrExpr(p.Paren)
+		if err != nil {
+			return nil, err
+		}
+		return ast.ParenExpr{Inner: inner}, nil
+
+	case p.AnyOf != nil:
+		pattern := "them"
+		if p.AnyOf.Pattern != nil {
+			pattern = *p.AnyOf.Pattern
+		}
+		return ast.AnyOf{Pattern: pattern}, nil
+
+	case p.AllOf != nil:
+		pattern := "them"
+		if p.AllOf.Pattern != nil {
+			pattern = *p.AllOf.Pattern
+		}
+		return ast.AllOf{Pattern: pattern}, nil
+
+	case p.FuncCall != nil:
+		args := make([]ast.Expr, len(p.FuncCall.Args))
+		for i, arg := range p.FuncCall.Args {
+			a, err := convertPrimary(arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+		return ast.FuncCall{Name: p.FuncCall.Name, Args: args}, nil
+
+	case p.AtExpr != nil:
+		pos, err := convertPrimary(p.AtExpr.Pos)
+		if err != nil {
+			return nil, err
+		}
+		return ast.AtExpr{Ref: ast.StringRef{Name: *p.AtExpr.Ref}, Pos: pos}, nil
+
+	case p.StringID != nil:
+		return ast.StringRef{Name: *p.StringID}, nil
+
+	case p.HexInt != nil:
+		v, err := strconv.ParseInt(strings.TrimPrefix(*p.HexInt, "0x"), 16, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing hex int: %w", err)
+		}
+		return ast.IntLit{Value: v}, nil
+
+	case p.Int != nil:
+		return ast.IntLit{Value: *p.Int}, nil
+	}
+
+	return nil, fmt.Errorf("unknown primary type")
 }

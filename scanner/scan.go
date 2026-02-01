@@ -34,7 +34,8 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	ruleMatches := make(map[int]map[string]bool)
+	// Track match positions per rule and string
+	ruleMatches := make(map[int]map[string][]int)
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
@@ -51,7 +52,7 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 				continue
 			}
 
-			addMatch(ruleMatches, ref.ruleIndex, ref.stringName)
+			addMatchPos(ruleMatches, ref.ruleIndex, ref.stringName, match.Start())
 		}
 	}
 
@@ -64,8 +65,8 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 			start := max(0, pos-halfWindow)
 			end := min(len(buf), pos+halfWindow)
 
-			if rp.re.Match(buf[start:end]) {
-				addMatch(ruleMatches, rp.ruleIndex, rp.stringName)
+			if loc := rp.re.FindIndex(buf[start:end]); loc != nil {
+				addMatchPos(ruleMatches, rp.ruleIndex, rp.stringName, start+loc[0])
 				break
 			}
 		}
@@ -75,11 +76,12 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		if rp.hasAtom {
 			continue
 		}
-		if rp.re.Match(buf) {
-			addMatch(ruleMatches, rp.ruleIndex, rp.stringName)
+		if loc := rp.re.FindIndex(buf); loc != nil {
+			addMatchPos(ruleMatches, rp.ruleIndex, rp.stringName, loc[0])
 		}
 	}
 
+	// Evaluate conditions for each rule with matches
 	for ruleIdx, matchedStrings := range ruleMatches {
 		select {
 		case <-ctx.Done():
@@ -88,6 +90,17 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 
 		cr := r.rules[ruleIdx]
+
+		// Evaluate condition
+		evalCtx := &evalContext{
+			matches:     matchedStrings,
+			buf:         buf,
+			stringNames: cr.stringNames,
+		}
+		if !evalExpr(cr.condition, evalCtx) {
+			continue
+		}
+
 		strings := make([]MatchString, 0, len(matchedStrings))
 		for name := range matchedStrings {
 			strings = append(strings, MatchString{Name: name})
@@ -109,11 +122,11 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	return nil
 }
 
-func addMatch(m map[int]map[string]bool, ruleIdx int, stringName string) {
+func addMatchPos(m map[int]map[string][]int, ruleIdx int, stringName string, pos int) {
 	if m[ruleIdx] == nil {
-		m[ruleIdx] = make(map[string]bool)
+		m[ruleIdx] = make(map[string][]int)
 	}
-	m[ruleIdx][stringName] = true
+	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], pos)
 }
 
 func dedupe(positions []int) []int {

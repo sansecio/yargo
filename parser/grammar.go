@@ -48,5 +48,52 @@ type hexTokenGrammar struct {
 }
 
 type conditionClause struct {
-	Parts []string `parser:"'condition' ':' @(CondString | CondRegex | CondChar)*"`
+	Expr *condOrExpr `parser:"'condition' ':' @@"`
+}
+
+// Condition expression grammar (operator precedence: or < and < ==)
+
+type condOrExpr struct {
+	Left  *condAndExpr   `parser:"@@"`
+	Right []*condAndExpr `parser:"('or' @@)*"`
+}
+
+type condAndExpr struct {
+	Left  *condCmpExpr   `parser:"@@"`
+	Right []*condCmpExpr `parser:"('and' @@)*"`
+}
+
+type condCmpExpr struct {
+	Left  *condPrimary `parser:"@@"`
+	Op    *string      `parser:"(@CondEq)?"`
+	Right *condPrimary `parser:"@@?"`
+}
+
+type condPrimary struct {
+	Paren    *condOrExpr   `parser:"( '(' @@ ')'"`
+	AnyOf    *condAnyOf    `parser:"| @@"`
+	AllOf    *condAllOf    `parser:"| @@"`
+	FuncCall *condFuncCall `parser:"| @@"`
+	AtExpr   *condAtExpr   `parser:"| @@"`
+	StringID *string       `parser:"| @CondStringID"`
+	HexInt   *string       `parser:"| @HexInt"`
+	Int      *int64        `parser:"| @CondInt )"`
+}
+
+type condAnyOf struct {
+	Pattern *string `parser:"'any' 'of' ( @'them' | '(' @StringPattern ')' )"`
+}
+
+type condAllOf struct {
+	Pattern *string `parser:"'all' 'of' ( @'them' | '(' @StringPattern ')' )"`
+}
+
+type condFuncCall struct {
+	Name string         `parser:"@CondIdent '('"`
+	Args []*condPrimary `parser:"(@@ (',' @@)*)? ')'"`
+}
+
+type condAtExpr struct {
+	Ref *string      `parser:"@CondStringID 'at'"`
+	Pos *condPrimary `parser:"@@"`
 }

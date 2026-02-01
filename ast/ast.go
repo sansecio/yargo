@@ -11,7 +11,7 @@ type Rule struct {
 	Name      string
 	Meta      []*MetaEntry
 	Strings   []*StringDef
-	Condition string // raw condition text, e.g. "any of them"
+	Condition Expr // parsed condition expression
 }
 
 // MetaEntry represents a key-value pair in the meta section.

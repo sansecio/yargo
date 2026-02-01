@@ -17,7 +17,7 @@ func BenchmarkCompileStringLiterals(b *testing.B) {
 					{Name: "$b", Value: ast.TextString{Value: "virus"}},
 					{Name: "$c", Value: ast.TextString{Value: "trojan"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
@@ -26,7 +26,7 @@ func BenchmarkCompileStringLiterals(b *testing.B) {
 					{Name: "$b", Value: ast.TextString{Value: "base64_decode"}},
 					{Name: "$c", Value: ast.TextString{Value: "exec("}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -50,7 +50,7 @@ func BenchmarkCompileRegexPatterns(b *testing.B) {
 					{Name: "$b", Value: ast.RegexString{Pattern: `\d{3}-\d{3}-\d{4}`}},
 					{Name: "$c", Value: ast.RegexString{Pattern: `https?://[^\s]+`}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
@@ -58,7 +58,7 @@ func BenchmarkCompileRegexPatterns(b *testing.B) {
 					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`, Modifiers: ast.RegexModifiers{CaseInsensitive: true}}},
 					{Name: "$b", Value: ast.RegexString{Pattern: `base64.+decode`, Modifiers: ast.RegexModifiers{DotMatchesAll: true}}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -82,7 +82,7 @@ func BenchmarkScanStringLiterals(b *testing.B) {
 					{Name: "$b", Value: ast.TextString{Value: "virus"}},
 					{Name: "$c", Value: ast.TextString{Value: "trojan"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
@@ -91,7 +91,7 @@ func BenchmarkScanStringLiterals(b *testing.B) {
 					{Name: "$b", Value: ast.TextString{Value: "base64_decode"}},
 					{Name: "$c", Value: ast.TextString{Value: "exec("}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -128,14 +128,14 @@ func BenchmarkScanRegexPatterns(b *testing.B) {
 					{Name: "$a", Value: ast.RegexString{Pattern: `[a-z]+[0-9]+`}},
 					{Name: "$b", Value: ast.RegexString{Pattern: `\d{3}-\d{3}-\d{4}`}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
 				Strings: []*ast.StringDef{
 					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`, Modifiers: ast.RegexModifiers{CaseInsensitive: true}}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -173,7 +173,7 @@ func BenchmarkScanMixed(b *testing.B) {
 					{Name: "$regex", Value: ast.RegexString{Pattern: `[a-z]+[0-9]+`}},
 					{Name: "$wordboundary", Value: ast.RegexString{Pattern: `\bvirus\b`}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}

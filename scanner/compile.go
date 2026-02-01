@@ -31,18 +31,22 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	ruleIdx := 0
 
 	for _, r := range rs.Rules {
-		if r.Condition != "any of them" {
+		if r.Condition == nil {
 			rules.warnings = append(rules.warnings,
-				fmt.Sprintf("rule %q: skipping, unsupported condition %q (only \"any of them\" is supported)", r.Name, r.Condition))
+				fmt.Sprintf("rule %q: skipping, no condition", r.Name))
 			continue
 		}
 
 		cr := &compiledRule{
-			name:  r.Name,
-			metas: make([]Meta, len(r.Meta)),
+			name:      r.Name,
+			metas:     make([]Meta, len(r.Meta)),
+			condition: r.Condition,
 		}
 		for i, m := range r.Meta {
 			cr.metas[i] = Meta{Identifier: m.Key, Value: m.Value}
+		}
+		for _, s := range r.Strings {
+			cr.stringNames = append(cr.stringNames, s.Name)
 		}
 		rules.rules = append(rules.rules, cr)
 

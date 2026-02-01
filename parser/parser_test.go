@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/sansecio/yargo/ast"
@@ -33,8 +32,8 @@ func TestParseMinimalRule(t *testing.T) {
 	if r.Name != "test" {
 		t.Errorf("expected name 'test', got %q", r.Name)
 	}
-	if r.Condition != "any of them" {
-		t.Errorf("expected condition 'any of them', got %q", r.Condition)
+	if _, ok := r.Condition.(ast.AnyOf); !ok {
+		t.Errorf("expected condition AnyOf, got %T", r.Condition)
 	}
 	if len(r.Strings) != 1 || r.Strings[0].Name != "$" {
 		t.Errorf("expected anonymous string, got %v", r.Strings)
@@ -217,18 +216,12 @@ func TestParseComments(t *testing.T) {
 func TestWarnings(t *testing.T) {
 	p, _ := New()
 
-	// Simple conditions - no warning
-	for _, cond := range []string{"any of them", "all of them"} {
-		p.Parse(`rule test { strings: $ = "x" condition: ` + cond + ` }`)
+	// All supported conditions - no warnings
+	for _, cond := range []string{"any of them", "all of them", "$a and $b", "($a at 0) and $b"} {
+		p.Parse(`rule test { strings: $a = "x" $b = "y" condition: ` + cond + ` }`)
 		if len(p.Warnings()) != 0 {
 			t.Errorf("unexpected warning for %q: %v", cond, p.Warnings())
 		}
-	}
-
-	// Complex conditions - warning
-	p.Parse(`rule test { strings: $ = "x" condition: $a and $b }`)
-	if len(p.Warnings()) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(p.Warnings()))
 	}
 }
 
@@ -258,11 +251,15 @@ func TestParseFileNotFound(t *testing.T) {
 	}
 }
 
-func TestParseConditionWithBraces(t *testing.T) {
-	// Test that } inside strings doesn't terminate condition early
-	rs := mustParse(t, `rule test { strings: $a = "x" condition: pe.imports("kernel32.dll", "func}") }`)
-	if !strings.Contains(rs.Rules[0].Condition, "func}") {
-		t.Errorf("condition should contain 'func}', got %q", rs.Rules[0].Condition)
+func TestParseConditionWithParens(t *testing.T) {
+	// Test that complex conditions with parens are parsed correctly
+	rs := mustParse(t, `rule test { strings: $a = "x" condition: ($a at 0) and any of them }`)
+	bin, ok := rs.Rules[0].Condition.(ast.BinaryExpr)
+	if !ok {
+		t.Fatalf("expected BinaryExpr, got %T", rs.Rules[0].Condition)
+	}
+	if bin.Op != "and" {
+		t.Errorf("expected 'and', got %q", bin.Op)
 	}
 }
 

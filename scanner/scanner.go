@@ -4,6 +4,8 @@ package scanner
 import (
 	ahocorasick "github.com/pgavlin/aho-corasick"
 	regexp "github.com/wasilibs/go-re2"
+
+	"github.com/sansecio/yargo/ast"
 )
 
 // ScanFlags controls scanning behavior.
@@ -60,8 +62,10 @@ type regexPattern struct {
 
 // compiledRule holds the compiled form of a single YARA rule.
 type compiledRule struct {
-	name  string
-	metas []Meta
+	name        string
+	metas       []Meta
+	condition   ast.Expr
+	stringNames []string
 }
 
 // Rules holds compiled YARA rules ready for scanning.

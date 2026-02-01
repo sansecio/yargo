@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ func TestBasicStringMatch(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$php", Value: ast.TextString{Value: "<?php"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -54,7 +55,7 @@ func TestNoMatch(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$php", Value: ast.TextString{Value: "<?php"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -86,7 +87,7 @@ func TestMultipleStringsInRule(t *testing.T) {
 					{Name: "$a", Value: ast.TextString{Value: "eval"}},
 					{Name: "$b", Value: ast.TextString{Value: "base64_decode"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -121,14 +122,14 @@ func TestMultipleRules(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$php", Value: ast.TextString{Value: "<?php"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "eval_usage",
 				Strings: []*ast.StringDef{
 					{Name: "$eval", Value: ast.TextString{Value: "eval("}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -171,7 +172,7 @@ func TestBase64Modifier(t *testing.T) {
 						Modifiers: ast.StringModifiers{Base64: true},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -221,7 +222,7 @@ func TestMetaExtraction(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "match"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -268,7 +269,7 @@ func TestTimeout(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "test"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -315,7 +316,7 @@ func TestRuleWithNoStrings(t *testing.T) {
 			{
 				Name:      "no_strings",
 				Strings:   []*ast.StringDef{},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -346,14 +347,14 @@ func TestScanCallbackAbort(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "test"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "test"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -404,7 +405,7 @@ func TestFullwordModifier(t *testing.T) {
 						Modifiers: ast.StringModifiers{Fullword: true},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -460,7 +461,7 @@ func TestFullwordWithMultipleMatches(t *testing.T) {
 						Modifiers: ast.StringModifiers{Fullword: true},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -496,7 +497,7 @@ func TestFullwordAtBufferBoundaries(t *testing.T) {
 						Modifiers: ast.StringModifiers{Fullword: true},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -544,7 +545,7 @@ func TestRegexWordBoundary(t *testing.T) {
 						Value: ast.RegexString{Pattern: `\bmalware\b`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -594,7 +595,7 @@ func TestRegexWordBoundaryWithDot(t *testing.T) {
 						Value: ast.RegexString{Pattern: `\bevil\.com\b`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -643,7 +644,7 @@ func TestRegexWordBoundaryWithDash(t *testing.T) {
 						Value: ast.RegexString{Pattern: `\bevil-site\.com\b`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -676,7 +677,7 @@ func TestRegexBasicMatching(t *testing.T) {
 						Value: ast.RegexString{Pattern: `foo[0-9]+bar`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -724,7 +725,7 @@ func TestRegexCaseInsensitive(t *testing.T) {
 						Value: ast.RegexString{Pattern: `malware`, Modifiers: ast.RegexModifiers{CaseInsensitive: true}},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -776,7 +777,7 @@ func TestRegexDotMatchesAll(t *testing.T) {
 						Value: ast.RegexString{Pattern: `start.+end`, Modifiers: ast.RegexModifiers{DotMatchesAll: true}},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -822,7 +823,7 @@ func TestRegexDotWithoutSFlag(t *testing.T) {
 						Value: ast.RegexString{Pattern: `start.+end`}, // no s flag
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -867,7 +868,7 @@ func TestRegexMultiline(t *testing.T) {
 						Value: ast.RegexString{Pattern: `^line`, Modifiers: ast.RegexModifiers{Multiline: true}},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -933,7 +934,7 @@ func TestRegexComplexPatterns(t *testing.T) {
 								Value: ast.RegexString{Pattern: tt.pattern},
 							},
 						},
-						Condition: "any of them",
+						Condition: ast.AnyOf{Pattern: "them"},
 					},
 				},
 			}
@@ -967,7 +968,7 @@ func TestRegexInvalidPattern(t *testing.T) {
 						Value: ast.RegexString{Pattern: `[unclosed`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -990,7 +991,7 @@ func TestRegexWordBoundaryBackwardCompatibility(t *testing.T) {
 						Value: ast.RegexString{Pattern: `\btest\b`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -1046,7 +1047,7 @@ func TestRegexMixedWithTextStrings(t *testing.T) {
 						Value: ast.RegexString{Pattern: `pattern[0-9]+`},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -1112,7 +1113,7 @@ func TestFullwordMixedWithRegular(t *testing.T) {
 						Value: ast.TextString{Value: "test"},
 					},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -1149,7 +1150,7 @@ func TestFullwordMixedWithRegular(t *testing.T) {
 	}
 }
 
-func TestSkipUnsupportedCondition(t *testing.T) {
+func TestSkipNilCondition(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
@@ -1157,14 +1158,14 @@ func TestSkipUnsupportedCondition(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "match"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
-				Name: "complex_condition",
+				Name: "no_condition",
 				Strings: []*ast.StringDef{
 					{Name: "$a", Value: ast.TextString{Value: "also_match"}},
 				},
-				Condition: "$a and filesize > 100",
+				Condition: nil, // nil condition (e.g., failed to parse)
 			},
 		},
 	}
@@ -1174,11 +1175,11 @@ func TestSkipUnsupportedCondition(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	// Should have a warning about skipping the rule with complex condition
+	// Should have a warning about skipping the rule with no condition
 	if len(rules.Warnings()) != 1 {
 		t.Errorf("expected 1 warning, got %d", len(rules.Warnings()))
 	}
-	if len(rules.Warnings()) > 0 && rules.Warnings()[0] != `rule "complex_condition": skipping, unsupported condition "$a and filesize > 100" (only "any of them" is supported)` {
+	if len(rules.Warnings()) > 0 && !strings.Contains(rules.Warnings()[0], `rule "no_condition": skipping, no condition`) {
 		t.Errorf("unexpected warning: %s", rules.Warnings()[0])
 	}
 
@@ -1193,22 +1194,23 @@ func TestSkipUnsupportedCondition(t *testing.T) {
 
 	// Only the supported rule should match (the other was skipped)
 	if len(matches) != 1 {
-		t.Fatalf("expected 1 match (complex condition rule should be skipped), got %d", len(matches))
+		t.Fatalf("expected 1 match (nil condition rule should be skipped), got %d", len(matches))
 	}
 	if matches[0].Rule != "supported" {
 		t.Errorf("expected rule 'supported', got %q", matches[0].Rule)
 	}
 }
 
-func TestSkipAllOfThemCondition(t *testing.T) {
+func TestAllOfThemCondition(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
 				Name: "all_of_them",
 				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.TextString{Value: "test"}},
+					{Name: "$a", Value: ast.TextString{Value: "foo"}},
+					{Name: "$b", Value: ast.TextString{Value: "bar"}},
 				},
-				Condition: "all of them",
+				Condition: ast.AllOf{Pattern: "them"},
 			},
 		},
 	}
@@ -1218,21 +1220,31 @@ func TestSkipAllOfThemCondition(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	// "all of them" is not supported, should have a warning
-	if len(rules.Warnings()) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(rules.Warnings()))
+	// "all of them" is now supported, no warning
+	if len(rules.Warnings()) != 0 {
+		t.Errorf("expected 0 warnings, got %d: %v", len(rules.Warnings()), rules.Warnings())
 	}
 
-	data := []byte("test")
+	// Test with both strings matching
+	data := []byte("foo bar")
 	var matches MatchRules
 	err = rules.ScanMem(data, 0, time.Second, &matches)
 	if err != nil {
 		t.Fatalf("ScanMem() error = %v", err)
 	}
+	if len(matches) != 1 {
+		t.Errorf("expected 1 match when all strings present, got %d", len(matches))
+	}
 
-	// Rule should be skipped, no matches
-	if len(matches) != 0 {
-		t.Errorf("expected 0 matches (all of them rule should be skipped), got %d", len(matches))
+	// Test with only one string matching
+	data2 := []byte("foo only")
+	var matches2 MatchRules
+	err = rules.ScanMem(data2, 0, time.Second, &matches2)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches2) != 0 {
+		t.Errorf("expected 0 matches when only one string present, got %d", len(matches2))
 	}
 }
 
@@ -1244,7 +1256,7 @@ func TestNoWarningForSupportedCondition(t *testing.T) {
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "test"}},
 				},
-				Condition: "any of them",
+				Condition: ast.AnyOf{Pattern: "them"},
 			},
 		},
 	}
@@ -1326,7 +1338,7 @@ func TestRegexWindowCentering(t *testing.T) {
 								Value: ast.RegexString{Pattern: tt.pattern},
 							},
 						},
-						Condition: "any of them",
+						Condition: ast.AnyOf{Pattern: "them"},
 					},
 				},
 			}
@@ -1393,7 +1405,7 @@ func TestRegexWindowCenteringEdgeCases(t *testing.T) {
 								Value: ast.RegexString{Pattern: tt.pattern},
 							},
 						},
-						Condition: "any of them",
+						Condition: ast.AnyOf{Pattern: "them"},
 					},
 				},
 			}

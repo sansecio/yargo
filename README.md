@@ -8,6 +8,7 @@ Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencie
 - YARA rule parser with full syntax support
 - Fast multi-pattern scanner using Aho-Corasick
 - Full regex support via go-re2 with `/i`, `/s`, `/m` modifiers
+- Condition evaluation: `and`, `or`, `at`, `uint32be`, `any of`, wildcards
 - Support for `base64` and `fullword` string modifiers
 - Regex patterns like `/\bdomain\.com\b/` optimized via literal extraction
 - go-yara compatible API
@@ -132,7 +133,22 @@ YARA is ~1.7x faster than Yargo for scanning. Yargo's pure Go implementation tra
 
 ### Conditions
 
-Only `any of them` is supported. Rules with other conditions (e.g., `$a and $b`, `all of them`, `2 of ($a, $b, $c)`, conditions using `uint32`, `filesize`, etc.) are skipped with a warning.
+Supported condition features:
+- String references: `$a`, `$b`
+- Positional matching: `$a at 0`
+- Boolean operators: `and`, `or`, parentheses
+- Comparison: `==`
+- Byte functions: `uint32be(n)`, `uint16be(n)`, `uint32(n)`, `uint16(n)`, `uint8(n)`
+- Quantifiers: `any of them`, `all of them`, `any of ($prefix_*)`
+
+Not yet supported (rules with these are skipped with a warning):
+- `filesize`, `entrypoint`
+- String count/offset/length operators: `#a`, `@a`, `!a`
+- Numeric quantifiers: `2 of them`, `50% of them`
+- Loops: `for`, `of`
+- Arithmetic operators: `+`, `-`, `*`, `/`, `%`
+- Bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
+- Other comparisons: `!=`, `<`, `>`, `<=`, `>=`
 
 ### String Types
 
