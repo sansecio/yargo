@@ -25,6 +25,14 @@ func Test_fixQuantifiers(t *testing.T) {
 		{"real pattern 1", `[^\]]{1,5000}`, `[^\]]{1,1000}`},
 		{"real pattern 2", `[\s\S]{0,4000}?`, `[\s\S]{0,1000}?`},
 		{"real pattern 3", `(_0x\w{6},){200,300}`, `(_0x\w{6},){200,300}`},
+		// Literal braces that are NOT quantifiers should be preserved
+		{"literal brace in pattern", `var ....={..:function\(x,y\){return x!==y;}`, `var ....={..:function\(x,y\){return x!==y;}`},
+		{"literal brace standalone", `foo={bar}`, `foo={bar}`},
+		{"literal brace with dots", `{..}`, `{..}`},
+		{"literal brace with text", `{abc}`, `{abc}`},
+		{"empty braces", `{}`, `{}`},
+		{"brace with only comma", `{,}`, `{,}`}, // Not a valid quantifier, preserved as literal
+		{"mixed literal and quantifier", `{foo}a{5}`, `{foo}a{5}`},
 	}
 
 	for _, tt := range tests {

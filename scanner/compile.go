@@ -228,6 +228,59 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 
 const maxRepetition = 1000
 
+// isValidQuantifier checks if inner looks like a valid regex quantifier:
+// digits, digits+comma, digits+comma+digits, or comma+digits.
+func isValidQuantifier(inner string) bool {
+	if inner == "" {
+		return false
+	}
+
+	i := 0
+
+	// Case 1: starts with comma (for {,N} syntax)
+	if inner[i] == ',' {
+		i++
+		// Must have at least one digit after comma
+		if i >= len(inner) || inner[i] < '0' || inner[i] > '9' {
+			return false
+		}
+		// Consume remaining digits
+		for i < len(inner) && inner[i] >= '0' && inner[i] <= '9' {
+			i++
+		}
+		return i >= len(inner) // Must have consumed everything
+	}
+
+	// Case 2: starts with digits
+	if inner[i] < '0' || inner[i] > '9' {
+		return false
+	}
+	for i < len(inner) && inner[i] >= '0' && inner[i] <= '9' {
+		i++
+	}
+
+	// If we've consumed everything, it's valid (e.g., "5")
+	if i >= len(inner) {
+		return true
+	}
+
+	// Next must be comma
+	if inner[i] != ',' {
+		return false
+	}
+	i++
+
+	// Rest must be digits or empty (e.g., "5," or "5,10")
+	for i < len(inner) {
+		if inner[i] < '0' || inner[i] > '9' {
+			return false
+		}
+		i++
+	}
+
+	return true
+}
+
 func fixQuantifiers(pattern string) string {
 	var result strings.Builder
 	result.Grow(len(pattern))
@@ -251,6 +304,15 @@ func fixQuantifiers(pattern string) string {
 			end += i
 
 			inner := pattern[i+1 : end]
+
+			// Only process if this looks like a valid quantifier
+			if !isValidQuantifier(inner) {
+				// Not a quantifier, write literal brace and continue
+				result.WriteByte(pattern[i])
+				i++
+				continue
+			}
+
 			fixed := fixRepetition(inner)
 			result.WriteByte('{')
 			result.WriteString(fixed)
