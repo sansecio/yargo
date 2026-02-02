@@ -114,7 +114,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
 
-	atoms, hasAtoms := extractAtoms(rePattern, 3)
+	atoms, hasAtoms := extractAtoms(rePattern, 2)
 	if hasAtoms && !caseInsensitive {
 		rp.hasAtom = true
 		for _, atom := range atoms {
