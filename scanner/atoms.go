@@ -473,30 +473,69 @@ func isQuantifier(pattern string, i int) bool {
 	return i < len(pattern) && pattern[i] == '}'
 }
 
-// atomQuality scores an atom - longer + uncommon bytes = better.
+// YARA-compatible atom quality scoring constant.
+const maxAtomQuality = 255
+
+// atomQuality scores an atom using YARA's heuristic algorithm.
+// Quality ranges from 0 to 255, with higher being better.
 func atomQuality(atom []byte) int {
-	score := len(atom) * 10
-	for _, b := range atom {
-		score += byteQuality(b)
+	if len(atom) == 0 {
+		return 0
 	}
-	return score
+
+	// Per-byte scoring
+	perByteScore := 0
+	uniqueBytes := make(map[byte]struct{})
+	allSame := true
+	firstByte := atom[0]
+
+	for _, b := range atom {
+		perByteScore += byteQuality(b)
+		uniqueBytes[b] = struct{}{}
+		if b != firstByte {
+			allSame = false
+		}
+	}
+
+	// Unique byte diversity bonus: +2 per unique byte
+	uniqueBonus := len(uniqueBytes) * 2
+
+	// Heavy penalty for repeated common bytes (like NOP sleds, padding)
+	repeatedCommonPenalty := 0
+	if allSame && isCommonByte(firstByte) {
+		repeatedCommonPenalty = 10 * len(atom)
+	}
+
+	// YARA formula adapted: base_offset + per_byte_score + unique_bonus
+	// Base offset of 167 comes from YARA's 255 - 22*4 for 4-byte atoms.
+	// We don't cap at maxAtomQuality to allow longer atoms to score higher.
+	quality := 167 + perByteScore + uniqueBonus - repeatedCommonPenalty
+
+	if quality < 0 {
+		return 0
+	}
+	return quality
 }
 
+// byteQuality returns per-byte quality score using YARA's heuristic.
 func byteQuality(b byte) int {
-	switch {
-	case b == 0x00, b == 0xFF:
-		return 1
-	case b == 0x20, b == 0x09, b == 0x0A, b == 0x0D:
-		return 2
-	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z':
-		return 8
-	case b >= '0' && b <= '9':
-		return 6
-	case b == '_', b == '-':
-		return 5
-	case b >= 0x21 && b <= 0x7E:
-		return 7
-	default:
-		return 4
+	// Common bytes (frequently appear, less selective)
+	if isCommonByte(b) {
+		return 12
 	}
+	// Alphabetic bytes (slightly penalized - common in text)
+	if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+		return 18
+	}
+	// Normal bytes (most selective)
+	return 20
+}
+
+// isCommonByte returns true for bytes that commonly appear in files.
+func isCommonByte(b byte) bool {
+	switch b {
+	case 0x00, 0x20, 0x90, 0xCC, 0xFF:
+		return true
+	}
+	return false
 }
