@@ -44,7 +44,7 @@ func main() {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT detections FROM detections WHERE detections IS NOT NULL AND detections != ''`)
+	rows, err := db.Query(`SELECT detections FROM detections WHERE detections IS NOT NULL AND LENGTH(detections) > 2 ORDER BY id DESC LIMIT 500000`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
 		os.Exit(1)
@@ -57,10 +57,14 @@ func main() {
 	exampleSnippets := make(map[string]string) // rule -> example snippet where it differs
 	exampleNames := make(map[string]string)    // rule -> detection name where it differs
 
-	var matchedBoth, skipped, totalSnippets int
+	var matchedBoth, skipped, totalSnippets, rowCount int
 	skippedNames := make(map[string]int) // track which detection names are being skipped
 
 	for rows.Next() {
+		rowCount++
+		if rowCount%10000 == 0 {
+			fmt.Fprintf(os.Stderr, "Processed %d rows, %d snippets...\n", rowCount, totalSnippets)
+		}
 		var detectionsJSON string
 		if err := rows.Scan(&detectionsJSON); err != nil {
 			continue
