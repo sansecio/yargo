@@ -91,6 +91,11 @@ func main() {
 	goYaraOnly := make(map[string]int)
 	exampleSnippets := make(map[string]string)
 	exampleNames := make(map[string]string)
+	exampleMatched := make(map[string]string)
+
+	// Track matched data mismatches between scanners
+	dataMismatch := make(map[string]int)
+	mismatchExamples := make(map[string][2]string) // rule -> [yargo data, go-yara data]
 
 	var matchedBoth, skipped int
 	skippedNames := make(map[string]int)
@@ -135,6 +140,32 @@ func main() {
 			}
 		}
 
+		// Build maps of rule -> matched data for comparison
+		yargoData := make(map[string]string)
+		for _, m := range yargoMatches {
+			if len(m.Strings) > 0 {
+				yargoData[m.Rule] = string(m.Strings[0].Data)
+			}
+		}
+		goYaraData := make(map[string]string)
+		for _, m := range goYaraMatches {
+			if len(m.Strings) > 0 {
+				goYaraData[m.Rule] = string(m.Strings[0].Data)
+			}
+		}
+
+		// Compare matched data for rules that matched in both
+		for rule := range yargoSet {
+			if goYaraSet[rule] {
+				if yargoData[rule] != goYaraData[rule] {
+					dataMismatch[rule]++
+					if _, ok := mismatchExamples[rule]; !ok {
+						mismatchExamples[rule] = [2]string{yargoData[rule], goYaraData[rule]}
+					}
+				}
+			}
+		}
+
 		// Find differences
 		for rule := range yargoSet {
 			if !goYaraSet[rule] {
@@ -142,6 +173,13 @@ func main() {
 				if _, ok := exampleSnippets["yargo:"+rule]; !ok {
 					exampleSnippets["yargo:"+rule] = snippet
 					exampleNames["yargo:"+rule] = name
+					// Store matched string data from yargo
+					for _, m := range yargoMatches {
+						if m.Rule == rule && len(m.Strings) > 0 {
+							exampleMatched["yargo:"+rule] = string(m.Strings[0].Data)
+							break
+						}
+					}
 				}
 			}
 		}
@@ -151,6 +189,13 @@ func main() {
 				if _, ok := exampleSnippets["goyara:"+rule]; !ok {
 					exampleSnippets["goyara:"+rule] = snippet
 					exampleNames["goyara:"+rule] = name
+					// Store matched string data from go-yara
+					for _, m := range goYaraMatches {
+						if m.Rule == rule && len(m.Strings) > 0 {
+							exampleMatched["goyara:"+rule] = string(m.Strings[0].Data)
+							break
+						}
+					}
 				}
 			}
 		}
@@ -182,6 +227,8 @@ func main() {
 	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
 	for _, rule := range sortByCount(yargoOnly) {
 		fmt.Printf("  %s: %d occurrences (detection: %s)\n", rule, yargoOnly[rule], exampleNames["yargo:"+rule])
+		fmt.Printf("    snippet: %q\n", exampleSnippets["yargo:"+rule])
+		fmt.Printf("    matched: %q\n", exampleMatched["yargo:"+rule])
 	}
 
 	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", sumValues(goYaraOnly))
@@ -192,12 +239,25 @@ func main() {
 			fmt.Printf("  %s: %d occurrences [SKIPPED: %s]\n", rule, goYaraOnly[rule], reason)
 		} else {
 			fmt.Printf("  %s: %d occurrences (detection: %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], exampleNames["goyara:"+rule])
+			fmt.Printf("    snippet: %q\n", exampleSnippets["goyara:"+rule])
+			fmt.Printf("    matched: %q\n", exampleMatched["goyara:"+rule])
 			unexplained = append(unexplained, rule)
 		}
 	}
 
 	if len(unexplained) > 0 {
 		fmt.Printf("\n*** %d rules with UNEXPLAINED missing matches: %v\n", len(unexplained), unexplained)
+	}
+
+	// Report matched data mismatches between scanners
+	if len(dataMismatch) > 0 {
+		fmt.Printf("\nMatched data differs between yargo and go-yara (%d rules):\n", len(dataMismatch))
+		for _, rule := range sortByCount(dataMismatch) {
+			example := mismatchExamples[rule]
+			fmt.Printf("  %s: %d occurrences\n", rule, dataMismatch[rule])
+			fmt.Printf("    yargo:   %q\n", example[0])
+			fmt.Printf("    go-yara: %q\n", example[1])
+		}
 	}
 }
 

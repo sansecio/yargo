@@ -11,6 +11,11 @@ import (
 
 const maxMatchLen = 1024
 
+type matchInfo struct {
+	pos  int
+	data []byte
+}
+
 func isWordChar(b byte) bool {
 	return (b >= 'a' && b <= 'z') ||
 		(b >= 'A' && b <= 'Z') ||
@@ -37,8 +42,8 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Track match positions per rule and string
-	ruleMatches := make(map[int]map[string][]int)
+	// Track match positions and data per rule and string
+	ruleMatches := make(map[int]map[string][]matchInfo)
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
@@ -55,7 +60,9 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 				continue
 			}
 
-			addMatchPos(ruleMatches, ref.ruleIndex, ref.stringName, match.Start())
+			data := make([]byte, match.End()-match.Start())
+			copy(data, buf[match.Start():match.End()])
+			addMatch(ruleMatches, ref.ruleIndex, ref.stringName, match.Start(), data)
 		}
 	}
 
@@ -69,7 +76,11 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 			end := min(len(buf), pos+halfWindow)
 
 			if loc := rp.re.FindIndex(buf[start:end]); loc != nil {
-				addMatchPos(ruleMatches, rp.ruleIndex, rp.stringName, start+loc[0])
+				matchStart := start + loc[0]
+				matchEnd := start + loc[1]
+				data := make([]byte, matchEnd-matchStart)
+				copy(data, buf[matchStart:matchEnd])
+				addMatch(ruleMatches, rp.ruleIndex, rp.stringName, matchStart, data)
 				break
 			}
 		}
@@ -80,7 +91,9 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 			continue
 		}
 		if loc := rp.re.FindIndex(buf); loc != nil {
-			addMatchPos(ruleMatches, rp.ruleIndex, rp.stringName, loc[0])
+			data := make([]byte, loc[1]-loc[0])
+			copy(data, buf[loc[0]:loc[1]])
+			addMatch(ruleMatches, rp.ruleIndex, rp.stringName, loc[0], data)
 		}
 	}
 
@@ -94,9 +107,19 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 
 		cr := r.rules[ruleIdx]
 
+		// Convert matchInfo to positions for condition evaluation
+		matchPositions := make(map[string][]int, len(matchedStrings))
+		for name, infos := range matchedStrings {
+			positions := make([]int, len(infos))
+			for i, info := range infos {
+				positions[i] = info.pos
+			}
+			matchPositions[name] = positions
+		}
+
 		// Evaluate condition
 		evalCtx := &evalContext{
-			matches:     matchedStrings,
+			matches:     matchPositions,
 			buf:         buf,
 			stringNames: cr.stringNames,
 		}
@@ -105,8 +128,10 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 
 		strings := make([]MatchString, 0, len(matchedStrings))
-		for name := range matchedStrings {
-			strings = append(strings, MatchString{Name: name})
+		for name, infos := range matchedStrings {
+			for _, info := range infos {
+				strings = append(strings, MatchString{Name: name, Data: info.data})
+			}
 		}
 
 		abort, err := cb.RuleMatching(&MatchRule{
@@ -153,11 +178,11 @@ func (r *Rules) ScanFile(filename string, flags ScanFlags, timeout time.Duration
 	return r.ScanMem(data, flags, timeout, cb)
 }
 
-func addMatchPos(m map[int]map[string][]int, ruleIdx int, stringName string, pos int) {
+func addMatch(m map[int]map[string][]matchInfo, ruleIdx int, stringName string, pos int, data []byte) {
 	if m[ruleIdx] == nil {
-		m[ruleIdx] = make(map[string][]int)
+		m[ruleIdx] = make(map[string][]matchInfo)
 	}
-	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], pos)
+	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], matchInfo{pos: pos, data: data})
 }
 
 func dedupe(positions []int) []int {

@@ -99,6 +99,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	compiled, err := experimental.CompileLatin1(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
+			rules.warnings = append(rules.warnings,
+				fmt.Sprintf("rule %q: skipping, invalid regex: %v", ruleName, err))
 			return allPatterns, nil
 		}
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)

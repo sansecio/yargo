@@ -19,6 +19,7 @@ type ScanCallback interface {
 // MatchString represents a matched string within a rule.
 type MatchString struct {
 	Name string
+	Data []byte
 }
 
 // Meta represents a metadata entry from a rule.
@@ -81,6 +82,11 @@ type Rules struct {
 // Warnings returns any warnings generated during compilation.
 func (r *Rules) Warnings() []string {
 	return r.warnings
+}
+
+// GetRules returns the compiled rules for iteration.
+func (r *Rules) GetRules() []*compiledRule {
+	return r.rules
 }
 
 // Stats returns compilation statistics.
