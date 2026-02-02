@@ -44,26 +44,20 @@ func main() {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT detections FROM detections WHERE detections IS NOT NULL AND LENGTH(detections) > 2 ORDER BY id DESC LIMIT 500000`)
+	rows, err := db.Query(`SELECT detections FROM detections WHERE detections IS NOT NULL AND LENGTH(detections) > 2`)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
 		os.Exit(1)
 	}
 	defer rows.Close()
 
-	// Track rule differences: rule -> count
-	yargoOnly := make(map[string]int)
-	goYaraOnly := make(map[string]int)
-	exampleSnippets := make(map[string]string) // rule -> example snippet where it differs
-	exampleNames := make(map[string]string)    // rule -> detection name where it differs
-
-	var matchedBoth, skipped, totalSnippets, rowCount int
-	skippedNames := make(map[string]int) // track which detection names are being skipped
-
+	// First pass: collect unique snippets by detection name
+	uniqueSnippets := make(map[string]string) // detection name -> snippet
+	var rowCount int
 	for rows.Next() {
 		rowCount++
-		if rowCount%10000 == 0 {
-			fmt.Fprintf(os.Stderr, "Processed %d rows, %d snippets...\n", rowCount, totalSnippets)
+		if rowCount%100000 == 0 {
+			fmt.Fprintf(os.Stderr, "Reading rows: %d, unique names: %d...\n", rowCount, len(uniqueSnippets))
 		}
 		var detectionsJSON string
 		if err := rows.Scan(&detectionsJSON); err != nil {
@@ -72,67 +66,15 @@ func main() {
 
 		var detections []Detection
 		if err := json.Unmarshal([]byte(detectionsJSON), &detections); err != nil {
-			fmt.Fprintf(os.Stderr, "Error unmarshaling JSON: %v\n", err)
 			continue
 		}
 
 		for _, detection := range detections {
-			snippet := detection.Snippet
-			if snippet == "" {
+			if detection.Snippet == "" {
 				continue
 			}
-			totalSnippets++
-			data := []byte(snippet)
-
-			// Get go-yara matches
-			var goYaraMatches yara.MatchRules
-			goYaraRules.ScanMem(data, yara.ScanFlagsFastMode, 30*time.Second, &goYaraMatches)
-			goYaraSet := make(map[string]bool)
-			for _, m := range goYaraMatches {
-				goYaraSet[m.Rule] = true
-			}
-
-			// Get yargo matches
-			var yargoMatches scanner.MatchRules
-			yargoRules.ScanMem(data, 0, 30*time.Second, &yargoMatches)
-			yargoSet := make(map[string]bool)
-			for _, m := range yargoMatches {
-				yargoSet[m.Rule] = true
-			}
-
-			// Skip if neither matched
-			if len(goYaraSet) == 0 && len(yargoSet) == 0 {
-				skipped++
-				skippedNames[detection.Name]++
-				continue
-			}
-
-			// Check if at least one rule matched in both
-			for rule := range goYaraSet {
-				if yargoSet[rule] {
-					matchedBoth++
-					break
-				}
-			}
-
-			// Find differences
-			for rule := range yargoSet {
-				if !goYaraSet[rule] {
-					yargoOnly[rule]++
-					if _, ok := exampleSnippets["yargo:"+rule]; !ok {
-						exampleSnippets["yargo:"+rule] = snippet
-						exampleNames["yargo:"+rule] = detection.Name
-					}
-				}
-			}
-			for rule := range goYaraSet {
-				if !yargoSet[rule] {
-					goYaraOnly[rule]++
-					if _, ok := exampleSnippets["goyara:"+rule]; !ok {
-						exampleSnippets["goyara:"+rule] = snippet
-						exampleNames["goyara:"+rule] = detection.Name
-					}
-				}
+			if _, exists := uniqueSnippets[detection.Name]; !exists {
+				uniqueSnippets[detection.Name] = detection.Snippet
 			}
 		}
 	}
@@ -142,7 +84,79 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Total snippets scanned: %d\n", totalSnippets)
+	fmt.Fprintf(os.Stderr, "Found %d unique detection names from %d rows\n", len(uniqueSnippets), rowCount)
+
+	// Second pass: scan each unique snippet
+	yargoOnly := make(map[string]int)
+	goYaraOnly := make(map[string]int)
+	exampleSnippets := make(map[string]string)
+	exampleNames := make(map[string]string)
+
+	var matchedBoth, skipped int
+	skippedNames := make(map[string]int)
+	scanned := 0
+
+	for name, snippet := range uniqueSnippets {
+		scanned++
+		if scanned%100 == 0 {
+			fmt.Fprintf(os.Stderr, "Scanning: %d/%d...\n", scanned, len(uniqueSnippets))
+		}
+
+		data := []byte(snippet)
+
+		// Get go-yara matches
+		var goYaraMatches yara.MatchRules
+		goYaraRules.ScanMem(data, yara.ScanFlagsFastMode, 30*time.Second, &goYaraMatches)
+		goYaraSet := make(map[string]bool)
+		for _, m := range goYaraMatches {
+			goYaraSet[m.Rule] = true
+		}
+
+		// Get yargo matches
+		var yargoMatches scanner.MatchRules
+		yargoRules.ScanMem(data, 0, 30*time.Second, &yargoMatches)
+		yargoSet := make(map[string]bool)
+		for _, m := range yargoMatches {
+			yargoSet[m.Rule] = true
+		}
+
+		// Skip if neither matched
+		if len(goYaraSet) == 0 && len(yargoSet) == 0 {
+			skipped++
+			skippedNames[name]++
+			continue
+		}
+
+		// Check if at least one rule matched in both
+		for rule := range goYaraSet {
+			if yargoSet[rule] {
+				matchedBoth++
+				break
+			}
+		}
+
+		// Find differences
+		for rule := range yargoSet {
+			if !goYaraSet[rule] {
+				yargoOnly[rule]++
+				if _, ok := exampleSnippets["yargo:"+rule]; !ok {
+					exampleSnippets["yargo:"+rule] = snippet
+					exampleNames["yargo:"+rule] = name
+				}
+			}
+		}
+		for rule := range goYaraSet {
+			if !yargoSet[rule] {
+				goYaraOnly[rule]++
+				if _, ok := exampleSnippets["goyara:"+rule]; !ok {
+					exampleSnippets["goyara:"+rule] = snippet
+					exampleNames["goyara:"+rule] = name
+				}
+			}
+		}
+	}
+
+	fmt.Printf("Unique detection names scanned: %d\n", len(uniqueSnippets))
 	fmt.Printf("Snippets matched by both: %d\n", matchedBoth)
 	fmt.Printf("Snippets skipped (no matches): %d\n", skipped)
 	fmt.Printf("Skipped by detection name:\n")
