@@ -473,24 +473,20 @@ func isQuantifier(pattern string, i int) bool {
 	return i < len(pattern) && pattern[i] == '}'
 }
 
-// YARA-compatible atom quality scoring constant.
-const maxAtomQuality = 255
-
-// atomQuality scores an atom using YARA's heuristic algorithm.
-// Quality ranges from 0 to 255, with higher being better.
+// atomQuality scores an atom using YARA-inspired heuristics.
+// Higher scores indicate more selective atoms (fewer false positives).
 func atomQuality(atom []byte) int {
 	if len(atom) == 0 {
 		return 0
 	}
 
-	// Per-byte scoring
-	perByteScore := 0
+	score := 0
 	uniqueBytes := make(map[byte]struct{})
 	allSame := true
 	firstByte := atom[0]
 
 	for _, b := range atom {
-		perByteScore += byteQuality(b)
+		score += byteQuality(b)
 		uniqueBytes[b] = struct{}{}
 		if b != firstByte {
 			allSame = false
@@ -498,23 +494,17 @@ func atomQuality(atom []byte) int {
 	}
 
 	// Unique byte diversity bonus: +2 per unique byte
-	uniqueBonus := len(uniqueBytes) * 2
+	score += len(uniqueBytes) * 2
 
 	// Heavy penalty for repeated common bytes (like NOP sleds, padding)
-	repeatedCommonPenalty := 0
 	if allSame && isCommonByte(firstByte) {
-		repeatedCommonPenalty = 10 * len(atom)
+		score -= 10 * len(atom)
 	}
 
-	// YARA formula adapted: base_offset + per_byte_score + unique_bonus
-	// Base offset of 167 comes from YARA's 255 - 22*4 for 4-byte atoms.
-	// We don't cap at maxAtomQuality to allow longer atoms to score higher.
-	quality := 167 + perByteScore + uniqueBonus - repeatedCommonPenalty
-
-	if quality < 0 {
+	if score < 0 {
 		return 0
 	}
-	return quality
+	return score
 }
 
 // byteQuality returns per-byte quality score using YARA's heuristic.
