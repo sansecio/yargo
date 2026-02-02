@@ -1480,3 +1480,262 @@ func TestIntegrationWithRealYaraFile(t *testing.T) {
 		t.Logf("  - %s (strings: %v)", m.Rule, m.Strings)
 	}
 }
+
+func TestScanFile(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "php_tag",
+				Strings: []*ast.StringDef{
+					{Name: "$php", Value: ast.TextString{Value: "<?php"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// Create a temporary file with test data
+	tmpFile, err := os.CreateTemp("", "scanfile_test_*.php")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	testData := []byte("hello <?php echo 'world'; ?>")
+	if _, err := tmpFile.Write(testData); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	tmpFile.Close()
+
+	var matches MatchRules
+	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanFile() error = %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if matches[0].Rule != "php_tag" {
+		t.Errorf("expected rule 'php_tag', got %q", matches[0].Rule)
+	}
+}
+
+func TestScanFileNoMatch(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "php_tag",
+				Strings: []*ast.StringDef{
+					{Name: "$php", Value: ast.TextString{Value: "<?php"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "scanfile_test_*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	testData := []byte("hello world, no php here")
+	if _, err := tmpFile.Write(testData); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	tmpFile.Close()
+
+	var matches MatchRules
+	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanFile() error = %v", err)
+	}
+
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestScanFileNotFound(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "test",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "test"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	var matches MatchRules
+	err = rules.ScanFile("/nonexistent/path/to/file.txt", 0, time.Second, &matches)
+	if err == nil {
+		t.Error("expected error for nonexistent file, got nil")
+	}
+}
+
+func TestScanFileEmptyFile(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "test",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "test"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "scanfile_empty_*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	var matches MatchRules
+	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanFile() error = %v", err)
+	}
+
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches for empty file, got %d", len(matches))
+	}
+}
+
+func TestScanFileLargeFile(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "marker",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "MARKER_STRING"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "scanfile_large_*.bin")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write 10MB of padding then marker then more padding
+	padding := make([]byte, 5*1024*1024) // 5MB
+	marker := []byte("MARKER_STRING")
+
+	if _, err := tmpFile.Write(padding); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if _, err := tmpFile.Write(marker); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if _, err := tmpFile.Write(padding); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	tmpFile.Close()
+
+	var matches MatchRules
+	err = rules.ScanFile(tmpFile.Name(), 0, 30*time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanFile() error = %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match in large file, got %d", len(matches))
+	}
+	if matches[0].Rule != "marker" {
+		t.Errorf("expected rule 'marker', got %q", matches[0].Rule)
+	}
+}
+
+func TestScanFileMatchesScanMem(t *testing.T) {
+	// Verify ScanFile produces the same results as ScanMem
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "multi_match",
+				Strings: []*ast.StringDef{
+					{Name: "$a", Value: ast.TextString{Value: "foo"}},
+					{Name: "$b", Value: ast.TextString{Value: "bar"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	testData := []byte("foo and bar and more foo")
+
+	// Test with ScanMem
+	var memMatches MatchRules
+	err = rules.ScanMem(testData, 0, time.Second, &memMatches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	// Test with ScanFile
+	tmpFile, err := os.CreateTemp("", "scanfile_compare_*.txt")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(testData); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	tmpFile.Close()
+
+	var fileMatches MatchRules
+	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &fileMatches)
+	if err != nil {
+		t.Fatalf("ScanFile() error = %v", err)
+	}
+
+	// Compare results
+	if len(memMatches) != len(fileMatches) {
+		t.Fatalf("ScanMem returned %d matches, ScanFile returned %d", len(memMatches), len(fileMatches))
+	}
+
+	for i := range memMatches {
+		if memMatches[i].Rule != fileMatches[i].Rule {
+			t.Errorf("match[%d] rule mismatch: ScanMem=%q, ScanFile=%q", i, memMatches[i].Rule, fileMatches[i].Rule)
+		}
+	}
+}
