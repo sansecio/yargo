@@ -13,7 +13,8 @@ import (
 
 // CompileOptions configures compilation behavior.
 type CompileOptions struct {
-	SkipInvalidRegex bool
+	SkipInvalidRegex        bool
+	SkipFullBufferScanRegex bool
 }
 
 // Compile compiles an AST RuleSet into Rules ready for scanning.
@@ -106,6 +107,14 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 
+	atoms, hasAtoms := extractAtoms(rePattern, 2)
+	requiresFullScan := !hasAtoms || caseInsensitive
+	if requiresFullScan && opts.SkipFullBufferScanRegex {
+		rules.warnings = append(rules.warnings,
+			fmt.Sprintf("rule %q: skipping, regex requires full buffer scan", ruleName))
+		return allPatterns, nil
+	}
+
 	rp := &regexPattern{
 		re:         compiled,
 		ruleIndex:  ruleIdx,
@@ -114,8 +123,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
 
-	atoms, hasAtoms := extractAtoms(rePattern, 2)
-	if hasAtoms && !caseInsensitive {
+	if !requiresFullScan {
 		rp.hasAtom = true
 		for _, atom := range atoms {
 			rules.patternMap = append(rules.patternMap, patternRef{

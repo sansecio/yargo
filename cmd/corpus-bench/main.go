@@ -148,6 +148,7 @@ func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 	}
 
 	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
-		SkipInvalidRegex: true,
+		SkipInvalidRegex:        true,
+		SkipFullBufferScanRegex: true,
 	})
 }
