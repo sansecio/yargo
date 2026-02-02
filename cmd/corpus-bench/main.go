@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
-	"syscall"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
@@ -115,25 +114,7 @@ func main() {
 	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
 }
 
-// compileGoYaraRules compiles YARA rules while suppressing stderr noise from
-// the underlying RE2/abseil libraries.
 func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
-	// Suppress absl/RE2 stderr noise during compilation
-	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer devNull.Close()
-
-	savedStderr, err := syscall.Dup(syscall.Stderr)
-	if err != nil {
-		return nil, err
-	}
-	defer syscall.Close(savedStderr)
-
-	syscall.Dup2(int(devNull.Fd()), syscall.Stderr)
-	defer syscall.Dup2(savedStderr, syscall.Stderr)
-
 	compiler, err := yara.NewCompiler()
 	if err != nil {
 		return nil, err
@@ -152,8 +133,6 @@ func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
 	return compiler.GetRules()
 }
 
-// compileYargoRules compiles YARA rules with yargo while suppressing stderr
-// noise from the underlying RE2/abseil libraries.
 func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 	p, err := parser.New()
 	if err != nil {
@@ -163,22 +142,6 @@ func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Suppress absl/RE2 stderr noise during compilation
-	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer devNull.Close()
-
-	savedStderr, err := syscall.Dup(syscall.Stderr)
-	if err != nil {
-		return nil, err
-	}
-	defer syscall.Close(savedStderr)
-
-	syscall.Dup2(int(devNull.Fd()), syscall.Stderr)
-	defer syscall.Dup2(savedStderr, syscall.Stderr)
 
 	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
 		SkipInvalidRegex: true,

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
@@ -146,13 +145,6 @@ func sortByCount(m map[string]int) []string {
 }
 
 func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
-	devNull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	defer devNull.Close()
-	savedStderr, _ := syscall.Dup(syscall.Stderr)
-	defer syscall.Close(savedStderr)
-	syscall.Dup2(int(devNull.Fd()), syscall.Stderr)
-	defer syscall.Dup2(savedStderr, syscall.Stderr)
-
 	compiler, err := yara.NewCompiler()
 	if err != nil {
 		return nil, err
@@ -177,13 +169,6 @@ func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	devNull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	defer devNull.Close()
-	savedStderr, _ := syscall.Dup(syscall.Stderr)
-	defer syscall.Close(savedStderr)
-	syscall.Dup2(int(devNull.Fd()), syscall.Stderr)
-	defer syscall.Dup2(savedStderr, syscall.Stderr)
 
 	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
 		SkipInvalidRegex: true,
