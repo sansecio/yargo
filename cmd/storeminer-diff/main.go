@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	yara "github.com/hillu/go-yara/v4"
 
-	"github.com/sansecio/yargo/parser"
+	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
 )
 
@@ -24,13 +23,13 @@ type Detection struct {
 func main() {
 	yaraFile := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/build/ecomscan.yar")
 
-	goYaraRules, err := compileGoYaraRules(yaraFile)
+	goYaraRules, err := internal.GoYaraRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling go-yara rules: %v\n", err)
 		os.Exit(1)
 	}
 
-	yargoRules, err := compileYargoRules(yaraFile)
+	yargoRules, err := internal.YargoRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
@@ -204,23 +203,23 @@ func main() {
 	fmt.Printf("Snippets matched by both: %d\n", matchedBoth)
 	fmt.Printf("Snippets skipped (no matches): %d\n", skipped)
 	fmt.Printf("Skipped by detection name:\n")
-	for _, name := range sortByCount(skippedNames) {
+	for _, name := range internal.SortByCount(skippedNames) {
 		fmt.Printf("  %s: %d\n", name, skippedNames[name])
 	}
 	fmt.Println()
 
 	// Sort and print yargo-only matches
-	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
-	for _, rule := range sortByCount(yargoOnly) {
+	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", internal.SumValues(yargoOnly))
+	for _, rule := range internal.SortByCount(yargoOnly) {
 		fmt.Printf("  %s: %d occurrences (detection: %s)\n", rule, yargoOnly[rule], exampleNames["yargo:"+rule])
 		fmt.Printf("    snippet: %q\n", exampleSnippets["yargo:"+rule])
 		fmt.Printf("    matched: %q\n", exampleMatched["yargo:"+rule])
 	}
 
-	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", sumValues(goYaraOnly))
+	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", internal.SumValues(goYaraOnly))
 
 	var unexplained []string
-	for _, rule := range sortByCount(goYaraOnly) {
+	for _, rule := range internal.SortByCount(goYaraOnly) {
 		fmt.Printf("  %s: %d occurrences (detection: %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], exampleNames["goyara:"+rule])
 		fmt.Printf("    snippet: %q\n", exampleSnippets["goyara:"+rule])
 		fmt.Printf("    matched: %q\n", exampleMatched["goyara:"+rule])
@@ -234,65 +233,11 @@ func main() {
 	// Report matched data mismatches between scanners
 	if len(dataMismatch) > 0 {
 		fmt.Printf("\nMatched data differs between yargo and go-yara (%d rules):\n", len(dataMismatch))
-		for _, rule := range sortByCount(dataMismatch) {
+		for _, rule := range internal.SortByCount(dataMismatch) {
 			example := mismatchExamples[rule]
 			fmt.Printf("  %s: %d occurrences\n", rule, dataMismatch[rule])
 			fmt.Printf("    yargo:   %q\n", example[0])
 			fmt.Printf("    go-yara: %q\n", example[1])
 		}
 	}
-}
-
-func indexString(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
-
-func sumValues(m map[string]int) int {
-	sum := 0
-	for _, v := range m {
-		sum += v
-	}
-	return sum
-}
-
-func sortByCount(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return m[keys[i]] > m[keys[j]]
-	})
-	return keys
-}
-
-func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
-	compiler, err := yara.NewCompiler()
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	if err := compiler.AddFile(f, ""); err != nil {
-		return nil, err
-	}
-	return compiler.GetRules()
-}
-
-func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
-	p := parser.New()
-	ruleSet, err := p.ParseFile(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return scanner.Compile(ruleSet)
 }

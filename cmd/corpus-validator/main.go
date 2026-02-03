@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sansecio/yargo/parser"
+	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
 )
 
@@ -19,15 +19,7 @@ func main() {
 		filepath.Join(corpusBase, "frontend"),
 	}
 
-	p := parser.New()
-
-	ruleSet, err := p.ParseFile(yaraFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", yaraFile, err)
-		os.Exit(1)
-	}
-
-	rules, err := scanner.Compile(ruleSet)
+	rules, err := internal.YargoRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling rules: %v\n", err)
 		os.Exit(1)
@@ -35,7 +27,6 @@ func main() {
 
 	debug := os.Getenv("DEBUG_FILE")
 
-	fmt.Printf("Compiled %d rules\n", len(ruleSet.Rules))
 	acPatterns, regexPatterns := rules.Stats()
 	fmt.Printf("AC patterns: %d, Regex patterns: %d\n", acPatterns, regexPatterns)
 	var missing []string

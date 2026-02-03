@@ -78,6 +78,18 @@ Regexes without extractable atoms are rejected at compile time. Use `CompileOpti
 | String matching | `ahocorasick/` (vendored) | Based on [pgavlin/aho-corasick](https://github.com/pgavlin/aho-corasick) with performance fixes (reduced GC pressure, etc.). NFA by default; optional DFA for faster scans at higher memory cost |
 | Regex | [wasilibs/go-re2](https://github.com/wasilibs/go-re2) | RE2 compiled to Wasm via wazero; Latin-1 mode for binary scanning |
 
+## Tools
+
+The `cmd/` directory contains comparison and benchmarking tools that require [go-yara](https://github.com/hillu/go-yara) (cgo) to diff results against the reference YARA implementation.
+
+- **corpus-bench** — benchmarks yargo vs go-yara scan speed over a file corpus
+- **corpus-diff** — compares rule matches between yargo and go-yara across a file corpus
+- **corpus-validator** — validates that yargo finds trusted matches for all corpus files
+- **parse-bench** — benchmarks rule parsing/compilation speed
+- **process-bench** — benchmarks scanning a single large file
+- **snippet-diff** — compares matches on detection snippets from a MySQL database
+- **storeminer-diff** — compares matches on storeminer detections from a MySQL database
+
 ## Current Limitations
 
 ### Conditions

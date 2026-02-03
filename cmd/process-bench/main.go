@@ -9,7 +9,7 @@ import (
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
-	"github.com/sansecio/yargo/parser"
+	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
 )
 
@@ -31,7 +31,7 @@ func main() {
 	fmt.Printf("Loaded %d bytes (%.2f MB)\n", len(data), float64(len(data))/(1024*1024))
 
 	// Compile go-yara rules
-	goYaraRules, err := compileGoYaraRules(yaraFile)
+	goYaraRules, err := internal.GoYaraRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling go-yara rules: %v\n", err)
 		os.Exit(1)
@@ -39,7 +39,7 @@ func main() {
 	fmt.Printf("Compiled go-yara rules\n")
 
 	// Compile yargo rules
-	yargoRules, err := compileYargoRules(yaraFile)
+	yargoRules, err := internal.YargoRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
@@ -78,33 +78,4 @@ func main() {
 	fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, len(goYaraMatches))
 	fmt.Printf("yargo:               %v (%d matches)\n", yargoDuration, len(yargoMatches))
 	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
-}
-
-func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
-	compiler, err := yara.NewCompiler()
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.Open(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	if err := compiler.AddFile(f, ""); err != nil {
-		return nil, err
-	}
-
-	return compiler.GetRules()
-}
-
-func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
-	p := parser.New()
-	ruleSet, err := p.ParseFile(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return scanner.Compile(ruleSet)
 }

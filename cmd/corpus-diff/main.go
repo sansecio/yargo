@@ -5,12 +5,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
 
-	"github.com/sansecio/yargo/parser"
+	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
 )
 
@@ -22,13 +21,13 @@ func main() {
 		filepath.Join(corpusBase, "frontend"),
 	}
 
-	goYaraRules, err := compileGoYaraRules(yaraFile)
+	goYaraRules, err := internal.GoYaraRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling go-yara rules: %v\n", err)
 		os.Exit(1)
 	}
 
-	yargoRules, err := compileYargoRules(yaraFile)
+	yargoRules, err := internal.YargoRules(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
@@ -88,15 +87,15 @@ func main() {
 	}
 
 	// Sort and print yargo-only matches
-	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
-	for _, rule := range sortByCount(yargoOnly) {
+	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", internal.SumValues(yargoOnly))
+	for _, rule := range internal.SortByCount(yargoOnly) {
 		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, yargoOnly[rule], filepath.Base(exampleFiles["yargo:"+rule]))
 	}
 
-	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", sumValues(goYaraOnly))
+	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", internal.SumValues(goYaraOnly))
 
 	var unexplained []string
-	for _, rule := range sortByCount(goYaraOnly) {
+	for _, rule := range internal.SortByCount(goYaraOnly) {
 		fmt.Printf("  %s: %d occurrences (e.g. %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], filepath.Base(exampleFiles["goyara:"+rule]))
 		unexplained = append(unexplained, rule)
 	}
@@ -104,49 +103,4 @@ func main() {
 	if len(unexplained) > 0 {
 		fmt.Printf("\n*** %d rules with UNEXPLAINED missing matches: %v\n", len(unexplained), unexplained)
 	}
-}
-
-func sumValues(m map[string]int) int {
-	sum := 0
-	for _, v := range m {
-		sum += v
-	}
-	return sum
-}
-
-func sortByCount(m map[string]int) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		return m[keys[i]] > m[keys[j]]
-	})
-	return keys
-}
-
-func compileGoYaraRules(yaraFile string) (*yara.Rules, error) {
-	compiler, err := yara.NewCompiler()
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	if err := compiler.AddFile(f, ""); err != nil {
-		return nil, err
-	}
-	return compiler.GetRules()
-}
-
-func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
-	p := parser.New()
-	ruleSet, err := p.ParseFile(yaraFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return scanner.Compile(ruleSet)
 }
