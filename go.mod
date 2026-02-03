@@ -17,3 +17,5 @@ require (
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 )
+
+replace github.com/pgavlin/aho-corasick => /home/daniel/Code/aho-corasick
