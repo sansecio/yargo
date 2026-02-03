@@ -21,44 +21,29 @@ go get github.com/sansecio/yargo
 
 ## Usage
 
-### Parsing YARA Rules
-
-```go
-import "github.com/sansecio/yargo/parser"
-
-p := parser.New()
-
-ruleSet, err := p.ParseFile("rules.yar")
-if err != nil {
-    log.Fatal(err)
-}
-
-fmt.Printf("Parsed %d rules\n", len(ruleSet.Rules))
-```
-
-### Scanning with Compiled Rules
-
 ```go
 import (
     "github.com/sansecio/yargo/parser"
     "github.com/sansecio/yargo/scanner"
 )
 
-// Parse rules
 p := parser.New()
-ruleSet, _ := p.ParseFile("rules.yar")
+ruleSet, err := p.ParseFile("rules.yar")
+if err != nil {
+    log.Fatal(err)
+}
 
-// Compile rules
 rules, err := scanner.Compile(ruleSet)
 if err != nil {
     log.Fatal(err)
 }
 
-// Scan data
-data, _ := os.ReadFile("suspect.php")
-var matches scanner.MatchRules
-err = rules.ScanMem(data, 0, 30*time.Second, &matches)
+data, err := os.ReadFile("suspect.php")
 if err != nil {
+    log.Fatal(err)
+}
+var matches scanner.MatchRules
+if err := rules.ScanMem(data, 0, 30*time.Second, &matches); err != nil {
     log.Fatal(err)
 }
 
