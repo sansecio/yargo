@@ -82,3 +82,7 @@ type Rules struct {
 func (r *Rules) Stats() (acPatterns, regexPatterns int) {
 	return len(r.patterns), len(r.regexPatterns)
 }
+
+func (r *Rules) NumRules() int {
+	return len(r.rules)
+}
