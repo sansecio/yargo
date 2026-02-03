@@ -361,7 +361,11 @@ func extractLiteralRuns(pattern string) [][]byte {
 			runs, current = appendRun(runs, current)
 			i++
 
-		case '*', '+', '?':
+		case '+':
+			runs, current = appendRun(runs, current)
+			i++
+
+		case '*', '?':
 			if len(current) > 0 {
 				current = current[:len(current)-1]
 			}

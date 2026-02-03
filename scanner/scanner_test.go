@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -714,7 +713,7 @@ func TestRegexBasicMatching(t *testing.T) {
 }
 
 func TestRegexCaseInsensitive(t *testing.T) {
-	// Case-insensitive regexes work via full buffer scan (no atom acceleration)
+	// Case-insensitive regexes require full buffer scan (no atom acceleration)
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
@@ -730,39 +729,9 @@ func TestRegexCaseInsensitive(t *testing.T) {
 		},
 	}
 
-	rules, err := Compile(rs)
-	if err != nil {
-		t.Fatalf("Compile() error = %v", err)
-	}
-
-	// Should have a warning about full buffer scan
-	if len(rules.Warnings()) == 0 {
-		t.Error("expected warning about full buffer scan for case-insensitive regex")
-	}
-
-	tests := []struct {
-		name string
-		data []byte
-		want bool
-	}{
-		{"lowercase", []byte("this is malware"), true},
-		{"uppercase", []byte("this is MALWARE"), true},
-		{"mixedcase", []byte("this is MaLwArE"), true},
-		{"no_match", []byte("this is clean"), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var matches MatchRules
-			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
-			if err != nil {
-				t.Fatalf("ScanMem() error = %v", err)
-			}
-			got := len(matches) > 0
-			if got != tt.want {
-				t.Errorf("match = %v, want %v", got, tt.want)
-			}
-		})
+	_, err := Compile(rs)
+	if err == nil {
+		t.Fatal("expected error for full buffer scan regex, got nil")
 	}
 }
 
@@ -912,14 +881,10 @@ func TestRegexComplexPatterns(t *testing.T) {
 	}{
 		{"alternation", `cat|dog`, []byte("I have a dog"), true},
 		{"alternation_no_match", `cat|dog`, []byte("I have a bird"), false},
-		{"character_class", `[aeiou]+`, []byte("hello"), true},    // full buffer scan
-		{"quantifier_star", `ab*c`, []byte("ac"), true},           // full buffer scan
-		{"quantifier_plus_no_match", `ab+c`, []byte("ac"), false}, // no match
-		{"quantifier_plus", `ab+c`, []byte("abbc"), true},         // full buffer scan
+		{"quantifier_plus_no_match", `ab+c`, []byte("ac"), false}, // has atom "ab"
+		{"quantifier_plus", `ab+c`, []byte("abbc"), true},         // has atom "ab"
 		{"optional", `colou?r`, []byte("color"), true},            // has atom "colo"
 		{"optional_match", `colou?r`, []byte("colour"), true},     // has atom "colo"
-		{"repetition", `a{3}`, []byte("aaa"), true},               // full buffer scan
-		{"repetition_no_match", `a{3}`, []byte("aa"), false},      // no match
 	}
 
 	for _, tt := range tests {
@@ -952,6 +917,41 @@ func TestRegexComplexPatterns(t *testing.T) {
 			got := len(matches) > 0
 			if got != tt.want {
 				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegexFullBufferScanError(t *testing.T) {
+	fullScanPatterns := []struct {
+		name    string
+		pattern string
+	}{
+		{"character_class", `[aeiou]+`},
+		{"quantifier_star", `ab*c`},
+		{"repetition", `a{3}`},
+	}
+
+	for _, tt := range fullScanPatterns {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := &ast.RuleSet{
+				Rules: []*ast.Rule{
+					{
+						Name: "test",
+						Strings: []*ast.StringDef{
+							{
+								Name:  "$s",
+								Value: ast.RegexString{Pattern: tt.pattern},
+							},
+						},
+						Condition: ast.AnyOf{Pattern: "them"},
+					},
+				},
+			}
+
+			_, err := Compile(rs)
+			if err == nil {
+				t.Error("expected error for full buffer scan regex, got nil")
 			}
 		})
 	}
@@ -1175,14 +1175,6 @@ func TestSkipNilCondition(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 
-	// Should have a warning about skipping the rule with no condition
-	if len(rules.Warnings()) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(rules.Warnings()))
-	}
-	if len(rules.Warnings()) > 0 && !strings.Contains(rules.Warnings()[0], `rule "no_condition": skipping, no condition`) {
-		t.Errorf("unexpected warning: %s", rules.Warnings()[0])
-	}
-
 	// Scan data that matches both rules' strings
 	data := []byte("match also_match")
 
@@ -1218,11 +1210,6 @@ func TestAllOfThemCondition(t *testing.T) {
 	rules, err := Compile(rs)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
-	}
-
-	// "all of them" is now supported, no warning
-	if len(rules.Warnings()) != 0 {
-		t.Errorf("expected 0 warnings, got %d: %v", len(rules.Warnings()), rules.Warnings())
 	}
 
 	// Test with both strings matching
@@ -1261,13 +1248,9 @@ func TestNoWarningForSupportedCondition(t *testing.T) {
 		},
 	}
 
-	rules, err := Compile(rs)
+	_, err := Compile(rs)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
-	}
-
-	if len(rules.Warnings()) != 0 {
-		t.Errorf("expected 0 warnings for supported condition, got %d: %v", len(rules.Warnings()), rules.Warnings())
 	}
 }
 
@@ -1452,7 +1435,6 @@ func TestIntegrationWithRealYaraFile(t *testing.T) {
 	}
 	t.Logf("Parse: %v (%d rules)", time.Since(parseStart), len(rs.Rules))
 
-	// Compile rules (skip invalid regexes for RE2 incompatibility)
 	compileStart := time.Now()
 	rules, err := CompileWithOptions(rs, CompileOptions{SkipInvalidRegex: true})
 	if err != nil {

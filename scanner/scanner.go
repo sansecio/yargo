@@ -76,12 +76,6 @@ type Rules struct {
 	patterns      [][]byte
 	patternMap    []patternRef
 	regexPatterns []*regexPattern
-	warnings      []string
-}
-
-// Warnings returns any warnings generated during compilation.
-func (r *Rules) Warnings() []string {
-	return r.warnings
 }
 
 // GetRules returns the compiled rules for iteration.

@@ -26,7 +26,7 @@ func Test_extractAtoms(t *testing.T) {
 		{"only short literals", `a[0-9]b[0-9]c`, 3, false, ""},
 		{"optional breaks run", `hello?world`, 3, true, "world"},
 		{"star breaks run", `hello*world`, 3, true, "world"},
-		{"plus breaks run", `hello+world`, 3, true, "world"},
+		{"plus keeps preceding byte", `hello+[0-9]`, 3, true, "hello"},
 		{"curly brace quantifier", `a{2,5}hello`, 3, true, "hello"},
 		{"dot breaks run", `hello.worldly`, 3, true, "worldly"},
 		{"caret anchor", `^hello`, 3, true, "hello"},

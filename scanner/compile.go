@@ -13,8 +13,9 @@ import (
 
 // CompileOptions configures compilation behavior.
 type CompileOptions struct {
-	SkipInvalidRegex        bool
-	SkipFullBufferScanRegex bool
+	// SkipInvalidRegex silently skips regexes that are invalid or require
+	// a full buffer scan, instead of returning an error.
+	SkipInvalidRegex bool
 }
 
 // Compile compiles an AST RuleSet into Rules ready for scanning.
@@ -33,8 +34,6 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 	for _, r := range rs.Rules {
 		if r.Condition == nil {
-			rules.warnings = append(rules.warnings,
-				fmt.Sprintf("rule %q: skipping, no condition", r.Name))
 			continue
 		}
 
@@ -100,8 +99,6 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	compiled, err := experimental.CompileLatin1(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
-			rules.warnings = append(rules.warnings,
-				fmt.Sprintf("rule %q: skipping, invalid regex: %v", ruleName, err))
 			return allPatterns, nil
 		}
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
@@ -110,10 +107,11 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	// for speedup we can consider 3 here, but it skips too many sigs due to forcing them full-buffer
 	atoms, hasAtoms := extractAtoms(rePattern, 2)
 	requiresFullScan := !hasAtoms || caseInsensitive
-	if requiresFullScan && opts.SkipFullBufferScanRegex {
-		rules.warnings = append(rules.warnings,
-			fmt.Sprintf("rule %q: skipping, regex requires full buffer scan", ruleName))
-		return allPatterns, nil
+	if requiresFullScan {
+		if opts.SkipInvalidRegex {
+			return allPatterns, nil
+		}
+		return nil, fmt.Errorf("rule %q string %s: regex requires full buffer scan", ruleName, s.Name)
 	}
 
 	rp := &regexPattern{
@@ -124,18 +122,13 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
 
-	if !requiresFullScan {
-		rp.hasAtom = true
-		for _, atom := range atoms {
-			rules.patternMap = append(rules.patternMap, patternRef{
-				isAtom:   true,
-				regexIdx: regexIdx,
-			})
-			allPatterns = append(allPatterns, atom)
-		}
-	} else {
-		rules.warnings = append(rules.warnings,
-			fmt.Sprintf("rule %q: regex requires full buffer scan", ruleName))
+	rp.hasAtom = true
+	for _, atom := range atoms {
+		rules.patternMap = append(rules.patternMap, patternRef{
+			isAtom:   true,
+			regexIdx: regexIdx,
+		})
+		allPatterns = append(allPatterns, atom)
 	}
 	return allPatterns, nil
 }

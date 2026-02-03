@@ -44,11 +44,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Compiled yargo rules\n")
-	for _, w := range yargoRules.Warnings() {
-		fmt.Printf("  warning: %s\n", w)
-	}
-	fmt.Println()
+	fmt.Printf("Compiled yargo rules\n\n")
 
 	// Benchmark go-yara (fast mode)
 	start := time.Now()
@@ -113,8 +109,5 @@ func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 		return nil, err
 	}
 
-	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
-		SkipInvalidRegex:        true,
-		SkipFullBufferScanRegex: true,
-	})
+	return scanner.Compile(ruleSet)
 }

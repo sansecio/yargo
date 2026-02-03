@@ -31,9 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	rules, err := scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
-		SkipInvalidRegex: true,
-	})
+	rules, err := scanner.Compile(ruleSet)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling rules: %v\n", err)
 		os.Exit(1)
@@ -44,12 +42,6 @@ func main() {
 	fmt.Printf("Compiled %d rules\n", len(ruleSet.Rules))
 	acPatterns, regexPatterns := rules.Stats()
 	fmt.Printf("AC patterns: %d, Regex patterns: %d\n", acPatterns, regexPatterns)
-	warnings := rules.Warnings()
-	fmt.Printf("Warnings: %d\n", len(warnings))
-	for _, w := range warnings {
-		fmt.Printf("  %s\n", w)
-	}
-
 	var missing []string
 
 	for _, dir := range corpusDirs {

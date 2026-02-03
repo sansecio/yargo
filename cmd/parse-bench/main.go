@@ -43,7 +43,7 @@ func main() {
 	}
 
 	start = time.Now()
-	yargoRules, err := compileYargo(yaraFile)
+	_, err = compileYargo(yaraFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
@@ -54,9 +54,6 @@ func main() {
 		pprof.StopCPUProfile()
 	}
 
-	for _, w := range yargoRules.Warnings() {
-		fmt.Printf("  warning: %s\n", w)
-	}
 	fmt.Println()
 
 	fmt.Printf("go-yara: %v\n", goYaraDuration)
@@ -93,8 +90,5 @@ func compileYargo(yaraFile string) (*scanner.Rules, error) {
 		return nil, err
 	}
 
-	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
-		SkipInvalidRegex:        true,
-		SkipFullBufferScanRegex: true,
-	})
+	return scanner.Compile(ruleSet)
 }

@@ -177,19 +177,6 @@ func main() {
 	}
 	fmt.Println()
 
-	// Get warnings to identify skipped rules
-	skippedRules := make(map[string]string) // rule -> reason
-	for _, w := range yargoRules.Warnings() {
-		if idx := strings.Index(w, `rule "`); idx >= 0 {
-			rest := w[idx+6:]
-			if end := strings.Index(rest, `"`); end >= 0 {
-				ruleName := rest[:end]
-				reason := rest[end+3:] // skip `": `
-				skippedRules[ruleName] = reason
-			}
-		}
-	}
-
 	// Sort and print yargo-only matches
 	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
 	for _, rule := range sortByCount(yargoOnly) {
@@ -202,14 +189,10 @@ func main() {
 
 	var unexplained []string
 	for _, rule := range sortByCount(goYaraOnly) {
-		if reason, ok := skippedRules[rule]; ok {
-			fmt.Printf("  %s: %d occurrences [SKIPPED: %s]\n", rule, goYaraOnly[rule], reason)
-		} else {
-			fmt.Printf("  %s: %d occurrences (sig: %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], exampleSigNames["goyara:"+rule])
-			fmt.Printf("    snippet: %q\n", exampleSnippets["goyara:"+rule])
-			fmt.Printf("    matched: %q\n", exampleMatched["goyara:"+rule])
-			unexplained = append(unexplained, rule)
-		}
+		fmt.Printf("  %s: %d occurrences (sig: %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], exampleSigNames["goyara:"+rule])
+		fmt.Printf("    snippet: %q\n", exampleSnippets["goyara:"+rule])
+		fmt.Printf("    matched: %q\n", exampleMatched["goyara:"+rule])
+		unexplained = append(unexplained, rule)
 	}
 
 	if len(unexplained) > 0 {
@@ -273,7 +256,5 @@ func compileYargoRules(yaraFile string) (*scanner.Rules, error) {
 		return nil, err
 	}
 
-	return scanner.CompileWithOptions(ruleSet, scanner.CompileOptions{
-		SkipInvalidRegex: true,
-	})
+	return scanner.Compile(ruleSet)
 }
