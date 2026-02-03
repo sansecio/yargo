@@ -1,16 +1,17 @@
 # Yargo
 
-Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencies. Currently provides a parser and scanner; the scanner uses the Aho-Corasick algorithm for efficient multi-pattern string matching and go-re2 for full regex support.
+Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencies. Provides a parser (via goyacc) and a scanner using Aho-Corasick for multi-pattern string matching and RE2 for regex support.
 
 ## Features
 
 - Pure Go - no cgo dependencies
-- YARA rule parser with full syntax support
-- Fast multi-pattern scanner using Aho-Corasick
-- Full regex support via go-re2 with `/i`, `/s`, `/m` modifiers
-- Condition evaluation: `and`, `or`, `at`, `uint32be`, `any of`, wildcards
+- YARA rule parser (goyacc-based) with full syntax support
+- Multi-pattern scanner using a vendored [Aho-Corasick](ahocorasick/) automaton (NFA by default, optional DFA)
+- Regex support via [go-re2](https://github.com/wasilibs/go-re2) (RE2 engine compiled to Wasm)
+- Condition evaluation: `and`, `or`, `at`, `any of`, `all of`, `uint*` functions, wildcards
 - Support for `base64` and `fullword` string modifiers
-- go-yara compatible API
+- Hex strings with wildcards (`??`), jumps (`[4-8]`), and alternations (`(AB|CD)`) compiled to regex
+- go-yara compatible scan API
 
 ## Installation
 
@@ -25,10 +26,7 @@ go get github.com/sansecio/yargo
 ```go
 import "github.com/sansecio/yargo/parser"
 
-p, err := parser.New()
-if err != nil {
-    log.Fatal(err)
-}
+p := parser.New()
 
 ruleSet, err := p.ParseFile("rules.yar")
 if err != nil {
@@ -47,7 +45,7 @@ import (
 )
 
 // Parse rules
-p, _ := parser.New()
+p := parser.New()
 ruleSet, _ := p.ParseFile("rules.yar")
 
 // Compile rules
@@ -69,78 +67,45 @@ for _, m := range matches {
 }
 ```
 
-## Performance Considerations
+## Architecture
 
-### Aho-Corasick Library Comparison
+### Scanner Pipeline
 
-Benchmarked with 106,962 YARA rules scanning a 79KB PHP file:
+1. **Parse** - goyacc parser produces an AST (`ast.RuleSet`)
+2. **Compile** - strings are compiled into two structures:
+   - **Aho-Corasick automaton** for literal patterns and regex atoms
+   - **RE2 regexes** for complex patterns (hex wildcards, regex strings)
+3. **Scan** - Aho-Corasick runs first to find candidate matches, then regex patterns are verified against a window around each candidate, and finally conditions are evaluated per rule
 
-| Library | Options | Compile Time | Scan Time | Notes |
-|---------|---------|--------------|-----------|-------|
-| cloudflare/ahocorasick | - | 18.5s | 21ms | |
-| pgavlin/aho-corasick | DFA: false | 2.3s | 2.2ms | **Current choice** |
-| pgavlin/aho-corasick | DFA: true | 33s | 0.6ms | Faster scans, slower builds |
+### Atoms and Aho-Corasick
 
-The `pgavlin/aho-corasick` library with `DFA: false` provides the best balance of compile time and scan performance. Use `DFA: true` if you're compiling rules once and scanning many files.
+All string types feed into a single Aho-Corasick automaton. Text strings and simple hex strings go in as full literals. Regex and complex hex strings can't be matched by Aho-Corasick directly, so the compiler extracts **atoms** -- short literal substrings that must appear in any match -- and adds those instead. For example, `/foo[0-9]+bar/` produces atoms `foo` and `bar`. Atoms are scored by byte rarity and diversity to pick the most selective candidates (minimum length 2).
 
-### Regex Engine Comparison
+At scan time, Aho-Corasick runs a single pass over the buffer. Literal hits are recorded directly. Atom hits mark candidate positions, and the full regex is verified against a ~1KB window around each candidate. This avoids running every regex against the entire buffer.
 
-Benchmarked go-re2 vs Go's standard library regexp (6 patterns, 1MB data):
+Regexes without extractable atoms are rejected at compile time. Use `CompileOptions{SkipInvalidRegex: true}` to skip them silently.
 
-| Engine | Compile (6 patterns) | Match (1MB) | Throughput |
-|--------|---------------------|-------------|------------|
-| go-re2 | 126μs | 513μs | 2043 MB/s |
-| stdlib regexp | 9μs | 1997μs | 525 MB/s |
+### Key Libraries
 
-go-re2 is ~4x faster for matching, making it ideal for YARA scanning where rules are compiled once and used to scan many files.
-
-### Real-World Performance
-
-Full pipeline with 106,962 YARA rules scanning a 79KB PHP file:
-
-| Phase | go-re2 | stdlib regexp |
-|-------|--------|---------------|
-| Parse | 4.7s | 4.7s |
-| Compile | 2.4s | 2.2s |
-| Scan | **140ms** | 277ms |
-
-Both engines compile 134,385 AC patterns + 1,043 regex patterns. The scan phase breaks down as:
-- Aho-Corasick matching (134k patterns): ~2ms
-- Regex matching (1,043 patterns): ~138ms (go-re2) vs ~275ms (stdlib)
-
-go-re2 provides ~2x faster scanning, which matters when scanning many files.
-
-### Comparison with YARA
-
-Scan-only performance (pre-compiled rules, 106,962 rules, 79KB file):
-
-| Tool | Scan Time |
-|------|-----------|
-| YARA 4.5.0 | **83ms** |
-| Yargo (go-re2) | 140ms |
-| Yargo (stdlib) | 277ms |
-
-YARA is ~1.7x faster than Yargo for scanning. Yargo's pure Go implementation trades some performance for easier deployment (no cgo/libyara dependency).
-
-### Recommendations
-
-- **One-time scan**: Use default settings (DFA: false) for fast compilation
-- **Repeated scans**: Consider DFA: true if scanning many files with the same ruleset
-- **Memory constrained**: DFA: false uses less memory
+| Component | Library | Notes |
+|-----------|---------|-------|
+| Parser | `goyacc` (stdlib) | LALR(1) grammar in `parser/yara.y` |
+| String matching | `ahocorasick/` (vendored) | Based on [pgavlin/aho-corasick](https://github.com/pgavlin/aho-corasick) with performance fixes (reduced GC pressure, etc.). NFA by default; optional DFA for faster scans at higher memory cost |
+| Regex | [wasilibs/go-re2](https://github.com/wasilibs/go-re2) | RE2 compiled to Wasm via wazero; Latin-1 mode for binary scanning |
 
 ## Current Limitations
 
 ### Conditions
 
-Supported condition features:
+Supported:
 - String references: `$a`, `$b`
 - Positional matching: `$a at 0`
 - Boolean operators: `and`, `or`, parentheses
 - Comparison: `==`
 - Byte functions: `uint32be(n)`, `uint16be(n)`, `uint32(n)`, `uint16(n)`, `uint8(n)`
-- Quantifiers: `any of them`, `all of them`, `any of ($prefix_*)`
+- Quantifiers: `any of them`, `all of them`, `any of ($prefix_*)`, `all of ($prefix_*)`
 
-Not yet supported (rules with these are skipped with a warning):
+Not yet supported:
 - `filesize`, `entrypoint`
 - String count/offset/length operators: `#a`, `@a`, `!a`
 - Numeric quantifiers: `2 of them`, `50% of them`
@@ -153,21 +118,14 @@ Not yet supported (rules with these are skipped with a warning):
 
 **TextString** - Fully supported, including `base64` and `fullword` modifiers.
 
-**RegexString** - Supported via go-re2 (RE2 syntax, not PCRE). RE2 limitations:
-- Backreferences (`\1`, `\2`, etc.)
-- Lookahead/lookbehind (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`)
-- Possessive quantifiers (`*+`, `++`, `?+`)
+**RegexString** - Supported via RE2. RE2 does not support backreferences, lookahead/lookbehind, or possessive quantifiers.
 
-**HexString** - Simple hex strings (literal bytes only) are supported. Complex hex strings with wildcards (`??`), jumps (`[4-8]`), or alternations (`(AB|CD)`) are skipped because RE2 requires valid UTF-8 and raw bytes ≥0x80 cannot be represented.
+**HexString** - Fully supported. Simple hex strings are matched as literals via Aho-Corasick. Complex hex strings (wildcards, jumps, alternations) are compiled to regex.
 
 ### Modifiers
 
 - **Supported**: `base64`, `fullword`
 - **Not yet implemented**: `wide`, `nocase`, `xor`, `base64wide`
-
-### Warnings
-
-The scanner generates warnings for skipped rules. Check `rules.Warnings()` after compilation to see which rules were skipped and why.
 
 ## License
 
