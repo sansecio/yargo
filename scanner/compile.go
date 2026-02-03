@@ -107,7 +107,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 
-	atoms, hasAtoms := extractAtoms(rePattern, 2) // for speedup we can consider 3 here, but it skips too many sigs due to forcing them full-buffer
+	// for speedup we can consider 3 here, but it skips too many sigs due to forcing them full-buffer
+	atoms, hasAtoms := extractAtoms(rePattern, 2)
 	requiresFullScan := !hasAtoms || caseInsensitive
 	if requiresFullScan && opts.SkipFullBufferScanRegex {
 		rules.warnings = append(rules.warnings,
