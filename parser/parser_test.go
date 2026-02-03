@@ -11,10 +11,7 @@ import (
 
 func mustParse(t *testing.T, input string) *ast.RuleSet {
 	t.Helper()
-	p, err := New()
-	if err != nil {
-		t.Fatalf("failed to create parser: %v", err)
-	}
+	p := New()
 	rs, err := p.Parse(input)
 	if err != nil {
 		t.Fatalf("failed to parse: %v", err)
@@ -64,7 +61,7 @@ func TestParseMeta(t *testing.T) {
 
 	tests := []struct {
 		key   string
-		value interface{}
+		value any
 	}{
 		{"str", "value"},
 		{"num", int64(123)},
@@ -213,18 +210,6 @@ func TestParseComments(t *testing.T) {
 	}
 }
 
-func TestWarnings(t *testing.T) {
-	p, _ := New()
-
-	// All supported conditions - no warnings
-	for _, cond := range []string{"any of them", "all of them", "$a and $b", "($a at 0) and $b"} {
-		p.Parse(`rule test { strings: $a = "x" $b = "y" condition: ` + cond + ` }`)
-		if len(p.Warnings()) != 0 {
-			t.Errorf("unexpected warning for %q: %v", cond, p.Warnings())
-		}
-	}
-}
-
 func TestParseFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yar")
@@ -233,7 +218,7 @@ func TestParseFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, _ := New()
+	p := New()
 	rs, err := p.ParseFile(path)
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
@@ -244,7 +229,7 @@ func TestParseFile(t *testing.T) {
 }
 
 func TestParseFileNotFound(t *testing.T) {
-	p, _ := New()
+	p := New()
 	_, err := p.ParseFile("/nonexistent/file.yar")
 	if err == nil {
 		t.Error("expected error for missing file")

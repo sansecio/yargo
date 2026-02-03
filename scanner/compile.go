@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	ahocorasick "github.com/pgavlin/aho-corasick"
+	"github.com/sansecio/yargo/ahocorasick"
 	"github.com/wasilibs/go-re2/experimental"
 
 	"github.com/sansecio/yargo/ast"
@@ -104,7 +104,6 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 
-	// for speedup we can consider 3 here, but it skips too many sigs due to forcing them full-buffer
 	atoms, hasAtoms := extractAtoms(rePattern, 2)
 	requiresFullScan := !hasAtoms || caseInsensitive
 	if requiresFullScan {
@@ -238,35 +237,20 @@ func writeAlt(sb *strings.Builder, a ast.HexAlt) {
 }
 
 func generateBase64Patterns(data []byte) [][]byte {
+	// Each offset aligns data differently within the base64 3-byte groups.
+	// The prefix padding bytes and the number of leading base64 chars to skip
+	// (which depend on the unknown preceding context) vary per offset.
+	offsets := [3]struct{ pad, skip int }{{0, 0}, {1, 2}, {2, 3}}
 	patterns := make([][]byte, 0, 3)
 
-	// Offset 0: full encoding, trim trailing context-dependent char if needed
-	enc0 := base64.StdEncoding.EncodeToString(data)
-	enc0 = strings.TrimRight(enc0, "=")
-	if trim := trailingUnstableChars(len(data)); trim > 0 && len(enc0) > trim {
-		enc0 = enc0[:len(enc0)-trim]
-	}
-	if len(enc0) > 0 {
-		patterns = append(patterns, []byte(enc0))
-	}
-
-	// Offset 1: skip first 2 chars (depend on prefix), trim trailing unstable
-	padded1 := append([]byte{0}, data...)
-	if enc := base64.StdEncoding.EncodeToString(padded1); len(enc) > 2 {
-		trimmed := strings.TrimRight(enc[2:], "=")
-		if trim := trailingUnstableChars(len(data) + 1); trim > 0 && len(trimmed) > trim {
-			trimmed = trimmed[:len(trimmed)-trim]
+	for _, o := range offsets {
+		padded := append(make([]byte, o.pad), data...)
+		enc := base64.StdEncoding.EncodeToString(padded)
+		if len(enc) <= o.skip {
+			continue
 		}
-		if len(trimmed) > 0 {
-			patterns = append(patterns, []byte(trimmed))
-		}
-	}
-
-	// Offset 2: skip first 3 chars (depend on prefix), trim trailing unstable
-	padded2 := append([]byte{0, 0}, data...)
-	if enc := base64.StdEncoding.EncodeToString(padded2); len(enc) > 3 {
-		trimmed := strings.TrimRight(enc[3:], "=")
-		if trim := trailingUnstableChars(len(data) + 2); trim > 0 && len(trimmed) > trim {
+		trimmed := strings.TrimRight(enc[o.skip:], "=")
+		if trim := trailingUnstableChars(len(data) + o.pad); trim > 0 && len(trimmed) > trim {
 			trimmed = trimmed[:len(trimmed)-trim]
 		}
 		if len(trimmed) > 0 {

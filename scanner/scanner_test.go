@@ -1423,10 +1423,7 @@ func TestIntegrationWithRealYaraFile(t *testing.T) {
 	}
 
 	// Parse YARA rules
-	p, err := parser.New()
-	if err != nil {
-		t.Fatalf("parser.New() error = %v", err)
-	}
+	p := parser.New()
 
 	parseStart := time.Now()
 	rs, err := p.ParseFile(yaraFile)

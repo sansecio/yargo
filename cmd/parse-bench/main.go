@@ -81,10 +81,7 @@ func compileGoYara(yaraFile string) (*yara.Rules, error) {
 }
 
 func compileYargo(yaraFile string) (*scanner.Rules, error) {
-	p, err := parser.New()
-	if err != nil {
-		return nil, err
-	}
+	p := parser.New()
 	ruleSet, err := p.ParseFile(yaraFile)
 	if err != nil {
 		return nil, err

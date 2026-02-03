@@ -8,10 +8,7 @@ import (
 )
 
 func TestBurnerDomainVariants(t *testing.T) {
-	p, err := parser.New()
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := parser.New()
 
 	rs, err := p.ParseFile("../fixture/burner_test.yar")
 	if err != nil {

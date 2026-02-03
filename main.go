@@ -15,21 +15,12 @@ func main() {
 
 	filename := os.Args[1]
 
-	p, err := parser.New()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating parser: %v\n", err)
-		os.Exit(1)
-	}
+	p := parser.New()
 
 	ruleSet, err := p.ParseFile(filename)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", filename, err)
 		os.Exit(1)
-	}
-
-	// Print warnings
-	for _, w := range p.Warnings() {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
 	}
 
 	// Print summary

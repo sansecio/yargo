@@ -2,7 +2,7 @@
 package scanner
 
 import (
-	ahocorasick "github.com/pgavlin/aho-corasick"
+	"github.com/sansecio/yargo/ahocorasick"
 	regexp "github.com/wasilibs/go-re2"
 
 	"github.com/sansecio/yargo/ast"
@@ -25,7 +25,7 @@ type MatchString struct {
 // Meta represents a metadata entry from a rule.
 type Meta struct {
 	Identifier string
-	Value      interface{}
+	Value      any
 }
 
 // MatchRule represents a rule that matched during scanning.
@@ -76,11 +76,6 @@ type Rules struct {
 	patterns      [][]byte
 	patternMap    []patternRef
 	regexPatterns []*regexPattern
-}
-
-// GetRules returns the compiled rules for iteration.
-func (r *Rules) GetRules() []*compiledRule {
-	return r.rules
 }
 
 // Stats returns compilation statistics.

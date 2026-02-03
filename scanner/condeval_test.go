@@ -11,10 +11,7 @@ import (
 // parseTestCondition parses a condition string using the main parser.
 func parseTestCondition(t *testing.T, cond string) ast.Expr {
 	t.Helper()
-	p, err := parser.New()
-	if err != nil {
-		t.Fatalf("failed to create parser: %v", err)
-	}
+	p := parser.New()
 	// Wrap condition in a minimal rule
 	rule := fmt.Sprintf(`rule test { strings: $x = "x" condition: %s }`, cond)
 	rs, err := p.Parse(rule)

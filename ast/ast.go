@@ -17,7 +17,7 @@ type Rule struct {
 // MetaEntry represents a key-value pair in the meta section.
 type MetaEntry struct {
 	Key   string
-	Value interface{} // string or int64
+	Value any // string or int64
 }
 
 // StringDef represents a string definition in the strings section.

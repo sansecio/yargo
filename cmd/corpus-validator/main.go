@@ -19,11 +19,7 @@ func main() {
 		filepath.Join(corpusBase, "frontend"),
 	}
 
-	p, err := parser.New()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating parser: %v\n", err)
-		os.Exit(1)
-	}
+	p := parser.New()
 
 	ruleSet, err := p.ParseFile(yaraFile)
 	if err != nil {
