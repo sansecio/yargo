@@ -881,10 +881,10 @@ func TestRegexComplexPatterns(t *testing.T) {
 	}{
 		{"alternation", `cat|dog`, []byte("I have a dog"), true},
 		{"alternation_no_match", `cat|dog`, []byte("I have a bird"), false},
-		{"quantifier_plus_no_match", `ab+c`, []byte("ac"), false}, // has atom "ab"
-		{"quantifier_plus", `ab+c`, []byte("abbc"), true},         // has atom "ab"
-		{"optional", `colou?r`, []byte("color"), true},            // has atom "colo"
-		{"optional_match", `colou?r`, []byte("colour"), true},     // has atom "colo"
+		{"quantifier_plus_no_match", `abc+d`, []byte("abd"), false}, // has atom "abc"
+		{"quantifier_plus", `abc+d`, []byte("abccd"), true},         // has atom "abc"
+		{"optional", `colou?r`, []byte("color"), true},              // has atom "colo"
+		{"optional_match", `colou?r`, []byte("colour"), true},       // has atom "colo"
 	}
 
 	for _, tt := range tests {

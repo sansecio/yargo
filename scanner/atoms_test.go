@@ -60,6 +60,29 @@ func Test_extractAtoms(t *testing.T) {
 	}
 }
 
+func Test_extractAtomsRejectsCommonKeywords(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantOk  bool
+	}{
+		{"rejects return", `return`, false},
+		{"rejects function", `function`, false},
+		{"rejects var", `var`, false},
+		{"accepts return as substring", `return_value`, true},
+		{"accepts function as substring", `function_name`, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := extractAtoms(tt.pattern, 3)
+			if ok != tt.wantOk {
+				t.Errorf("extractAtoms(%q, 3) ok = %v, want %v", tt.pattern, ok, tt.wantOk)
+			}
+		})
+	}
+}
+
 func TestAtomQuality(t *testing.T) {
 	tests := []struct {
 		name   string

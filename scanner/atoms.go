@@ -52,12 +52,25 @@ func findBestRun(runs [][]byte, minLen int) []byte {
 		if len(run) < minLen {
 			continue
 		}
+		if isCommonKeyword(run) {
+			continue
+		}
 		if q := atomQuality(run); q > bestQuality {
 			bestQuality = q
 			best = run
 		}
 	}
 	return best
+}
+
+// isCommonKeyword returns true for atoms that match common programming
+// keywords, which are too prevalent to be useful as search atoms.
+func isCommonKeyword(atom []byte) bool {
+	switch string(atom) {
+	case "return", "function", "var":
+		return true
+	}
+	return false
 }
 
 // isTopLevelAlternation checks if the pattern has alternation at the top level.
