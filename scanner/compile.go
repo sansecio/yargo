@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,6 +31,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	var allPatterns [][]byte
+	var errs []error
 	ruleIdx := 0
 
 	for _, r := range rs.Rules {
@@ -56,7 +58,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				var err error
 				allPatterns, err = compileRegex(rules, s, r.Name, ruleIdx, allPatterns, opts)
 				if err != nil {
-					return nil, err
+					errs = append(errs, err)
 				}
 				continue
 			}
@@ -70,6 +72,10 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			}
 		}
 		ruleIdx++
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
 	rules.patterns = allPatterns

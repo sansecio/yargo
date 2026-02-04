@@ -69,6 +69,7 @@ func Test_extractAtomsRejectsCommonKeywords(t *testing.T) {
 		{"rejects return", `return`, false},
 		{"rejects function", `function`, false},
 		{"rejects var", `var`, false},
+		{"rejects return with trailing space", `return `, false},
 		{"accepts return as substring", `return_value`, true},
 		{"accepts function as substring", `function_name`, true},
 	}

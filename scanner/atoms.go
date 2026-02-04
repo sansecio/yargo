@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bytes"
 	"strconv"
 )
 
@@ -63,12 +64,21 @@ func findBestRun(runs [][]byte, minLen int) []byte {
 	return best
 }
 
-// isCommonKeyword returns true for atoms that match common programming
-// keywords, which are too prevalent to be useful as search atoms.
+// commonKeywords are programming keywords too prevalent to be useful as atoms.
+var commonKeywords = [][]byte{
+	[]byte("return"),
+	[]byte("function"),
+	[]byte("var"),
+}
+
+// isCommonKeyword returns true for atoms that, after trimming spaces, match
+// a common programming keyword.
 func isCommonKeyword(atom []byte) bool {
-	switch string(atom) {
-	case "return", "function", "var":
-		return true
+	trimmed := bytes.TrimSpace(atom)
+	for _, kw := range commonKeywords {
+		if bytes.Equal(trimmed, kw) {
+			return true
+		}
 	}
 	return false
 }
