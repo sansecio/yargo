@@ -53,7 +53,7 @@ func findBestRun(runs [][]byte, minLen int) []byte {
 		if len(run) < minLen {
 			continue
 		}
-		if isCommonKeyword(run) {
+		if isCommonToken(run) {
 			continue
 		}
 		if q := atomQuality(run); q > bestQuality {
@@ -64,18 +64,20 @@ func findBestRun(runs [][]byte, minLen int) []byte {
 	return best
 }
 
-// commonKeywords are programming keywords too prevalent to be useful as atoms.
-var commonKeywords = [][]byte{
+// commonTokens are tokens too prevalent in code to be useful as atoms.
+var commonTokens = [][]byte{
 	[]byte("return"),
 	[]byte("function"),
 	[]byte("var"),
+	[]byte("();"),
+	[]byte("="),
 }
 
-// isCommonKeyword returns true for atoms that, after trimming spaces, match
-// a common programming keyword.
-func isCommonKeyword(atom []byte) bool {
+// isCommonToken returns true for atoms that, after trimming spaces, match
+// a common token.
+func isCommonToken(atom []byte) bool {
 	trimmed := bytes.TrimSpace(atom)
-	for _, kw := range commonKeywords {
+	for _, kw := range commonTokens {
 		if bytes.Equal(trimmed, kw) {
 			return true
 		}
