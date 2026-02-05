@@ -64,7 +64,7 @@ for _, m := range matches {
 
 ### Atoms and Aho-Corasick
 
-All string types feed into a single Aho-Corasick automaton. Text strings and simple hex strings go in as full literals. Regex and complex hex strings can't be matched by Aho-Corasick directly, so the compiler extracts **atoms** -- short literal substrings that must appear in any match -- and adds those instead. For example, `/foo[0-9]+bar/` produces atoms `foo` and `bar`. Atoms are scored by byte rarity and diversity to pick the most selective candidates (minimum length 2).
+All string types feed into a single Aho-Corasick automaton. Text strings and simple hex strings go in as full literals. Regex and complex hex strings can't be matched by Aho-Corasick directly, so the compiler extracts **atoms** -- short literal substrings that must appear in any match -- and adds those instead. For example, `/foo[0-9]+bar/` produces atoms `foo` and `bar`. Atoms are scored by byte rarity and diversity to pick the most selective candidates (minimum length 3, some generic keywords banned).
 
 At scan time, Aho-Corasick runs a single pass over the buffer. Literal hits are recorded directly. Atom hits mark candidate positions, and the full regex is verified against a ~1KB window around each candidate. This avoids running every regex against the entire buffer.
 
