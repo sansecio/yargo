@@ -97,8 +97,16 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 	}
 
+	// Collect rule indices and sort for deterministic iteration order
+	ruleIndices := make([]int, 0, len(ruleMatches))
+	for ruleIdx := range ruleMatches {
+		ruleIndices = append(ruleIndices, ruleIdx)
+	}
+	sort.Ints(ruleIndices)
+
 	// Evaluate conditions for each rule with matches
-	for ruleIdx, matchedStrings := range ruleMatches {
+	for _, ruleIdx := range ruleIndices {
+		matchedStrings := ruleMatches[ruleIdx]
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

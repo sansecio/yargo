@@ -1660,6 +1660,57 @@ func TestScanFileLargeFile(t *testing.T) {
 	}
 }
 
+func TestMatchOrderDeterministic(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name:      "rule_ccc",
+				Strings:   []*ast.StringDef{{Name: "$s", Value: ast.TextString{Value: "test"}}},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name:      "rule_aaa",
+				Strings:   []*ast.StringDef{{Name: "$s", Value: ast.TextString{Value: "test"}}},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name:      "rule_bbb",
+				Strings:   []*ast.StringDef{{Name: "$s", Value: ast.TextString{Value: "test"}}},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	data := []byte("this is a test string")
+
+	for i := 0; i < 50; i++ {
+		var matches MatchRules
+		err := rules.ScanMem(data, 0, time.Second, &matches)
+		if err != nil {
+			t.Fatalf("ScanMem() error = %v", err)
+		}
+
+		if len(matches) != 3 {
+			t.Fatalf("iteration %d: expected 3 matches, got %d", i, len(matches))
+		}
+
+		if matches[0].Rule != "rule_ccc" {
+			t.Errorf("iteration %d: expected first match 'rule_ccc', got %q", i, matches[0].Rule)
+		}
+		if matches[1].Rule != "rule_aaa" {
+			t.Errorf("iteration %d: expected second match 'rule_aaa', got %q", i, matches[1].Rule)
+		}
+		if matches[2].Rule != "rule_bbb" {
+			t.Errorf("iteration %d: expected third match 'rule_bbb', got %q", i, matches[2].Rule)
+		}
+	}
+}
+
 func TestScanFileMatchesScanMem(t *testing.T) {
 	// Verify ScanFile produces the same results as ScanMem
 	rs := &ast.RuleSet{
