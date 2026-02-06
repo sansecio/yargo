@@ -143,21 +143,22 @@ func main() {
 		}
 		return 0
 	})
-	fmt.Printf("\nTop 10 slowest files (yargo):\n")
-	for i, t := range timings[:min(10, len(timings))] {
+	fmt.Printf("\nTop 5 slowest files (yargo):\n")
+	for i, t := range timings[:min(5, len(timings))] {
 		fmt.Printf("  %2d. %v %s\n", i+1, t.duration, truncName(t.path, 100))
 	}
 
-	// Profile regexes on the slowest file
-	if len(timings) > 0 {
-		slowest := timings[0]
-		data, err := os.ReadFile(slowest.path)
-		if err == nil {
-			rt := yargoRules.RegexProfile(data)
-			fmt.Printf("\nSlowest regexes on %s:\n", truncName(slowest.path, 100))
-			for i, t := range rt[:min(10, len(rt))] {
-				fmt.Printf("  %2d. %v (%d calls) rule=%s str=%s re=%s\n", i+1, t.Duration, t.Calls, t.Rule, t.String, t.Pattern)
-			}
+	// Profile regexes on the 5 slowest files
+	for _, t := range timings[:min(5, len(timings))] {
+		data, err := os.ReadFile(t.path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", t.path, err)
+			continue
+		}
+		rt := yargoRules.RegexProfile(data)
+		fmt.Printf("\nRegex profile for %s (%d regexes matched):\n", truncName(t.path, 100), len(rt))
+		for i, p := range rt {
+			fmt.Printf("  %2d. %v (%d calls) rule=%s str=%s re=%s\n", i+1, p.Duration, p.Calls, p.Rule, p.String, p.Pattern)
 		}
 	}
 }
