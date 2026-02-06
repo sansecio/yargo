@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	regexp "github.com/coregx/coregex"
+
 	"github.com/sansecio/yargo/ahocorasick"
-	"github.com/wasilibs/go-re2/experimental"
 
 	"github.com/sansecio/yargo/ast"
 )
@@ -120,7 +121,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	default:
 		return allPatterns, nil
 	}
-	compiled, err := experimental.CompileLatin1(rePattern)
+	compiled, err := regexp.Compile(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
 			return allPatterns, nil

@@ -2,8 +2,8 @@
 package scanner
 
 import (
+	regexp "github.com/coregx/coregex"
 	"github.com/sansecio/yargo/ahocorasick"
-	regexp "github.com/wasilibs/go-re2"
 
 	"github.com/sansecio/yargo/ast"
 )
