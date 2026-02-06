@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"slices"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
@@ -20,6 +21,14 @@ type corpusFile struct {
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo scan only)")
+
+func truncName(path string, maxLen int) string {
+	name := filepath.Base(path)
+	if len(name) <= maxLen {
+		return name
+	}
+	return "…" + name[len(name)-maxLen+len("…"):]
+}
 
 func main() {
 	flag.Parse()
@@ -75,13 +84,15 @@ func main() {
 	// Benchmark go-yara (fast mode)
 	start := time.Now()
 	var goYaraMatches int
-	for _, file := range files {
+	for i, file := range files {
+		fmt.Fprintf(os.Stderr, "\rgo-yara: %d/%d %s\033[K", i+1, len(files), truncName(file.path, 100))
 		var matches yara.MatchRules
 		if err := goYaraRules.ScanMem(file.data, yara.ScanFlagsFastMode, 30*time.Second, &matches); err != nil {
-			fmt.Fprintf(os.Stderr, "go-yara error scanning %s: %v\n", file.path, err)
+			fmt.Fprintf(os.Stderr, "\ngo-yara error scanning %s: %v\n", file.path, err)
 		}
 		goYaraMatches += len(matches)
 	}
+	fmt.Fprint(os.Stderr, "\r\033[K")
 	goYaraDuration := time.Since(start)
 
 	// Benchmark yargo
@@ -96,13 +107,23 @@ func main() {
 
 	start = time.Now()
 	var yargoMatches int
-	for _, file := range files {
+	type fileTiming struct {
+		path     string
+		duration time.Duration
+	}
+	timings := make([]fileTiming, 0, len(files))
+
+	for i, file := range files {
+		fmt.Fprintf(os.Stderr, "\ryargo: %d/%d %s\033[K", i+1, len(files), truncName(file.path, 100))
+		fileStart := time.Now()
 		var matches scanner.MatchRules
 		if err := yargoRules.ScanMem(file.data, 0, 30*time.Second, &matches); err != nil {
-			fmt.Fprintf(os.Stderr, "yargo error scanning %s: %v\n", file.path, err)
+			fmt.Fprintf(os.Stderr, "\nyargo error scanning %s: %v\n", file.path, err)
 		}
+		timings = append(timings, fileTiming{path: file.path, duration: time.Since(fileStart)})
 		yargoMatches += len(matches)
 	}
+	fmt.Fprint(os.Stderr, "\r\033[K")
 	yargoDuration := time.Since(start)
 
 	if *cpuprofile != "" {
@@ -112,4 +133,18 @@ func main() {
 	fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, goYaraMatches)
 	fmt.Printf("yargo:               %v (%d matches)\n", yargoDuration, yargoMatches)
 	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
+
+	slices.SortFunc(timings, func(a, b fileTiming) int {
+		if a.duration > b.duration {
+			return -1
+		}
+		if a.duration < b.duration {
+			return 1
+		}
+		return 0
+	})
+	fmt.Printf("\nTop 10 slowest files (yargo):\n")
+	for i, t := range timings[:min(10, len(timings))] {
+		fmt.Printf("  %2d. %v %s\n", i+1, t.duration, truncName(t.path, 100))
+	}
 }
