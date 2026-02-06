@@ -17,6 +17,11 @@ type CompileOptions struct {
 	// SkipInvalidRegex silently skips regexes that are invalid or require
 	// a full buffer scan, instead of returning an error.
 	SkipInvalidRegex bool
+
+	// SkipTypes filters out rules whose meta "type" field matches any of
+	// the given values. Rules without a "type" meta or with an empty type
+	// value are never filtered.
+	SkipTypes []string
 }
 
 // Compile compiles an AST RuleSet into Rules ready for scanning.
@@ -34,9 +39,22 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	var errs []error
 	ruleIdx := 0
 
+	skipTypes := make(map[string]bool, len(opts.SkipTypes))
+	for _, t := range opts.SkipTypes {
+		if t != "" {
+			skipTypes[t] = true
+		}
+	}
+
 	for _, r := range rs.Rules {
 		if r.Condition == nil {
 			continue
+		}
+
+		if len(skipTypes) > 0 {
+			if ruleType := metaValue(r, "type"); ruleType != "" && skipTypes[ruleType] {
+				continue
+			}
 		}
 
 		cr := &compiledRule{
@@ -446,4 +464,16 @@ func parseIntCapped(s string) int {
 		}
 	}
 	return n
+}
+
+func metaValue(r *ast.Rule, key string) string {
+	for _, m := range r.Meta {
+		if m.Key == key {
+			if s, ok := m.Value.(string); ok {
+				return s
+			}
+			return ""
+		}
+	}
+	return ""
 }
