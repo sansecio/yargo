@@ -87,6 +87,125 @@ func Test_fixQuantifiers(t *testing.T) {
 	}
 }
 
+func TestSkipTypes(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "malware_rule",
+				Meta: []*ast.MetaEntry{
+					{Key: "type", Value: "malware"},
+				},
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "evil"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name: "pii_rule",
+				Meta: []*ast.MetaEntry{
+					{Key: "type", Value: "pii"},
+				},
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "ssn"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name: "generic_rule",
+				Meta: []*ast.MetaEntry{
+					{Key: "author", Value: "test"},
+				},
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "hello"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name: "no_meta_rule",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "world"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name: "empty_type_rule",
+				Meta: []*ast.MetaEntry{
+					{Key: "type", Value: ""},
+				},
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "empty"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		skipTypes []string
+		wantRules []string
+	}{
+		{
+			name:      "nil skip types includes all",
+			skipTypes: nil,
+			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "empty skip types includes all",
+			skipTypes: []string{},
+			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "skip malware",
+			skipTypes: []string{"malware"},
+			wantRules: []string{"pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "skip multiple types",
+			skipTypes: []string{"malware", "pii"},
+			wantRules: []string{"generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "skip nonexistent type",
+			skipTypes: []string{"nonexistent"},
+			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "rules without type meta are never skipped",
+			skipTypes: []string{"malware", "pii"},
+			wantRules: []string{"generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+		{
+			name:      "empty type value is never skipped",
+			skipTypes: []string{""},
+			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules, err := CompileWithOptions(rs, CompileOptions{SkipTypes: tt.skipTypes})
+			if err != nil {
+				t.Fatalf("CompileWithOptions() error = %v", err)
+			}
+
+			if len(rules.rules) != len(tt.wantRules) {
+				names := make([]string, len(rules.rules))
+				for i, r := range rules.rules {
+					names[i] = r.name
+				}
+				t.Fatalf("expected %d rules %v, got %d rules %v", len(tt.wantRules), tt.wantRules, len(rules.rules), names)
+			}
+
+			for i, wantName := range tt.wantRules {
+				if rules.rules[i].name != wantName {
+					t.Errorf("rule[%d] = %q, want %q", i, rules.rules[i].name, wantName)
+				}
+			}
+		})
+	}
+}
+
 func intPtr(n int) *int    { return &n }
 func bytePtr(b byte) *byte { return &b }
 
