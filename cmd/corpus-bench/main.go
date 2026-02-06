@@ -147,4 +147,17 @@ func main() {
 	for i, t := range timings[:min(10, len(timings))] {
 		fmt.Printf("  %2d. %v %s\n", i+1, t.duration, truncName(t.path, 100))
 	}
+
+	// Profile regexes on the slowest file
+	if len(timings) > 0 {
+		slowest := timings[0]
+		data, err := os.ReadFile(slowest.path)
+		if err == nil {
+			rt := yargoRules.RegexProfile(data)
+			fmt.Printf("\nSlowest regexes on %s:\n", truncName(slowest.path, 100))
+			for i, t := range rt[:min(10, len(rt))] {
+				fmt.Printf("  %2d. %v (%d calls) rule=%s str=%s re=%s\n", i+1, t.Duration, t.Calls, t.Rule, t.String, t.Pattern)
+			}
+		}
+	}
 }
