@@ -298,7 +298,8 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 const maxRepetition = 1000
 
 // minAtomLength is the minimum length of atoms extracted from regexes
-// for use in the Aho-Corasick matcher.
+// for use in the Aho-Corasick matcher. 3 bytes gives 16M possible values
+// (255^3), making false positives rare while still allowing generic regexes.
 const minAtomLength = 3
 
 // isValidQuantifier checks if inner looks like a valid regex quantifier:
