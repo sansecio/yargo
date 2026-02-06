@@ -62,7 +62,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error compiling go-yara rules: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Compiled go-yara rules\n")
+	fmt.Printf("Compiled %d go-yara rules\n", len(goYaraRules.GetRules()))
 
 	// Compile yargo rules (suppress absl/RE2 stderr noise)
 	yargoRules, err := internal.YargoRules(yaraFile)
@@ -70,7 +70,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error compiling yargo rules: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Compiled yargo rules\n\n")
+	fmt.Printf("Compiled %d yargo rules\n\n", yargoRules.NumRules())
 
 	// Benchmark go-yara (fast mode)
 	start := time.Now()
