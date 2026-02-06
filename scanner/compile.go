@@ -110,7 +110,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 
-	atoms, hasAtoms := extractAtoms(rePattern, 3)
+	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
 	requiresFullScan := !hasAtoms || caseInsensitive
 	if requiresFullScan {
 		if opts.SkipInvalidRegex {
@@ -296,6 +296,10 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 }
 
 const maxRepetition = 1000
+
+// minAtomLength is the minimum length of atoms extracted from regexes
+// for use in the Aho-Corasick matcher.
+const minAtomLength = 3
 
 // isValidQuantifier checks if inner looks like a valid regex quantifier:
 // digits, digits+comma, digits+comma+digits, or comma+digits.

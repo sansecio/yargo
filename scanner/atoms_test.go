@@ -76,9 +76,9 @@ func Test_extractAtomsRejectsCommonKeywords(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, ok := extractAtoms(tt.pattern, 3)
+			_, ok := extractAtoms(tt.pattern, minAtomLength)
 			if ok != tt.wantOk {
-				t.Errorf("extractAtoms(%q, 3) ok = %v, want %v", tt.pattern, ok, tt.wantOk)
+				t.Errorf("extractAtoms(%q, %d) ok = %v, want %v", tt.pattern, minAtomLength, ok, tt.wantOk)
 			}
 		})
 	}
@@ -105,7 +105,7 @@ func TestAtomQuality(t *testing.T) {
 }
 
 func Test_extractAtomsMultiple(t *testing.T) {
-	atoms, ok := extractAtoms(`cat|dog|bird`, 3)
+	atoms, ok := extractAtoms(`cat|dog|bird`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -126,7 +126,7 @@ func Test_extractAtomsMultiple(t *testing.T) {
 
 func Test_extractAtomsGroupedAlternation(t *testing.T) {
 	// When outside literals are better than alternation branches, use outside
-	atoms, ok := extractAtoms(`prefix(foo|bar|baz)suffix`, 3)
+	atoms, ok := extractAtoms(`prefix(foo|bar|baz)suffix`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -144,7 +144,7 @@ func Test_extractAtomsGroupedAlternation(t *testing.T) {
 func Test_extractAtomsNestedAlternationBetter(t *testing.T) {
 	// When alternation branches are better than outside literals, use all branches
 	// Pattern: short prefix, longer alternation options
-	atoms, ok := extractAtoms(`go(unlink|fwrite|password|eval)`, 3)
+	atoms, ok := extractAtoms(`go(unlink|fwrite|password|eval)`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -166,7 +166,7 @@ func Test_extractAtomsNestedAlternationBetter(t *testing.T) {
 func Test_extractAtomsOptionalGroup(t *testing.T) {
 	// Atoms from optional groups should NOT be used - they might not appear in matches
 	// Pattern: (window\.)?atob\( - "window." is optional, "atob(" is required
-	atoms, ok := extractAtoms(`(window\.)?atob\(`, 3)
+	atoms, ok := extractAtoms(`(window\.)?atob\(`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -181,7 +181,7 @@ func Test_extractAtomsOptionalGroup(t *testing.T) {
 
 func Test_extractAtomsOptionalGroupStar(t *testing.T) {
 	// Groups followed by * are optional (0 or more)
-	atoms, ok := extractAtoms(`(prefix)*suffix`, 3)
+	atoms, ok := extractAtoms(`(prefix)*suffix`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -196,7 +196,7 @@ func Test_extractAtomsOptionalGroupStar(t *testing.T) {
 
 func Test_extractAtomsOptionalGroupZeroMin(t *testing.T) {
 	// Groups followed by {0,N} are optional
-	atoms, ok := extractAtoms(`(optional){0,5}required`, 3)
+	atoms, ok := extractAtoms(`(optional){0,5}required`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
@@ -212,7 +212,7 @@ func Test_extractAtomsOptionalGroupZeroMin(t *testing.T) {
 func Test_extractAtomsRealPattern(t *testing.T) {
 	// Real pattern from base64_obfuscated_inclusion rules
 	// The file has "atob(" without "window." prefix
-	atoms, ok := extractAtoms(`\.src ?= ?(window\.)?atob\(['"][^\)]{4,250}\)`, 3)
+	atoms, ok := extractAtoms(`\.src ?= ?(window\.)?atob\(['"][^\)]{4,250}\)`, minAtomLength)
 	if !ok {
 		t.Fatal("expected atoms to be extracted")
 	}
