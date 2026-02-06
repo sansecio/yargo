@@ -157,7 +157,7 @@ func main() {
 		}
 		rt := yargoRules.RegexProfile(data)
 		fmt.Printf("\nRegex profile for %s (%d regexes matched):\n", truncName(t.path, 100), len(rt))
-		for i, p := range rt {
+		for i, p := range rt[:min(5, len(rt))] {
 			fmt.Printf("  %2d. %v (%d calls) rule=%s str=%s re=%s\n", i+1, p.Duration, p.Calls, p.Rule, p.String, p.Pattern)
 		}
 	}
