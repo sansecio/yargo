@@ -35,6 +35,35 @@ type MatchRule struct {
 	Strings []MatchString
 }
 
+// Meta returns the value of the meta field with the given identifier, or nil.
+func (m *MatchRule) Meta(identifier string) any {
+	for _, meta := range m.Metas {
+		if meta.Identifier == identifier {
+			return meta.Value
+		}
+	}
+	return nil
+}
+
+// MetaString returns the string value of the meta field, or defValue if missing or not a string.
+func (m *MatchRule) MetaString(identifier, defValue string) string {
+	if val, ok := m.Meta(identifier).(string); ok {
+		return val
+	}
+	return defValue
+}
+
+// Trust returns the confidence/trust level from rule metadata, defaulting to 100.
+func (m *MatchRule) Trust() int32 {
+	switch val := m.Meta("trust").(type) {
+	case int:
+		return int32(val)
+	case int64:
+		return int32(val)
+	}
+	return 100
+}
+
 // MatchRules collects matching rules and implements ScanCallback.
 type MatchRules []MatchRule
 
