@@ -58,6 +58,8 @@ func (m *MatchRule) Trust() int32 {
 	switch val := m.Meta("trust").(type) {
 	case int:
 		return int32(val)
+	case int32:
+		return val
 	case int64:
 		return int32(val)
 	}
