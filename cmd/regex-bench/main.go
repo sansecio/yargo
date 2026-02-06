@@ -10,7 +10,7 @@ import (
 	stdregexp "regexp"
 
 	"github.com/coregx/coregex"
-	gore2 "github.com/wasilibs/go-re2"
+	gore2 "github.com/wasilibs/go-re2/experimental"
 )
 
 type matcher interface {
@@ -24,7 +24,7 @@ var engines = map[string]compileFunc{
 		return stdregexp.Compile(s)
 	},
 	"go-re2": func(s string) (matcher, error) {
-		return gore2.Compile(s)
+		return gore2.CompileLatin1(s)
 	},
 	"coregex": func(s string) (matcher, error) {
 		return coregex.Compile(s)
