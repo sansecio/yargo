@@ -10,21 +10,32 @@ type RegexTiming struct {
 	Rule     string
 	String   string
 	Pattern  string
+	Atom     string // The atom that triggered the regex evaluation
 	Duration time.Duration
 	Calls    int
+}
+
+type atomCandidate struct {
+	positions []int
+	atom      string
 }
 
 // RegexProfile scans a buffer and returns per-regex timing information,
 // sorted slowest first.
 func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
-	atomCandidates := make(map[int][]int)
+	atomCandidates := make(map[int]*atomCandidate)
 
 	if r.matcher != nil {
 		iter := r.matcher.IterOverlappingByte(buf)
 		for match := iter.Next(); match != nil; match = iter.Next() {
 			ref := r.patternMap[match.Pattern()]
 			if ref.isAtom {
-				atomCandidates[ref.regexIdx] = append(atomCandidates[ref.regexIdx], match.Start())
+				ac := atomCandidates[ref.regexIdx]
+				if ac == nil {
+					ac = &atomCandidate{atom: string(r.patterns[match.Pattern()])}
+					atomCandidates[ref.regexIdx] = ac
+				}
+				ac.positions = append(ac.positions, match.Start())
 			}
 		}
 	}
@@ -32,9 +43,9 @@ func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
 	halfWindow := maxMatchLen / 2
 	timings := make([]RegexTiming, 0, len(atomCandidates))
 
-	for regexIdx, positions := range atomCandidates {
+	for regexIdx, ac := range atomCandidates {
 		rp := r.regexPatterns[regexIdx]
-		positions = dedupe(positions)
+		positions := dedupe(ac.positions)
 
 		start := time.Now()
 		calls := 0
@@ -50,6 +61,7 @@ func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
 			Rule:     r.rules[rp.ruleIndex].name,
 			String:   rp.stringName,
 			Pattern:  rp.re.String(),
+			Atom:     ac.atom,
 			Duration: dur,
 			Calls:    calls,
 		})
