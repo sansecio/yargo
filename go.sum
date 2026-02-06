@@ -1,5 +1,9 @@
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
+github.com/coregx/ahocorasick v0.1.0 h1:CiCQwQ/Gu6pahlO3u4jrPo8q0Tb8pLknU7tzqiLRZcw=
+github.com/coregx/ahocorasick v0.1.0/go.mod h1:SDcS9KTiwLP8FHNpYSO3Q3mRqrK8SYJAYpygrhcIils=
+github.com/coregx/coregex v0.12.0 h1:MGDs9FREP36NcHg5Q3KYOPA5O9+ZKZAK8zI0YYEryjM=
+github.com/coregx/coregex v0.12.0/go.mod h1:K+BrFVuOaFseP4gc4/d/GveYFe4JB95FHW3kNNJaTXg=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-sql-driver/mysql v1.9.3 h1:U/N249h2WzJ3Ukj8SowVFjdtZKfu9vlLZxjPXV1aweo=
