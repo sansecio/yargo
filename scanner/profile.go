@@ -7,17 +7,18 @@ import (
 
 // RegexTiming holds the timing result for a single regex pattern.
 type RegexTiming struct {
-	Rule     string
-	String   string
-	Pattern  string
-	Atom     string // The atom that triggered the regex evaluation
-	Duration time.Duration
-	Calls    int
+	Rule           string
+	String         string
+	Pattern        string
+	MatchedAtoms   []string // Atoms that actually matched in the buffer
+	ExtractedAtoms []string // All atoms extracted from the regex
+	Duration       time.Duration
+	Calls          int
 }
 
 type atomCandidate struct {
 	positions []int
-	atom      string
+	atoms     map[string]struct{}
 }
 
 // RegexProfile scans a buffer and returns per-regex timing information,
@@ -32,9 +33,10 @@ func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
 			if ref.isAtom {
 				ac := atomCandidates[ref.regexIdx]
 				if ac == nil {
-					ac = &atomCandidate{atom: string(r.patterns[match.Pattern()])}
+					ac = &atomCandidate{atoms: make(map[string]struct{})}
 					atomCandidates[ref.regexIdx] = ac
 				}
+				ac.atoms[string(r.patterns[match.Pattern()])] = struct{}{}
 				ac.positions = append(ac.positions, match.Start())
 			}
 		}
@@ -57,13 +59,28 @@ func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
 		}
 		dur := time.Since(start)
 
+		matchedAtoms := make([]string, 0, len(ac.atoms))
+		for atom := range ac.atoms {
+			matchedAtoms = append(matchedAtoms, atom)
+		}
+		sort.Strings(matchedAtoms)
+
+		var extractedAtoms []string
+		if atoms, ok := extractAtoms(rp.re.String(), minAtomLength); ok {
+			extractedAtoms = make([]string, len(atoms))
+			for i, a := range atoms {
+				extractedAtoms[i] = string(a)
+			}
+		}
+
 		timings = append(timings, RegexTiming{
-			Rule:     r.rules[rp.ruleIndex].name,
-			String:   rp.stringName,
-			Pattern:  rp.re.String(),
-			Atom:     ac.atom,
-			Duration: dur,
-			Calls:    calls,
+			Rule:           r.rules[rp.ruleIndex].name,
+			String:         rp.stringName,
+			Pattern:        rp.re.String(),
+			MatchedAtoms:   matchedAtoms,
+			ExtractedAtoms: extractedAtoms,
+			Duration:       dur,
+			Calls:          calls,
 		})
 	}
 
