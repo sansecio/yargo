@@ -87,13 +87,13 @@ func Test_fixQuantifiers(t *testing.T) {
 	}
 }
 
-func TestSkipTypes(t *testing.T) {
+func TestSkipSubtypes(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
 			{
 				Name: "malware_rule",
 				Meta: []*ast.MetaEntry{
-					{Key: "type", Value: "malware"},
+					{Key: "subtype", Value: "malware"},
 				},
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "evil"}},
@@ -103,7 +103,7 @@ func TestSkipTypes(t *testing.T) {
 			{
 				Name: "pii_rule",
 				Meta: []*ast.MetaEntry{
-					{Key: "type", Value: "pii"},
+					{Key: "subtype", Value: "pii"},
 				},
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "ssn"}},
@@ -128,9 +128,9 @@ func TestSkipTypes(t *testing.T) {
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
-				Name: "empty_type_rule",
+				Name: "empty_subtype_rule",
 				Meta: []*ast.MetaEntry{
-					{Key: "type", Value: ""},
+					{Key: "subtype", Value: ""},
 				},
 				Strings: []*ast.StringDef{
 					{Name: "$s", Value: ast.TextString{Value: "empty"}},
@@ -141,50 +141,50 @@ func TestSkipTypes(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		skipTypes []string
-		wantRules []string
+		name         string
+		skipSubtypes []string
+		wantRules    []string
 	}{
 		{
-			name:      "nil skip types includes all",
-			skipTypes: nil,
-			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "nil skip subtypes includes all",
+			skipSubtypes: nil,
+			wantRules:    []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "empty skip types includes all",
-			skipTypes: []string{},
-			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "empty skip subtypes includes all",
+			skipSubtypes: []string{},
+			wantRules:    []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "skip malware",
-			skipTypes: []string{"malware"},
-			wantRules: []string{"pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "skip malware",
+			skipSubtypes: []string{"malware"},
+			wantRules:    []string{"pii_rule", "generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "skip multiple types",
-			skipTypes: []string{"malware", "pii"},
-			wantRules: []string{"generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "skip multiple subtypes",
+			skipSubtypes: []string{"malware", "pii"},
+			wantRules:    []string{"generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "skip nonexistent type",
-			skipTypes: []string{"nonexistent"},
-			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "skip nonexistent subtype",
+			skipSubtypes: []string{"nonexistent"},
+			wantRules:    []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "rules without type meta are never skipped",
-			skipTypes: []string{"malware", "pii"},
-			wantRules: []string{"generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "rules without subtype meta are never skipped",
+			skipSubtypes: []string{"malware", "pii"},
+			wantRules:    []string{"generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 		{
-			name:      "empty type value is never skipped",
-			skipTypes: []string{""},
-			wantRules: []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_type_rule"},
+			name:         "empty subtype value is never skipped",
+			skipSubtypes: []string{""},
+			wantRules:    []string{"malware_rule", "pii_rule", "generic_rule", "no_meta_rule", "empty_subtype_rule"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rules, err := CompileWithOptions(rs, CompileOptions{SkipTypes: tt.skipTypes})
+			rules, err := CompileWithOptions(rs, CompileOptions{SkipSubtypes: tt.skipSubtypes})
 			if err != nil {
 				t.Fatalf("CompileWithOptions() error = %v", err)
 			}
