@@ -120,8 +120,10 @@ func extractAlternationAtoms(pattern string, minLen int) ([][]byte, bool) {
 }
 
 // extractNestedAlternationAtoms finds alternation groups within the pattern
-// and extracts atoms from all branches. For example, "prefix(a|b|c)suffix"
-// would extract atoms from "prefixa", "prefixb", "prefixc" (or their suffixes).
+// and extracts atoms from the best group only. For example, "prefix(a|b|c)suffix"
+// would extract atoms from "a", "b", "c". When multiple alternation groups exist,
+// only atoms from the group with the highest quality atoms are returned.
+// Optional groups (followed by ?, *, {0,N}) are skipped.
 func extractNestedAlternationAtoms(pattern string, minLen int) [][]byte {
 	// Find all alternation groups (content between matching parens that contains |)
 	groups := findAlternationGroups(pattern)
@@ -129,17 +131,52 @@ func extractNestedAlternationAtoms(pattern string, minLen int) [][]byte {
 		return nil
 	}
 
-	var allAtoms [][]byte
+	// Find optional groups to exclude
+	optionalGroups := findOptionalGroups(pattern)
+	isOptional := func(g altGroup) bool {
+		for _, og := range optionalGroups {
+			if g.start == og.start && g.end == og.end {
+				return true
+			}
+		}
+		return false
+	}
+
+	// For each group, collect atoms and find the best atom's quality
+	type groupAtoms struct {
+		atoms       [][]byte
+		bestQuality int
+	}
+	var best *groupAtoms
+
 	for _, g := range groups {
+		if isOptional(g) {
+			continue
+		}
+		var atoms [][]byte
+		bestQuality := -1
 		branches := splitAlternation(g.content)
 		for _, branch := range branches {
 			runs := extractLiteralRuns(branch)
-			if best := findBestRun(runs, minLen); best != nil {
-				allAtoms = append(allAtoms, best)
+			if atom := findBestRun(runs, minLen); atom != nil {
+				atoms = append(atoms, atom)
+				if q := atomQuality(atom); q > bestQuality {
+					bestQuality = q
+				}
 			}
 		}
+		if len(atoms) == 0 {
+			continue
+		}
+		if best == nil || bestQuality > best.bestQuality {
+			best = &groupAtoms{atoms: atoms, bestQuality: bestQuality}
+		}
 	}
-	return allAtoms
+
+	if best == nil {
+		return nil
+	}
+	return best.atoms
 }
 
 type altGroup struct {

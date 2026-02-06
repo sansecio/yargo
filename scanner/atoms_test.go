@@ -235,3 +235,65 @@ func Test_extractAtomsRealPattern(t *testing.T) {
 		t.Errorf("expected to find required atom like 'atob(' or '.src', got %q", atoms)
 	}
 }
+
+func Test_extractAtomsMultipleAlternationGroups(t *testing.T) {
+	// When there are multiple alternation groups, only extract from the best one.
+	// Pattern: [a-z]{0,15}(meriks|pixel)[a-z]{0,15}\.(top|xyz)
+	// "meriks" and "pixel" are higher quality atoms than "top" and "xyz"
+	// so we should only extract from (meriks|pixel), not from (top|xyz)
+	atoms, ok := extractAtoms(`[a-z]{0,15}(meriks|pixel)[a-z]{0,15}\.(top|xyz)`, minAtomLength)
+	if !ok {
+		t.Fatal("expected atoms to be extracted")
+	}
+
+	found := make(map[string]bool)
+	for _, a := range atoms {
+		found[string(a)] = true
+	}
+
+	// Should have atoms from the best alternation group only
+	if !found["meriks"] || !found["pixel"] {
+		t.Errorf("expected atoms 'meriks' and 'pixel' from best alternation group, got %v", found)
+	}
+
+	// Should NOT have atoms from the second alternation group
+	if found["top"] || found["xyz"] {
+		t.Errorf("should not extract 'top' or 'xyz' from second alternation group, got %v", found)
+	}
+}
+
+func Test_extractAtomsOptionalAlternationGroup(t *testing.T) {
+	// Alternation groups that are optional should not have atoms extracted
+	tests := []struct {
+		name    string
+		pattern string
+	}{
+		{"question mark", `(meriks|pixel)?suffix`},
+		{"star", `(meriks|pixel)*suffix`},
+		{"zero min curly", `(meriks|pixel){0,10}suffix`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			atoms, ok := extractAtoms(tt.pattern, minAtomLength)
+			if !ok {
+				t.Fatal("expected atoms to be extracted")
+			}
+
+			found := make(map[string]bool)
+			for _, a := range atoms {
+				found[string(a)] = true
+			}
+
+			// Should NOT extract from optional alternation group
+			if found["meriks"] || found["pixel"] {
+				t.Errorf("should not extract from optional alternation group, got %v", found)
+			}
+
+			// Should extract required literal
+			if !found["suffix"] {
+				t.Errorf("expected 'suffix' atom, got %v", found)
+			}
+		})
+	}
+}
