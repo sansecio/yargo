@@ -42,6 +42,7 @@ data, err := os.ReadFile("suspect.php")
 if err != nil {
     log.Fatal(err)
 }
+
 var matches scanner.MatchRules
 if err := rules.ScanMem(data, 0, 30*time.Second, &matches); err != nil {
     log.Fatal(err)
