@@ -5,27 +5,31 @@ func standardFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, 
 }
 
 func standardFindAtImp(a *iNFA, prestate *prefilterState, prefilter prefilter, haystack []byte, at int, sID *stateID) *Match {
+	sid := *sID
 	for at < len(haystack) {
 		if prefilter != nil {
 			if prestate.IsEffective(at) && sID == &a.startID {
 				c := nextPrefilter(prestate, prefilter, haystack, at)
 				if c == noneCandidate {
+					*sID = sid
 					return nil
 				} else {
 					at = c
 				}
 			}
 		}
-		*sID = a.NextStateNoFail(*sID, haystack[at])
+		sid = a.NextStateNoFail(sid, haystack[at])
 		at += 1
 
-		if *sID == deadStateID || a.state(*sID).isMatch() {
-			if *sID == deadStateID {
+		if sid == deadStateID || a.state(sid).isMatch() {
+			*sID = sid
+			if sid == deadStateID {
 				return nil
 			}
-			return a.GetMatch(*sID, 0, at)
+			return a.GetMatch(sid, 0, at)
 		}
 	}
+	*sID = sid
 	return nil
 }
 

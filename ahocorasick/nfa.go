@@ -594,10 +594,17 @@ func (t *transitions) heapBytes() int {
 
 func (t *transitions) nextState(input byte) stateID {
 	if t.dense == nil {
-		for _, sp := range t.sparse {
-			if sp.b == input {
-				return sp.s
+		lo, hi := 0, len(t.sparse)
+		for lo < hi {
+			mid := lo + (hi-lo)/2
+			if t.sparse[mid].b < input {
+				lo = mid + 1
+			} else {
+				hi = mid
 			}
+		}
+		if lo < len(t.sparse) && t.sparse[lo].b == input {
+			return t.sparse[lo].s
 		}
 		return failedStateID
 	}
