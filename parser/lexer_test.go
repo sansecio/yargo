@@ -45,17 +45,12 @@ func TestLexHexString(t *testing.T) {
 	tokens := collectTokens(`rule t { strings: $ = { FF ?? [4-16] (41|42) } condition: any of them }`)
 	// Find hex tokens
 	var hexToks []int
-	inHex := false
 	for _, tok := range tokens {
-		if tok.tok == '{' && inHex {
-			// This is the hex open
-		}
 		if tok.tok == STRING_LIT || tok.tok == STRING_IDENT {
 			continue
 		}
 		if tok.tok == HEX_BYTE || tok.tok == HEX_WILDCARD || tok.tok == HEX_JUMP || tok.tok == HEX_ALT {
 			hexToks = append(hexToks, tok.tok)
-			inHex = true
 		}
 	}
 	expectedHex := []int{HEX_BYTE, HEX_WILDCARD, HEX_JUMP, HEX_ALT}

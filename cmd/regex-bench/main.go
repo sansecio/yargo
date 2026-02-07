@@ -75,7 +75,10 @@ func main() {
 		}
 
 		if profileFile != nil {
-			pprof.StartCPUProfile(profileFile)
+			if err := pprof.StartCPUProfile(profileFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Error starting CPU profile: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		start := time.Now()
@@ -84,7 +87,7 @@ func main() {
 
 		if profileFile != nil {
 			pprof.StopCPUProfile()
-			profileFile.Close()
+			_ = profileFile.Close()
 		}
 
 		results[name] = duration
