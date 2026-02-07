@@ -1,6 +1,9 @@
 package internal
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 func SumValues(m map[string]int) int {
 	sum := 0
@@ -15,8 +18,8 @@ func SortByCount(m map[string]int) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		return m[keys[i]] > m[keys[j]]
+	slices.SortFunc(keys, func(a, b string) int {
+		return cmp.Compare(m[b], m[a])
 	})
 	return keys
 }

@@ -161,7 +161,7 @@ func (ac AhoCorasick) IterOverlappingByte(haystack []byte) Iter {
 }
 
 var pool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return strings.Builder{}
 	},
 }
@@ -294,9 +294,7 @@ func (ac AhoCorasick) FindAll(haystack string) []Match {
 
 // AhoCorasickBuilder defines a set of options applied before the patterns are built
 type AhoCorasickBuilder struct {
-	dfaBuilder          *iDFABuilder
 	nfaBuilder          *iNFABuilder
-	dfa                 bool
 	matchOnlyWholeWords bool
 }
 
@@ -307,7 +305,6 @@ type AhoCorasickBuilder struct {
 //	    trieBuilder := NewAhoCorasickBuilder(Opts{
 //		     MatchOnlyWholeWords: true,
 //		     MatchKind:           LeftMostLongestMatch,
-//		     DFA:                 false,
 //	    })
 //
 //			trie := trieBuilder.Build([]string{"testing", "testing 123"})
@@ -321,15 +318,12 @@ type Opts struct {
 	AsciiCaseInsensitive bool
 	MatchOnlyWholeWords  bool
 	MatchKind            matchKind
-	DFA                  bool
 }
 
 // NewAhoCorasickBuilder creates a new AhoCorasickBuilder based on Opts
 func NewAhoCorasickBuilder(o Opts) AhoCorasickBuilder {
 	return AhoCorasickBuilder{
-		dfaBuilder:          newDFABuilder(),
 		nfaBuilder:          newNFABuilder(o.MatchKind, o.AsciiCaseInsensitive),
-		dfa:                 o.DFA,
 		matchOnlyWholeWords: o.MatchOnlyWholeWords,
 	}
 }
@@ -344,17 +338,10 @@ func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
 	return a.BuildByte(bytePatterns)
 }
 
-// BuildByte builds a (non)deterministic finite automata from the user provided patterns
+// BuildByte builds an automaton from the user provided patterns
 func (a *AhoCorasickBuilder) BuildByte(patterns [][]byte) AhoCorasick {
 	nfa := a.nfaBuilder.build(patterns)
-	match_kind := nfa.matchKind
-
-	if a.dfa {
-		dfa := a.dfaBuilder.build(nfa)
-		return AhoCorasick{dfa, match_kind, a.matchOnlyWholeWords}
-	}
-
-	return AhoCorasick{nfa, match_kind, a.matchOnlyWholeWords}
+	return AhoCorasick{nfa, nfa.matchKind, a.matchOnlyWholeWords}
 }
 
 type imp interface {
@@ -363,7 +350,6 @@ type imp interface {
 	MaxPatternLen() int
 	PatternCount() int
 	Prefilter() prefilter
-	UsePrefilter() bool
 	OverlappingFindAt(prestate *prefilterState, haystack []byte, at int, state_id *stateID, match_index *int) *Match
 	EarliestFindAt(prestate *prefilterState, haystack []byte, at int, state_id *stateID) *Match
 	FindAtNoState(prestate *prefilterState, haystack []byte, at int) *Match
@@ -385,18 +371,6 @@ const (
 	// When there are multiple possible leftmost matches, the longest match is chosen.
 	LeftMostLongestMatch
 )
-
-func (m matchKind) supportsOverlapping() bool {
-	return m.isStandard()
-}
-
-func (m matchKind) supportsStream() bool {
-	return m.isStandard()
-}
-
-func (m matchKind) isStandard() bool {
-	return m == StandardMatch
-}
 
 func (m matchKind) isLeftmost() bool {
 	return m == LeftMostFirstMatch || m == LeftMostLongestMatch

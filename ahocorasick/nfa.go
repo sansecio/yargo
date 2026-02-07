@@ -20,10 +20,6 @@ func (n *iNFA) FindAtNoState(prefilterState *prefilterState, bytes []byte, i int
 	return findAtNoState(n, prefilterState, bytes, i)
 }
 
-func (n *iNFA) Repr() *iRepr {
-	return nil
-}
-
 func (n *iNFA) MatchKind() *matchKind {
 	return &n.matchKind
 }
@@ -40,23 +36,15 @@ func (n *iNFA) StartState() stateID {
 	return n.startID
 }
 
-func (n *iNFA) IsValid(id stateID) bool {
-	return int(id) < len(n.states)
-}
-
-func (n *iNFA) IsMatchState(id stateID) bool {
-	return n.state(id).isMatch()
-}
-
 func (n *iNFA) IsMatchOrDeadState(id stateID) bool {
-	return isMatchOrDeadState(n, id)
+	return id == deadStateID || n.state(id).isMatch()
 }
 
 func (n *iNFA) MatchCount(id stateID) int {
 	return len(n.states[id].matches)
 }
 
-func (n *iNFA) NextState(id stateID, b byte) stateID {
+func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
 	for {
 		state := n.states[id]
 		next := state.nextState(b)
@@ -67,14 +55,6 @@ func (n *iNFA) NextState(id stateID, b byte) stateID {
 	}
 }
 
-func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
-	next := n.NextState(id, b)
-	if next == failedStateID {
-		panic("automaton should never return fail_id for next state")
-	}
-	return next
-}
-
 func (n *iNFA) StandardFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
 	return standardFindAt(n, prefilterState, bytes, i, id)
 }
@@ -83,20 +63,8 @@ func (n *iNFA) StandardFindAtImp(prefilterState *prefilterState, prefilter prefi
 	return standardFindAtImp(n, prefilterState, prefilter, bytes, i, id)
 }
 
-func (n *iNFA) LeftmostFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return leftmostFindAt(n, prefilterState, bytes, i, id)
-}
-
-func (n *iNFA) LeftmostFindAtImp(prefilterState *prefilterState, prefilter prefilter, bytes []byte, i int, id *stateID) *Match {
-	return leftmostFindAtImp(n, prefilterState, prefilter, bytes, i, id)
-}
-
 func (n *iNFA) LeftmostFindAtNoState(prefilterState *prefilterState, bytes []byte, i int) *Match {
 	return leftmostFindAtNoState(n, prefilterState, bytes, i)
-}
-
-func (n *iNFA) LeftmostFindAtNoStateImp(prefilterState *prefilterState, prefilter prefilter, bytes []byte, i int) *Match {
-	return leftmostFindAtNoStateImp(n, prefilterState, prefilter, bytes, i)
 }
 
 func (n *iNFA) OverlappingFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID, i2 *int) *Match {
@@ -107,24 +75,12 @@ func (n *iNFA) EarliestFindAt(prefilterState *prefilterState, bytes []byte, i in
 	return earliestFindAt(n, prefilterState, bytes, i, id)
 }
 
-func (n *iNFA) FindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return findAt(n, prefilterState, bytes, i, id)
-}
-
 func (n *iNFA) MaxPatternLen() int {
 	return n.maxPatternLen
 }
 
 func (n *iNFA) PatternCount() int {
 	return n.patternCount
-}
-
-func (n *iNFA) UsePrefilter() bool {
-	p := n.Prefilter()
-	if p == nil {
-		return false
-	}
-	return !p.LooksForNonStartOfMatch()
 }
 
 func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
@@ -631,6 +587,11 @@ func newNFABuilder(kind matchKind, asciiCaseInsensitive bool) *iNFABuilder {
 func (b *iNFABuilder) build(patterns [][]byte) *iNFA {
 	c := newCompiler(*b)
 	return c.compile(patterns)
+}
+
+type pattern struct {
+	PatternID     int
+	PatternLength int
 }
 
 type state struct {

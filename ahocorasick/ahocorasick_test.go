@@ -59,27 +59,10 @@ func BenchmarkStdlib_AhoCorasickReplaceAll(b *testing.B) {
 	}
 }
 
-var benchmarkReplacerDFA []Replacer
-
-func init() {
-	benchmarkReplacerDFA = make([]Replacer, len(testCasesReplace))
-	for i, t2 := range testCasesReplace {
-		builder := NewAhoCorasickBuilder(Opts{
-			AsciiCaseInsensitive: true,
-			MatchOnlyWholeWords:  true,
-			MatchKind:            LeftMostLongestMatch,
-			DFA:                  true,
-		})
-		ac := builder.Build(t2.patterns)
-		benchmarkReplacerDFA[i] = NewReplacer(ac)
-	}
-}
-
 func TestOverlappingPatterns1(t *testing.T) {
 	trieBuilder := NewAhoCorasickBuilder(Opts{
 		MatchOnlyWholeWords: true,
 		MatchKind:           LeftMostLongestMatch,
-		DFA:                 false,
 	})
 
 	patterns := []string{"the foot", "football"}
@@ -97,7 +80,6 @@ func TestOverlappingPatterns2(t *testing.T) {
 	trieBuilder := NewAhoCorasickBuilder(Opts{
 		MatchOnlyWholeWords: true,
 		MatchKind:           LeftMostLongestMatch,
-		DFA:                 false,
 	})
 
 	patterns := []string{"test _test_", "_test_1"}
@@ -115,7 +97,6 @@ func TestOverlappingPatterns3(t *testing.T) {
 	trieBuilder := NewAhoCorasickBuilder(Opts{
 		MatchOnlyWholeWords: false,
 		MatchKind:           LeftMostLongestMatch,
-		DFA:                 false,
 	})
 
 	patterns := []string{"test _test_", "_test_1"}
@@ -129,21 +110,12 @@ func TestOverlappingPatterns3(t *testing.T) {
 	}
 }
 
-func BenchmarkAhoCorasick_ReplaceAllDFA(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		for i, ac := range benchmarkReplacerDFA {
-			_ = ac.ReplaceAll(testCasesReplace[i].haystack, testCasesReplace[i].replaceWith)
-		}
-	}
-}
-
 func TestAhoCorasick_ReplaceAllFuncStopN(t *testing.T) {
 	for _, i2 := range testCasesReplaceN {
 		builder := NewAhoCorasickBuilder(Opts{
 			AsciiCaseInsensitive: true,
 			MatchOnlyWholeWords:  true,
 			MatchKind:            LeftMostLongestMatch,
-			DFA:                  true,
 		})
 
 		ac := builder.Build(i2.patterns)
@@ -424,28 +396,20 @@ func TestAhoCorasick_IterOverlapping(t *testing.T) {
 
 func TestAhoCorasick_LeftmostInsensitiveWholeWord(t *testing.T) {
 	for i, t2 := range leftmostInsensitiveWholeWordTestCases {
-		builders := []AhoCorasickBuilder{NewAhoCorasickBuilder(Opts{
+		builder := NewAhoCorasickBuilder(Opts{
 			AsciiCaseInsensitive: true,
 			MatchOnlyWholeWords:  true,
 			MatchKind:            LeftMostLongestMatch,
-		}), NewAhoCorasickBuilder(Opts{
-			AsciiCaseInsensitive: true,
-			MatchOnlyWholeWords:  true,
-			MatchKind:            LeftMostLongestMatch,
-			DFA:                  true,
-		})}
+		})
+		ac := builder.Build(t2.patterns)
+		matches := ac.FindAll(t2.haystack)
 
-		for _, builder := range builders {
-			ac := builder.Build(t2.patterns)
-			matches := ac.FindAll(t2.haystack)
-
-			if len(matches) != len(t2.matches) {
-				t.Errorf("test %v expected %v matches got %v", i, len(matches), len(t2.matches))
-			}
-			for i, m := range matches {
-				if m != t2.matches[i] {
-					t.Errorf("test %v expected %v matche got %v", i, m, t2.matches[i])
-				}
+		if len(matches) != len(t2.matches) {
+			t.Errorf("test %v expected %v matches got %v", i, len(matches), len(t2.matches))
+		}
+		for j, m := range matches {
+			if m != t2.matches[j] {
+				t.Errorf("test %v expected %v match got %v", i, m, t2.matches[j])
 			}
 		}
 	}

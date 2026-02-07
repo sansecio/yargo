@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"cmp"
+	"slices"
 	"sort"
 	"time"
 )
@@ -84,8 +86,8 @@ func (r *Rules) RegexProfile(buf []byte) []RegexTiming {
 		})
 	}
 
-	sort.Slice(timings, func(i, j int) bool {
-		return timings[i].Duration > timings[j].Duration
+	slices.SortFunc(timings, func(a, b RegexTiming) int {
+		return cmp.Compare(b.Duration, a.Duration)
 	})
 	return timings
 }
