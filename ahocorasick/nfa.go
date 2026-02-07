@@ -217,10 +217,12 @@ func (c *compiler) fillFailureTransitionsStandard() {
 			seen.insert(tr.id)
 
 			fail := it.nfa.state(id).fail
-			for it.nfa.state(fail).nextState(tr.key) == failedStateID {
-				fail = it.nfa.state(fail).fail
+			failState := it.nfa.state(fail)
+			for failState.nextState(tr.key) == failedStateID {
+				fail = failState.fail
+				failState = it.nfa.state(fail)
 			}
-			fail = it.nfa.state(fail).nextState(tr.key)
+			fail = failState.nextState(tr.key)
 			it.nfa.state(tr.id).fail = fail
 			it.nfa.copyMatches(fail, tr.id)
 		}
@@ -264,10 +266,12 @@ func (c *compiler) fillFailureTransitionsLeftmost() {
 			seen.insert(nxt.id)
 
 			fail := it.nfa.state(item.id).fail
-			for it.nfa.state(fail).nextState(tr.key) == failedStateID {
-				fail = it.nfa.state(fail).fail
+			failState := it.nfa.state(fail)
+			for failState.nextState(tr.key) == failedStateID {
+				fail = failState.fail
+				failState = it.nfa.state(fail)
 			}
-			fail = it.nfa.state(fail).nextState(tr.key)
+			fail = failState.nextState(tr.key)
 
 			if nxt.matchAtDepth != nil {
 				failDepth := it.nfa.state(fail).depth
@@ -297,6 +301,9 @@ func (n *iNFA) copyEmptyMatches(dst stateID) {
 }
 
 func (n *iNFA) copyMatches(src stateID, dst stateID) {
+	if len(n.states[src].matches) == 0 {
+		return
+	}
 	srcState, dstState := n.getTwo(src, dst)
 	dstState.matches = append(dstState.matches, srcState.matches...)
 }
@@ -316,17 +323,20 @@ func (n *iNFA) getTwo(i stateID, j stateID) (*state, *state) {
 }
 
 func newIterTransitions(nfa *iNFA, stateId stateID) iterTransitions {
+	trans := &nfa.states[int(stateId)].trans
 	return iterTransitions{
-		nfa:   nfa,
-		trans: &nfa.states[int(stateId)].trans,
-		cur:   0,
+		nfa:    nfa,
+		sparse: trans.sparse,
+		dense:  trans.dense,
+		cur:    0,
 	}
 }
 
 type iterTransitions struct {
-	nfa   *iNFA
-	trans *transitions
-	cur   int
+	nfa    *iNFA
+	sparse []innerSparse
+	dense  []stateID
+	cur    int
 }
 
 type next struct {
@@ -335,23 +345,21 @@ type next struct {
 }
 
 func (i *iterTransitions) next() (next, bool) {
-	if i.trans.dense == nil {
-		sparse := i.trans.sparse
-		if i.cur >= len(sparse) {
+	if i.dense == nil {
+		if i.cur >= len(i.sparse) {
 			return next{}, false
 		}
 		ii := i.cur
 		i.cur += 1
 		return next{
-			key: sparse[ii].b,
-			id:  sparse[ii].s,
+			key: i.sparse[ii].b,
+			id:  i.sparse[ii].s,
 		}, true
 	}
 
-	dense := i.trans.dense
 	for i.cur < 256 {
 		b := byte(i.cur)
-		id := dense[b]
+		id := i.dense[b]
 		i.cur += 1
 		if id != failedStateID {
 			return next{
@@ -364,29 +372,31 @@ func (i *iterTransitions) next() (next, bool) {
 }
 
 type queuedSet struct {
-	seen []bool
+	seen []uint64
 }
 
 func newInertQueuedSet(capacity int) queuedSet {
 	return queuedSet{
-		seen: make([]bool, capacity),
+		seen: make([]uint64, (capacity+63)/64),
 	}
 }
 
 func (q *queuedSet) contains(s stateID) bool {
-	if int(s) >= len(q.seen) {
+	word := uint(s) / 64
+	if word >= uint(len(q.seen)) {
 		return false
 	}
-	return q.seen[s]
+	return q.seen[word]&(1<<(uint(s)%64)) != 0
 }
 
 func (q *queuedSet) insert(s stateID) {
-	if int(s) >= len(q.seen) {
-		grown := make([]bool, int(s)+1)
+	word := uint(s) / 64
+	if word >= uint(len(q.seen)) {
+		grown := make([]uint64, word+1)
 		copy(grown, q.seen)
 		q.seen = grown
 	}
-	q.seen[s] = true
+	q.seen[word] |= 1 << (uint(s) % 64)
 }
 
 func (c *compiler) queuedSet() queuedSet {

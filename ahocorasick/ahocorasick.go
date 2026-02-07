@@ -255,7 +255,7 @@ func (m *Match) Start() int {
 	return m.end - m.len
 }
 
-type stateID uint
+type stateID uint32
 
 const (
 	failedStateID stateID = 0
