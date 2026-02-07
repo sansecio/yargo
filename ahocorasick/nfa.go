@@ -18,7 +18,7 @@ type iNFA struct {
 
 func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
 	for {
-		state := n.states[id]
+		state := &n.states[id]
 		next := state.nextState(b)
 		if next != failedStateID {
 			return next
@@ -39,7 +39,7 @@ func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
 	if int(id) >= len(n.states) {
 		return nil
 	}
-	state := n.states[id]
+	state := &n.states[id]
 	if matchIndex >= len(state.matches) {
 		return nil
 	}
