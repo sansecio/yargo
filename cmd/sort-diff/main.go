@@ -1,3 +1,5 @@
+//go:build yara
+
 package main
 
 import (
