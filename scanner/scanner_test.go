@@ -1483,13 +1483,13 @@ func TestScanFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTemp() error = %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	testData := []byte("hello <?php echo 'world'; ?>")
 	if _, err := tmpFile.Write(testData); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	var matches MatchRules
 	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
@@ -1527,13 +1527,13 @@ func TestScanFileNoMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTemp() error = %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	testData := []byte("hello world, no php here")
 	if _, err := tmpFile.Write(testData); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	var matches MatchRules
 	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
@@ -1593,8 +1593,8 @@ func TestScanFileEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTemp() error = %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	_ = tmpFile.Close()
 
 	var matches MatchRules
 	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &matches)
@@ -1629,7 +1629,7 @@ func TestScanFileLargeFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTemp() error = %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	// Write 10MB of padding then marker then more padding
 	padding := make([]byte, 5*1024*1024) // 5MB
@@ -1644,7 +1644,7 @@ func TestScanFileLargeFile(t *testing.T) {
 	if _, err := tmpFile.Write(padding); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	var matches MatchRules
 	err = rules.ScanFile(tmpFile.Name(), 0, 30*time.Second, &matches)
@@ -1745,12 +1745,12 @@ func TestScanFileMatchesScanMem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTemp() error = %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.Write(testData); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	var fileMatches MatchRules
 	err = rules.ScanFile(tmpFile.Name(), 0, time.Second, &fileMatches)

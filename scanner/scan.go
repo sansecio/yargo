@@ -165,7 +165,7 @@ func (r *Rules) ScanFile(filename string, flags ScanFlags, timeout time.Duration
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	fi, err := f.Stat()
 	if err != nil {
@@ -181,7 +181,7 @@ func (r *Rules) ScanFile(filename string, flags ScanFlags, timeout time.Duration
 	if err != nil {
 		return err
 	}
-	defer unix.Munmap(data)
+	defer func() { _ = unix.Munmap(data) }()
 
 	return r.ScanMem(data, flags, timeout, cb)
 }

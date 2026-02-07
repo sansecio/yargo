@@ -6,7 +6,7 @@ Pure Go implementation of YARA, eliminating the need for go-yara/cgo dependencie
 
 - Pure Go - no cgo dependencies
 - YARA rule parser (goyacc-based) with full syntax support
-- Multi-pattern scanner using a vendored [Aho-Corasick](ahocorasick/) automaton (NFA by default, optional DFA)
+- Multi-pattern scanner using a vendored [Aho-Corasick](ahocorasick/) automaton
 - Regex support via [go-re2](https://github.com/wasilibs/go-re2) (RE2 engine compiled to Wasm)
 - Condition evaluation: `and`, `or`, `at`, `any of`, `all of`, `uint*` functions, wildcards
 - Support for `base64` and `fullword` string modifiers
@@ -76,7 +76,7 @@ Regexes without extractable atoms are rejected at compile time. Use `CompileOpti
 | Component | Library | Notes |
 |-----------|---------|-------|
 | Parser | `goyacc` (stdlib) | LALR(1) grammar in `parser/yara.y` |
-| String matching | `ahocorasick/` (vendored) | Based on [pgavlin/aho-corasick](https://github.com/pgavlin/aho-corasick) with performance fixes (reduced GC pressure, etc.). NFA by default; optional DFA for faster scans at higher memory cost |
+| String matching | `ahocorasick/` (vendored) | Based on [pgavlin/aho-corasick](https://github.com/pgavlin/aho-corasick) with performance fixes (reduced GC pressure, etc.) |
 | Regex | [wasilibs/go-re2](https://github.com/wasilibs/go-re2) | RE2 compiled to Wasm via wazero; Latin-1 mode for binary scanning |
 
 ## Tools
@@ -89,6 +89,8 @@ The `cmd/` directory contains comparison and benchmarking tools that require [go
 - **parse-bench** — benchmarks rule parsing/compilation speed
 - **process-bench** — benchmarks scanning a single large file
 - **snippet-diff** — compares matches on detection snippets from a MySQL database
+- **regex-bench** — benchmarks regex libraries (go-re2 vs stdlib regexp vs coregex)
+- **sort-diff** — compares match ordering between yargo and go-yara
 - **storeminer-diff** — compares matches on storeminer detections from a MySQL database
 
 ## Current Limitations
