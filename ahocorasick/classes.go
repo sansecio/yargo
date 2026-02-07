@@ -23,8 +23,8 @@ func (b byteClassBuilder) build() byteClasses {
 			break
 		}
 		if b[i] {
-			if class+1 > math.MaxUint8 {
-				panic("shit happens")
+			if int(class)+1 > math.MaxUint8 {
+				panic("too many byte classes: exceeds 255")
 			}
 			class += 1
 		}

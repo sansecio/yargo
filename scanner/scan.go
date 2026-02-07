@@ -3,7 +3,7 @@ package scanner
 import (
 	"context"
 	"os"
-	"sort"
+	"slices"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -102,7 +102,7 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	for ruleIdx := range ruleMatches {
 		ruleIndices = append(ruleIndices, ruleIdx)
 	}
-	sort.Ints(ruleIndices)
+	slices.Sort(ruleIndices)
 
 	// Evaluate conditions for each rule with matches
 	for _, ruleIdx := range ruleIndices {
@@ -197,7 +197,7 @@ func dedupe(positions []int) []int {
 	if len(positions) <= 1 {
 		return positions
 	}
-	sort.Ints(positions)
+	slices.Sort(positions)
 	j := 1
 	for i := 1; i < len(positions); i++ {
 		if positions[i] != positions[j-1] {
