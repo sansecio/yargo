@@ -7,7 +7,7 @@ import (
 )
 
 type findIter struct {
-	fsm                 imp
+	fsm                 *iNFA
 	prestate            *prefilterState
 	haystack            []byte
 	pos                 int
@@ -45,7 +45,7 @@ func (f *findIter) Next() *Match {
 			return nil
 		}
 
-		result := f.fsm.FindAtNoState(f.prestate, f.haystack, f.pos)
+		result := findAtNoState(f.fsm, f.prestate, f.haystack, f.pos)
 
 		if result == nil {
 			return nil
@@ -66,7 +66,7 @@ func (f *findIter) Next() *Match {
 }
 
 type overlappingIter struct {
-	fsm                 imp
+	fsm                 *iNFA
 	prestate            *prefilterState
 	haystack            []byte
 	pos                 int
@@ -81,7 +81,7 @@ func (f *overlappingIter) Next() *Match {
 			return nil
 		}
 
-		result := f.fsm.OverlappingFindAt(f.prestate, f.haystack, f.pos, &f.stateID, &f.matchIndex)
+		result := overlappingFindAt(f.fsm, f.prestate, f.haystack, f.pos, &f.stateID, &f.matchIndex)
 
 		if result == nil {
 			return nil
@@ -115,7 +115,7 @@ func newOverlappingIter(ac AhoCorasick, haystack []byte) overlappingIter {
 		prestate:            &prestate,
 		haystack:            haystack,
 		pos:                 0,
-		stateID:             ac.i.StartState(),
+		stateID:             ac.i.startID,
 		matchIndex:          0,
 		matchOnlyWholeWords: ac.matchOnlyWholeWords,
 	}
@@ -126,7 +126,7 @@ var _ Finder = (*AhoCorasick)(nil)
 
 // AhoCorasick is the main data structure that does most of the work
 type AhoCorasick struct {
-	i                   imp
+	i                   *iNFA
 	matchKind           matchKind
 	matchOnlyWholeWords bool
 }
@@ -342,17 +342,6 @@ func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
 func (a *AhoCorasickBuilder) BuildByte(patterns [][]byte) AhoCorasick {
 	nfa := a.nfaBuilder.build(patterns)
 	return AhoCorasick{nfa, nfa.matchKind, a.matchOnlyWholeWords}
-}
-
-type imp interface {
-	MatchKind() *matchKind
-	StartState() stateID
-	MaxPatternLen() int
-	PatternCount() int
-	Prefilter() prefilter
-	OverlappingFindAt(prestate *prefilterState, haystack []byte, at int, state_id *stateID, match_index *int) *Match
-	EarliestFindAt(prestate *prefilterState, haystack []byte, at int, state_id *stateID) *Match
-	FindAtNoState(prestate *prefilterState, haystack []byte, at int) *Match
 }
 
 type matchKind int

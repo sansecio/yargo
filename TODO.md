@@ -11,6 +11,6 @@
 
 ## Remaining
 
-- [ ] Review if IterOverlapping can be replaced with simpler implementation
-- [ ] Consider inlining small automaton interface methods directly into NFA
-- [ ] The prefilter system is complex and may have unused code paths
+- [x] Review if IterOverlapping can be replaced with simpler implementation
+- [x] Consider inlining small automaton interface methods directly into NFA
+- [x] The prefilter system is complex and may have unused code paths
