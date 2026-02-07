@@ -247,7 +247,7 @@ func TestMetaExtraction(t *testing.T) {
 		t.Fatalf("expected 2 metas, got %d", len(matches[0].Metas))
 	}
 
-	metaMap := make(map[string]interface{})
+	metaMap := make(map[string]any)
 	for _, m := range matches[0].Metas {
 		metaMap[m.Identifier] = m.Value
 	}

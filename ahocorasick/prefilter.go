@@ -19,24 +19,8 @@ func (s startBytesThree) NextCandidate(_ *prefilterState, haystack []byte, at in
 	return noneCandidate
 }
 
-func (s startBytesThree) HeapBytes() int {
-	return 0
-}
-
 func (s startBytesThree) ReportsFalsePositives() bool {
 	return true
-}
-
-func (s startBytesThree) LooksForNonStartOfMatch() bool {
-	return false
-}
-
-func (s *startBytesThree) clone() prefilter {
-	if s == nil {
-		return nil
-	}
-	u := *s
-	return &u
 }
 
 type startBytesTwo struct {
@@ -53,24 +37,8 @@ func (s startBytesTwo) NextCandidate(_ *prefilterState, haystack []byte, at int)
 	return noneCandidate
 }
 
-func (s startBytesTwo) HeapBytes() int {
-	return 0
-}
-
 func (s startBytesTwo) ReportsFalsePositives() bool {
 	return true
-}
-
-func (s startBytesTwo) LooksForNonStartOfMatch() bool {
-	return false
-}
-
-func (s *startBytesTwo) clone() prefilter {
-	if s == nil {
-		return nil
-	}
-	u := *s
-	return &u
 }
 
 type startBytesOne struct {
@@ -86,24 +54,8 @@ func (s startBytesOne) NextCandidate(_ *prefilterState, haystack []byte, at int)
 	return noneCandidate
 }
 
-func (s startBytesOne) HeapBytes() int {
-	return 0
-}
-
 func (s startBytesOne) ReportsFalsePositives() bool {
 	return true
-}
-
-func (s startBytesOne) LooksForNonStartOfMatch() bool {
-	return false
-}
-
-func (s *startBytesOne) clone() prefilter {
-	if s == nil {
-		return nil
-	}
-	u := *s
-	return &u
 }
 
 type byteSet [256]bool
@@ -211,24 +163,8 @@ func (r rareBytesOne) NextCandidate(state *prefilterState, haystack []byte, at i
 	return noneCandidate
 }
 
-func (r rareBytesOne) HeapBytes() int {
-	return 0
-}
-
 func (r rareBytesOne) ReportsFalsePositives() bool {
 	return true
-}
-
-func (r rareBytesOne) LooksForNonStartOfMatch() bool {
-	return true
-}
-
-func (r *rareBytesOne) clone() prefilter {
-	if r == nil {
-		return nil
-	}
-	u := *r
-	return &u
 }
 
 type rareBytesTwo struct {
@@ -256,24 +192,8 @@ func (r rareBytesTwo) NextCandidate(state *prefilterState, haystack []byte, at i
 	return noneCandidate
 }
 
-func (r rareBytesTwo) HeapBytes() int {
-	return 0
-}
-
 func (r rareBytesTwo) ReportsFalsePositives() bool {
 	return true
-}
-
-func (r rareBytesTwo) LooksForNonStartOfMatch() bool {
-	return true
-}
-
-func (r *rareBytesTwo) clone() prefilter {
-	if r == nil {
-		return nil
-	}
-	u := *r
-	return &u
 }
 
 type rareBytesThree struct {
@@ -302,24 +222,8 @@ func (r rareBytesThree) NextCandidate(state *prefilterState, haystack []byte, at
 	return noneCandidate
 }
 
-func (r rareBytesThree) HeapBytes() int {
-	return 0
-}
-
 func (r rareBytesThree) ReportsFalsePositives() bool {
 	return true
-}
-
-func (r rareBytesThree) LooksForNonStartOfMatch() bool {
-	return true
-}
-
-func (r *rareBytesThree) clone() prefilter {
-	if r == nil {
-		return nil
-	}
-	u := *r
-	return &u
 }
 
 func (r *rareBytesBuilder) build() prefilter {
@@ -574,10 +478,7 @@ const noneCandidate = -1
 
 type prefilter interface {
 	NextCandidate(state *prefilterState, haystack []byte, at int) int
-	HeapBytes() int
 	ReportsFalsePositives() bool
-	LooksForNonStartOfMatch() bool
-	clone() prefilter
 }
 
 func nextPrefilter(state *prefilterState, prefilter prefilter, haystack []byte, at int) int {

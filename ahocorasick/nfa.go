@@ -16,99 +16,15 @@ type iNFA struct {
 	states        []state
 }
 
-func (n *iNFA) FindAtNoState(prefilterState *prefilterState, bytes []byte, i int) *Match {
-	return findAtNoState(n, prefilterState, bytes, i)
-}
-
-func (n *iNFA) Repr() *iRepr {
-	return nil
-}
-
-func (n *iNFA) MatchKind() *matchKind {
-	return &n.matchKind
-}
-
-func (n *iNFA) Anchored() bool {
-	return n.anchored
-}
-
-func (n *iNFA) Prefilter() prefilter {
-	return n.prefil
-}
-
-func (n *iNFA) StartState() stateID {
-	return n.startID
-}
-
-func (n *iNFA) IsValid(id stateID) bool {
-	return int(id) < len(n.states)
-}
-
-func (n *iNFA) IsMatchState(id stateID) bool {
-	return n.state(id).isMatch()
-}
-
-func (n *iNFA) IsMatchOrDeadState(id stateID) bool {
-	return isMatchOrDeadState(n, id)
-}
-
-func (n *iNFA) MatchCount(id stateID) int {
-	return len(n.states[id].matches)
-}
-
-func (n *iNFA) NextState(id stateID, b byte) stateID {
+func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
 	for {
-		state := n.states[id]
+		state := &n.states[id]
 		next := state.nextState(b)
 		if next != failedStateID {
 			return next
 		}
 		id = state.fail
 	}
-}
-
-func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
-	next := n.NextState(id, b)
-	if next == failedStateID {
-		panic("automaton should never return fail_id for next state")
-	}
-	return next
-}
-
-func (n *iNFA) StandardFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return standardFindAt(n, prefilterState, bytes, i, id)
-}
-
-func (n *iNFA) StandardFindAtImp(prefilterState *prefilterState, prefilter prefilter, bytes []byte, i int, id *stateID) *Match {
-	return standardFindAtImp(n, prefilterState, prefilter, bytes, i, id)
-}
-
-func (n *iNFA) LeftmostFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return leftmostFindAt(n, prefilterState, bytes, i, id)
-}
-
-func (n *iNFA) LeftmostFindAtImp(prefilterState *prefilterState, prefilter prefilter, bytes []byte, i int, id *stateID) *Match {
-	return leftmostFindAtImp(n, prefilterState, prefilter, bytes, i, id)
-}
-
-func (n *iNFA) LeftmostFindAtNoState(prefilterState *prefilterState, bytes []byte, i int) *Match {
-	return leftmostFindAtNoState(n, prefilterState, bytes, i)
-}
-
-func (n *iNFA) LeftmostFindAtNoStateImp(prefilterState *prefilterState, prefilter prefilter, bytes []byte, i int) *Match {
-	return leftmostFindAtNoStateImp(n, prefilterState, prefilter, bytes, i)
-}
-
-func (n *iNFA) OverlappingFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID, i2 *int) *Match {
-	return overlappingFindAt(n, prefilterState, bytes, i, id, i2)
-}
-
-func (n *iNFA) EarliestFindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return earliestFindAt(n, prefilterState, bytes, i, id)
-}
-
-func (n *iNFA) FindAt(prefilterState *prefilterState, bytes []byte, i int, id *stateID) *Match {
-	return findAt(n, prefilterState, bytes, i, id)
 }
 
 func (n *iNFA) MaxPatternLen() int {
@@ -119,19 +35,11 @@ func (n *iNFA) PatternCount() int {
 	return n.patternCount
 }
 
-func (n *iNFA) UsePrefilter() bool {
-	p := n.Prefilter()
-	if p == nil {
-		return false
-	}
-	return !p.LooksForNonStartOfMatch()
-}
-
 func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
 	if int(id) >= len(n.states) {
 		return nil
 	}
-	state := n.states[id]
+	state := &n.states[id]
 	if matchIndex >= len(state.matches) {
 		return nil
 	}
@@ -407,10 +315,6 @@ func (n *iNFA) getTwo(i stateID, j stateID) (*state, *state) {
 	return &after[0], &before[j]
 }
 
-func (n *iNFA) iterAllTransitions(byteClasses *byteClasses, id stateID, f func(tr *next)) {
-	n.states[id].trans.iterAll(byteClasses, f)
-}
-
 func newIterTransitions(nfa *iNFA, stateId stateID) iterTransitions {
 	return iterTransitions{
 		nfa:   nfa,
@@ -483,10 +387,6 @@ func (q *queuedSet) insert(s stateID) {
 		q.seen = grown
 	}
 	q.seen[s] = true
-}
-
-func newActiveQueuedSet(capacity int) queuedSet {
-	return newInertQueuedSet(capacity)
 }
 
 func (c *compiler) queuedSet() queuedSet {
@@ -620,7 +520,7 @@ type iNFABuilder struct {
 
 func newNFABuilder(kind matchKind, asciiCaseInsensitive bool) *iNFABuilder {
 	return &iNFABuilder{
-		denseDepth:           2,
+		denseDepth:           3,
 		matchKind:            kind,
 		prefilter:            true,
 		anchored:             false,
@@ -631,6 +531,11 @@ func newNFABuilder(kind matchKind, asciiCaseInsensitive bool) *iNFABuilder {
 func (b *iNFABuilder) build(patterns [][]byte) *iNFA {
 	c := newCompiler(*b)
 	return c.compile(patterns)
+}
+
+type pattern struct {
+	PatternID     int
+	PatternLength int
 }
 
 type state struct {
@@ -678,74 +583,6 @@ type transitions struct {
 	dense  []stateID
 }
 
-func sparseIter(trans []innerSparse, f func(*next)) {
-	var byte16 uint16
-
-	for _, tr := range trans {
-		for byte16 < uint16(tr.b) {
-			f(&next{
-				key: byte(byte16),
-				id:  failedStateID,
-			})
-			byte16 += 1
-		}
-		f(&next{
-			key: tr.b,
-			id:  tr.s,
-		})
-		byte16 += 1
-	}
-
-	for b := byte16; b < 256; b++ {
-		f(&next{
-			key: byte(b),
-			id:  failedStateID,
-		})
-	}
-}
-
-func (t *transitions) iterAll(byteClasses *byteClasses, f func(tr *next)) {
-	if byteClasses.isSingleton() {
-		if t.dense == nil {
-			sparseIter(t.sparse, f)
-		} else {
-			for b := 0; b < 256; b++ {
-				f(&next{
-					key: byte(b),
-					id:  t.dense[b],
-				})
-			}
-		}
-	} else {
-		if t.dense == nil {
-			var lastClass *byte
-
-			sparseIter(t.sparse, func(n *next) {
-				class := byteClasses.bytes[n.key]
-
-				if lastClass == nil || *lastClass != class {
-					cc := class
-					lastClass = &cc
-					f(n)
-				}
-			})
-		} else {
-			bcr := byteClassRepresentatives{
-				classes:   byteClasses,
-				bbyte:     0,
-				lastClass: nil,
-			}
-
-			for n := bcr.next(); n != nil; n = bcr.next() {
-				f(&next{
-					key: *n,
-					id:  t.dense[*n],
-				})
-			}
-		}
-	}
-}
-
 func (t *transitions) heapBytes() int {
 	var i int
 	intSize := int(unsafe.Sizeof(i))
@@ -757,10 +594,17 @@ func (t *transitions) heapBytes() int {
 
 func (t *transitions) nextState(input byte) stateID {
 	if t.dense == nil {
-		for _, sp := range t.sparse {
-			if sp.b == input {
-				return sp.s
+		lo, hi := 0, len(t.sparse)
+		for lo < hi {
+			mid := lo + (hi-lo)/2
+			if t.sparse[mid].b < input {
+				lo = mid + 1
+			} else {
+				hi = mid
 			}
+		}
+		if lo < len(t.sparse) && t.sparse[lo].b == input {
+			return t.sparse[lo].s
 		}
 		return failedStateID
 	}

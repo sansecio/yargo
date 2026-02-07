@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -135,13 +136,7 @@ func main() {
 	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
 
 	slices.SortFunc(timings, func(a, b fileTiming) int {
-		if a.duration > b.duration {
-			return -1
-		}
-		if a.duration < b.duration {
-			return 1
-		}
-		return 0
+		return cmp.Compare(b.duration, a.duration)
 	})
 	fmt.Printf("\nTop 5 slowest files (yargo):\n")
 	for i, t := range timings[:min(5, len(timings))] {
