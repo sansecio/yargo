@@ -520,7 +520,7 @@ type iNFABuilder struct {
 
 func newNFABuilder(kind matchKind, asciiCaseInsensitive bool) *iNFABuilder {
 	return &iNFABuilder{
-		denseDepth:           2,
+		denseDepth:           3,
 		matchKind:            kind,
 		prefilter:            true,
 		anchored:             false,
