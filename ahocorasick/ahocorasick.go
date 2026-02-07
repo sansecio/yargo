@@ -1,8 +1,6 @@
 package ahocorasick
 
 import (
-	"strings"
-	"sync"
 	"unicode"
 )
 
@@ -32,13 +30,12 @@ func newFindIter(ac AhoCorasick, haystack []byte) findIter {
 	}
 }
 
-// Iter is an iterator over matches found on the current haystack
-// it gives the user more granular control. You can chose how many and what kind of matches you need.
+// Iter is an iterator over matches found on the current haystack.
 type Iter interface {
 	Next() *Match
 }
 
-// Next gives a pointer to the next match yielded by the iterator or nil, if there is none
+// Next gives a pointer to the next match yielded by the iterator or nil, if there is none.
 func (f *findIter) Next() *Match {
 	for {
 		if f.pos > len(f.haystack) {
@@ -121,37 +118,14 @@ func newOverlappingIter(ac AhoCorasick, haystack []byte) overlappingIter {
 	}
 }
 
-// make sure the AhoCorasick data structure implements the Finder interface
-var _ Finder = (*AhoCorasick)(nil)
-
-// AhoCorasick is the main data structure that does most of the work
+// AhoCorasick is the main data structure that does most of the work.
 type AhoCorasick struct {
 	i                   *iNFA
 	matchKind           matchKind
 	matchOnlyWholeWords bool
 }
 
-func (ac AhoCorasick) PatternCount() int {
-	return ac.i.PatternCount()
-}
-
-// Iter gives an iterator over the built patterns
-func (ac AhoCorasick) Iter(haystack string) Iter {
-	return ac.IterByte(unsafeBytes(haystack))
-}
-
-// IterByte gives an iterator over the built patterns
-func (ac AhoCorasick) IterByte(haystack []byte) Iter {
-	iter := newFindIter(ac, haystack)
-	return &iter
-}
-
-// Iter gives an iterator over the built patterns with overlapping matches
-func (ac AhoCorasick) IterOverlapping(haystack string) Iter {
-	return ac.IterOverlappingByte(unsafeBytes(haystack))
-}
-
-// IterOverlappingByte gives an iterator over the built patterns with overlapping matches
+// IterOverlappingByte gives an iterator over the built patterns with overlapping matches.
 func (ac AhoCorasick) IterOverlappingByte(haystack []byte) Iter {
 	if ac.matchKind != StandardMatch {
 		panic("only StandardMatch allowed for overlapping matches")
@@ -160,122 +134,7 @@ func (ac AhoCorasick) IterOverlappingByte(haystack []byte) Iter {
 	return &i
 }
 
-var pool = sync.Pool{
-	New: func() any {
-		return strings.Builder{}
-	},
-}
-
-type Replacer struct {
-	finder Finder
-}
-
-func NewReplacer(finder Finder) Replacer {
-	return Replacer{finder: finder}
-}
-
-// ReplaceAllFunc replaces the matches found in the haystack according to the user provided function
-// it gives fine grained control over what is replaced.
-// A user can chose to stop the replacing process early by returning false in the lambda
-// In that case, everything from that point will be kept as the original haystack
-func (r Replacer) ReplaceAllFunc(haystack string, f func(match Match) (string, bool)) string {
-	return r.replaceAll(haystack, func(_ []Match) int { return -1 }, f)
-}
-
-// ReplaceAll replaces the matches found in the haystack according to the user provided slice `replaceWith`
-// It panics, if `replaceWith` has length different from the patterns that it was built with
-func (r Replacer) ReplaceAll(haystack string, replaceWith []string) string {
-	if len(replaceWith) != r.finder.PatternCount() {
-		panic("replaceWith needs to have the same length as the pattern count")
-	}
-
-	return r.replaceAll(
-		haystack,
-		func(matches []Match) int {
-			size, start := 0, 0
-			for _, m := range matches {
-				size += m.Start() - start + len(replaceWith[m.pattern])
-				start = m.Start() + m.len
-			}
-			if start-1 < len(haystack) {
-				size += len(haystack[start:])
-			}
-			return size
-		},
-		func(match Match) (string, bool) {
-			return replaceWith[match.pattern], true
-		},
-	)
-}
-
-// ReplaceAllWith replaces the matches found in the haystack according with replacement.
-func (r Replacer) ReplaceAllWith(haystack, replacement string) string {
-	return r.replaceAll(
-		haystack,
-		func(matches []Match) int {
-			size, start := 0, 0
-			for _, m := range matches {
-				size += m.Start() - start + len(replacement)
-				start = m.Start() + m.len
-			}
-			if start-1 < len(haystack) {
-				size += len(haystack[start:])
-			}
-			return size
-		},
-		func(match Match) (string, bool) {
-			return replacement, true
-		},
-	)
-}
-
-func (r Replacer) replaceAll(haystack string, measure func(matches []Match) int, f func(match Match) (string, bool)) string {
-	matches := r.finder.FindAll(haystack)
-	if len(matches) == 0 {
-		return haystack
-	}
-
-	str := pool.Get().(strings.Builder)
-	defer func() {
-		str.Reset()
-		pool.Put(str)
-	}()
-
-	// right-size the buffer
-	switch size := measure(matches); size {
-	case 0:
-		return ""
-	case -1:
-		// do nothing
-	default:
-		str.Grow(size)
-	}
-
-	start := 0
-	for _, match := range matches {
-		rw, ok := f(match)
-		if !ok {
-			str.WriteString(haystack[start:])
-			return str.String()
-		}
-		str.WriteString(haystack[start:match.Start()])
-		str.WriteString(rw)
-		start = match.Start() + match.len
-	}
-
-	if start-1 < len(haystack) {
-		str.WriteString(haystack[start:])
-	}
-
-	return str.String()
-}
-
-type Finder interface {
-	FindAll(haystack string) []Match
-	PatternCount() int
-}
-
-// FindAll returns the matches found in the haystack
+// FindAll returns the matches found in the haystack.
 func (ac AhoCorasick) FindAll(haystack string) []Match {
 	iter := newFindIter(ac, unsafeBytes(haystack))
 
@@ -292,13 +151,13 @@ func (ac AhoCorasick) FindAll(haystack string) []Match {
 	return matches
 }
 
-// AhoCorasickBuilder defines a set of options applied before the patterns are built
+// AhoCorasickBuilder defines a set of options applied before the patterns are built.
 type AhoCorasickBuilder struct {
 	nfaBuilder          *iNFABuilder
 	matchOnlyWholeWords bool
 }
 
-// Opts defines a set of options applied before the patterns are built
+// Opts defines a set of options applied before the patterns are built.
 // MatchOnlyWholeWords does filtering after matching with MatchKind
 // this could lead to situations where, in this case, nothing is matched
 //
@@ -320,7 +179,7 @@ type Opts struct {
 	MatchKind            matchKind
 }
 
-// NewAhoCorasickBuilder creates a new AhoCorasickBuilder based on Opts
+// NewAhoCorasickBuilder creates a new AhoCorasickBuilder based on Opts.
 func NewAhoCorasickBuilder(o Opts) AhoCorasickBuilder {
 	return AhoCorasickBuilder{
 		nfaBuilder:          newNFABuilder(o.MatchKind, o.AsciiCaseInsensitive),
@@ -328,7 +187,7 @@ func NewAhoCorasickBuilder(o Opts) AhoCorasickBuilder {
 	}
 }
 
-// Build builds a (non)deterministic finite automata from the user provided patterns
+// Build builds a (non)deterministic finite automata from the user provided patterns.
 func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
 	bytePatterns := make([][]byte, len(patterns))
 	for pati, pat := range patterns {
@@ -338,7 +197,7 @@ func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
 	return a.BuildByte(bytePatterns)
 }
 
-// BuildByte builds an automaton from the user provided patterns
+// BuildByte builds an automaton from the user provided patterns.
 func (a *AhoCorasickBuilder) BuildByte(patterns [][]byte) AhoCorasick {
 	nfa := a.nfaBuilder.build(patterns)
 	return AhoCorasick{nfa, nfa.matchKind, a.matchOnlyWholeWords}
@@ -381,17 +240,17 @@ type Match struct {
 }
 
 // Pattern returns the index of the pattern in the slice of the patterns provided by the user that
-// was matched
+// was matched.
 func (m *Match) Pattern() int {
 	return m.pattern
 }
 
-// End gives the index of the last character of this match inside the haystack
+// End gives the index of the last character of this match inside the haystack.
 func (m *Match) End() int {
 	return m.end
 }
 
-// Start gives the index of the first character of this match inside the haystack
+// Start gives the index of the first character of this match inside the haystack.
 func (m *Match) Start() int {
 	return m.end - m.len
 }

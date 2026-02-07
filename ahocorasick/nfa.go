@@ -315,10 +315,6 @@ func (n *iNFA) getTwo(i stateID, j stateID) (*state, *state) {
 	return &after[0], &before[j]
 }
 
-func (n *iNFA) iterAllTransitions(byteClasses *byteClasses, id stateID, f func(tr *next)) {
-	n.states[id].trans.iterAll(byteClasses, f)
-}
-
 func newIterTransitions(nfa *iNFA, stateId stateID) iterTransitions {
 	return iterTransitions{
 		nfa:   nfa,
@@ -391,10 +387,6 @@ func (q *queuedSet) insert(s stateID) {
 		q.seen = grown
 	}
 	q.seen[s] = true
-}
-
-func newActiveQueuedSet(capacity int) queuedSet {
-	return newInertQueuedSet(capacity)
 }
 
 func (c *compiler) queuedSet() queuedSet {
@@ -589,74 +581,6 @@ func (s *state) setNextState(input byte, next stateID) {
 type transitions struct {
 	sparse []innerSparse
 	dense  []stateID
-}
-
-func sparseIter(trans []innerSparse, f func(*next)) {
-	var byte16 uint16
-
-	for _, tr := range trans {
-		for byte16 < uint16(tr.b) {
-			f(&next{
-				key: byte(byte16),
-				id:  failedStateID,
-			})
-			byte16 += 1
-		}
-		f(&next{
-			key: tr.b,
-			id:  tr.s,
-		})
-		byte16 += 1
-	}
-
-	for b := byte16; b < 256; b++ {
-		f(&next{
-			key: byte(b),
-			id:  failedStateID,
-		})
-	}
-}
-
-func (t *transitions) iterAll(byteClasses *byteClasses, f func(tr *next)) {
-	if byteClasses.isSingleton() {
-		if t.dense == nil {
-			sparseIter(t.sparse, f)
-		} else {
-			for b := 0; b < 256; b++ {
-				f(&next{
-					key: byte(b),
-					id:  t.dense[b],
-				})
-			}
-		}
-	} else {
-		if t.dense == nil {
-			var lastClass *byte
-
-			sparseIter(t.sparse, func(n *next) {
-				class := byteClasses.bytes[n.key]
-
-				if lastClass == nil || *lastClass != class {
-					cc := class
-					lastClass = &cc
-					f(n)
-				}
-			})
-		} else {
-			bcr := byteClassRepresentatives{
-				classes:   byteClasses,
-				bbyte:     0,
-				lastClass: nil,
-			}
-
-			for n := bcr.next(); n != nil; n = bcr.next() {
-				f(&next{
-					key: *n,
-					id:  t.dense[*n],
-				})
-			}
-		}
-	}
 }
 
 func (t *transitions) heapBytes() int {
