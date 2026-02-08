@@ -562,7 +562,7 @@ func atomQuality(atom []byte) int {
 	// Unique byte diversity bonus: +2 per unique byte
 	score += len(uniqueBytes) * 2
 
-	// Heavy penalty for repeated common bytes (like NOP sleds, padding)
+	// Heavy penalty for repeated common bytes (e.g. spaces, blank lines)
 	if allSame && isCommonByte(firstByte) {
 		score -= 10 * len(atom)
 	}
@@ -587,10 +587,10 @@ func byteQuality(b byte) int {
 	return 20
 }
 
-// isCommonByte returns true for bytes that commonly appear in files.
+// isCommonByte returns true for bytes that commonly appear in web files.
 func isCommonByte(b byte) bool {
 	switch b {
-	case 0x00, 0x20, 0x90, 0xCC, 0xFF:
+	case 0x20, 0x0A:
 		return true
 	}
 	return false
