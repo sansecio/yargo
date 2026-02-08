@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"slices"
+	"strings"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
@@ -23,7 +24,11 @@ type corpusFile struct {
 	data []byte
 }
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo scan only)")
+var (
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo scan only)")
+	filter     = flag.String("filter", "", "only scan corpus files whose path contains this substring")
+	repeat     = flag.Int("repeat", 1, "number of times to repeat the scan (useful with -filter for profiling)")
+)
 
 func truncName(path string, maxLen int) string {
 	name := filepath.Base(path)
@@ -66,6 +71,17 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	if *filter != "" {
+		var filtered []corpusFile
+		for _, f := range files {
+			if strings.Contains(f.path, *filter) {
+				filtered = append(filtered, f)
+			}
+		}
+		files = filtered
+	}
+
 	fmt.Printf("Loaded %d corpus files\n", len(files))
 
 	// Compile go-yara rules (suppress absl/RE2 stderr noise)
@@ -87,13 +103,15 @@ func main() {
 	// Benchmark go-yara (fast mode)
 	start := time.Now()
 	var goYaraMatches int
-	for i, file := range files {
-		fmt.Fprintf(os.Stderr, "\rgo-yara: %d/%d %s\033[K", i+1, len(files), truncName(file.path, 100))
-		var matches yara.MatchRules
-		if err := goYaraRules.ScanMem(file.data, yara.ScanFlagsFastMode, 30*time.Second, &matches); err != nil {
-			fmt.Fprintf(os.Stderr, "\ngo-yara error scanning %s: %v\n", file.path, err)
+	for r := range *repeat {
+		for i, file := range files {
+			fmt.Fprintf(os.Stderr, "\rgo-yara [%d/%d]: %d/%d %s\033[K", r+1, *repeat, i+1, len(files), truncName(file.path, 100))
+			var matches yara.MatchRules
+			if err := goYaraRules.ScanMem(file.data, yara.ScanFlagsFastMode, 30*time.Second, &matches); err != nil {
+				fmt.Fprintf(os.Stderr, "\ngo-yara error scanning %s: %v\n", file.path, err)
+			}
+			goYaraMatches += len(matches)
 		}
-		goYaraMatches += len(matches)
 	}
 	fmt.Fprint(os.Stderr, "\r\033[K")
 	goYaraDuration := time.Since(start)
@@ -116,15 +134,17 @@ func main() {
 	}
 	timings := make([]fileTiming, 0, len(files))
 
-	for i, file := range files {
-		fmt.Fprintf(os.Stderr, "\ryargo: %d/%d %s\033[K", i+1, len(files), truncName(file.path, 100))
-		fileStart := time.Now()
-		var matches scanner.MatchRules
-		if err := yargoRules.ScanMem(file.data, 0, 30*time.Second, &matches); err != nil {
-			fmt.Fprintf(os.Stderr, "\nyargo error scanning %s: %v\n", file.path, err)
+	for r := range *repeat {
+		for i, file := range files {
+			fmt.Fprintf(os.Stderr, "\ryargo [%d/%d]: %d/%d %s\033[K", r+1, *repeat, i+1, len(files), truncName(file.path, 100))
+			fileStart := time.Now()
+			var matches scanner.MatchRules
+			if err := yargoRules.ScanMem(file.data, 0, 30*time.Second, &matches); err != nil {
+				fmt.Fprintf(os.Stderr, "\nyargo error scanning %s: %v\n", file.path, err)
+			}
+			timings = append(timings, fileTiming{path: file.path, duration: time.Since(fileStart)})
+			yargoMatches += len(matches)
 		}
-		timings = append(timings, fileTiming{path: file.path, duration: time.Since(fileStart)})
-		yargoMatches += len(matches)
 	}
 	fmt.Fprint(os.Stderr, "\r\033[K")
 	yargoDuration := time.Since(start)
