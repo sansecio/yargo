@@ -92,7 +92,7 @@ func TestAtomQuality(t *testing.T) {
 	}{
 		{"longer is better", []byte("hello"), []byte("hel")},
 		{"uncommon bytes better than common", []byte("xyz"), []byte("   ")},
-		{"alphabetic better than whitespace", []byte("abc"), []byte("   ")},
+		{"alphabetic better than newlines", []byte("abc"), []byte("\n\n\n")},
 	}
 
 	for _, tt := range tests {
