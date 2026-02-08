@@ -8,6 +8,11 @@ type iNFA struct {
 	prefil        prefilter
 	anchored      bool
 	states        []state
+	matchBitset   []uint64
+}
+
+func (n *iNFA) hasMatch(id stateID) bool {
+	return n.matchBitset[uint(id)/64]&(1<<(uint(id)%64)) != 0
 }
 
 func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
@@ -118,6 +123,13 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 
 	if !c.builder.anchored {
 		c.nfa.prefil = c.prefilter.build()
+	}
+
+	c.nfa.matchBitset = make([]uint64, (len(c.nfa.states)+63)/64)
+	for i, s := range c.nfa.states {
+		if len(s.matches) > 0 {
+			c.nfa.matchBitset[uint(i)/64] |= 1 << (uint(i) % 64)
+		}
 	}
 
 	return &c.nfa

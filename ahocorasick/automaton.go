@@ -21,7 +21,7 @@ func standardFindAtImp(a *iNFA, prestate *prefilterState, prefilter prefilter, h
 		sid = a.NextStateNoFail(sid, haystack[at])
 		at += 1
 
-		if sid == deadStateID || a.state(sid).isMatch() {
+		if sid == deadStateID || a.hasMatch(sid) {
 			*sID = sid
 			if sid == deadStateID {
 				return nil
@@ -64,7 +64,7 @@ func leftmostFindAtNoStateImp(a *iNFA, prestate *prefilterState, prefilter prefi
 		sid = a.NextStateNoFail(sid, haystack[at])
 		at += 1
 
-		if sid == deadStateID || a.state(sid).isMatch() {
+		if sid == deadStateID || a.hasMatch(sid) {
 			if sid == deadStateID {
 				return lastMatch
 			}
