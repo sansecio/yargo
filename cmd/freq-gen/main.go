@@ -52,7 +52,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		buf := make([]byte, 32*1024)
 		for {

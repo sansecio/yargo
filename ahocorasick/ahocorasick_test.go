@@ -129,9 +129,3 @@ func TestFindAll_Parallel(t *testing.T) {
 	}
 	w.Wait()
 }
-
-type testCase struct {
-	patterns []string
-	haystack string
-	matches  []Match
-}
