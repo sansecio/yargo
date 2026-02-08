@@ -33,48 +33,6 @@ func standardFindAtImp(a *iNFA, prestate *prefilterState, prefilter prefilter, h
 	return nil
 }
 
-func leftmostFindAtNoState(a *iNFA, prestate *prefilterState, haystack []byte, at int) *Match {
-	return leftmostFindAtNoStateImp(a, prestate, a.prefil, haystack, at)
-}
-
-func leftmostFindAtNoStateImp(a *iNFA, prestate *prefilterState, prefilter prefilter, haystack []byte, at int) *Match {
-	if a.anchored && at > 0 {
-		return nil
-	}
-	if prefilter != nil && !prefilter.ReportsFalsePositives() {
-		c := prefilter.NextCandidate(prestate, haystack, at)
-		if c == noneCandidate {
-			return nil
-		}
-	}
-
-	sid := a.startID
-	lastMatch := a.GetMatch(sid, 0, at)
-
-	for at < len(haystack) {
-		if prefilter != nil && prestate.IsEffective(at) && sid == a.startID {
-			c := prefilter.NextCandidate(prestate, haystack, at)
-			if c == noneCandidate {
-				return nil
-			} else {
-				at = c
-			}
-		}
-
-		sid = a.NextStateNoFail(sid, haystack[at])
-		at += 1
-
-		if sid == deadStateID || a.hasMatch(sid) {
-			if sid == deadStateID {
-				return lastMatch
-			}
-			lastMatch = a.GetMatch(sid, 0, at)
-		}
-	}
-
-	return lastMatch
-}
-
 func overlappingFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, id *stateID, matchIndex *int) *Match {
 	if a.anchored && at > 0 && *id == a.startID {
 		return nil
@@ -113,12 +71,6 @@ func earliestFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, 
 }
 
 func findAtNoState(a *iNFA, prestate *prefilterState, haystack []byte, at int) *Match {
-	switch a.matchKind {
-	case StandardMatch:
-		state := a.startID
-		return earliestFindAt(a, prestate, haystack, at, &state)
-	case LeftMostFirstMatch, LeftMostLongestMatch:
-		return leftmostFindAtNoState(a, prestate, haystack, at)
-	}
-	return nil
+	state := a.startID
+	return earliestFindAt(a, prestate, haystack, at, &state)
 }

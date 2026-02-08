@@ -84,9 +84,8 @@ func (r *rareByteOffsets) set(b byte, off rareByteOffset) {
 }
 
 type prefilterBuilder struct {
-	asciiCaseInsensitive bool
-	startBytes           startBytesBuilder
-	rareBytes            rareBytesBuilder
+	startBytes startBytesBuilder
+	rareBytes  rareBytesBuilder
 }
 
 func (p *prefilterBuilder) build() prefilter {
@@ -107,8 +106,6 @@ func (p *prefilterBuilder) build() prefilter {
 		return startBytes
 	case rareBytes != nil:
 		return rareBytes
-	case p.asciiCaseInsensitive:
-		return nil
 	default:
 		return nil
 	}
@@ -119,21 +116,19 @@ func (p *prefilterBuilder) add(bytes []byte) {
 	p.rareBytes.add(bytes)
 }
 
-func newPrefilterBuilder(asciiCaseInsensitive bool) prefilterBuilder {
+func newPrefilterBuilder() prefilterBuilder {
 	return prefilterBuilder{
-		asciiCaseInsensitive: asciiCaseInsensitive,
-		startBytes:           newStartBytesBuilder(asciiCaseInsensitive),
-		rareBytes:            newRareBytesBuilder(asciiCaseInsensitive),
+		startBytes: newStartBytesBuilder(),
+		rareBytes:  newRareBytesBuilder(),
 	}
 }
 
 type rareBytesBuilder struct {
-	asciiCaseInsensitive bool
-	rareSet              byteSet
-	byteOffsets          rareByteOffsets
-	available            bool
-	count                int
-	rankSum              uint16
+	rareSet     byteSet
+	byteOffsets rareByteOffsets
+	available   bool
+	count       int
+	rankSum     uint16
 }
 
 type rareBytesOne struct {
@@ -306,13 +301,6 @@ func (r *rareBytesBuilder) add(bytes []byte) {
 }
 
 func (r *rareBytesBuilder) addRareByte(b byte) {
-	r.addOneRareByte(b)
-	if r.asciiCaseInsensitive {
-		r.addOneRareByte(oppositeAsciiCase(b))
-	}
-}
-
-func (r *rareBytesBuilder) addOneRareByte(b byte) {
 	if r.rareSet.insert(b) {
 		r.count += 1
 		r.rankSum += uint16(freqRank(b))
@@ -330,28 +318,22 @@ func newRareByteOffset(i int) rareByteOffset {
 func (r *rareBytesBuilder) setOffset(pos int, b byte) {
 	offset := newRareByteOffset(pos)
 	r.byteOffsets.set(b, offset)
-
-	if r.asciiCaseInsensitive {
-		r.byteOffsets.set(oppositeAsciiCase(b), offset)
-	}
 }
 
-func newRareBytesBuilder(asciiCaseInsensitive bool) rareBytesBuilder {
+func newRareBytesBuilder() rareBytesBuilder {
 	return rareBytesBuilder{
-		asciiCaseInsensitive: asciiCaseInsensitive,
-		rareSet:              byteSet{},
-		byteOffsets:          rareByteOffsets{},
-		available:            true,
-		count:                0,
-		rankSum:              0,
+		rareSet:     byteSet{},
+		byteOffsets: rareByteOffsets{},
+		available:   true,
+		count:       0,
+		rankSum:     0,
 	}
 }
 
 type startBytesBuilder struct {
-	asciiCaseInsensitive bool
-	byteset              []bool
-	count                int
-	rankSum              uint16
+	byteset []bool
+	count   int
+	rankSum uint16
 }
 
 func (s *startBytesBuilder) build() prefilter {
@@ -362,7 +344,6 @@ func (s *startBytesBuilder) build() prefilter {
 	bytes := [3]byte{}
 
 	for b := 0; b < 256; b++ {
-		// todo case insensitive is not set in byteset
 		if !s.byteset[b] {
 			continue
 		}
@@ -400,14 +381,6 @@ func (s *startBytesBuilder) add(bytes []byte) {
 	}
 
 	b := bytes[0]
-
-	s.addOneByte(b)
-	if s.asciiCaseInsensitive {
-		s.addOneByte(oppositeAsciiCase(b))
-	}
-}
-
-func (s *startBytesBuilder) addOneByte(b byte) {
 	if !s.byteset[int(b)] {
 		s.byteset[int(b)] = true
 		s.count += 1
@@ -419,12 +392,11 @@ func freqRank(b byte) byte {
 	return byteFrequencies[int(b)]
 }
 
-func newStartBytesBuilder(asciiCaseInsensitive bool) startBytesBuilder {
+func newStartBytesBuilder() startBytesBuilder {
 	return startBytesBuilder{
-		asciiCaseInsensitive: asciiCaseInsensitive,
-		byteset:              make([]bool, 256),
-		count:                0,
-		rankSum:              0,
+		byteset: make([]bool, 256),
+		count:   0,
+		rankSum: 0,
 	}
 }
 

@@ -1,15 +1,10 @@
 package ahocorasick
 
-import (
-	"unicode"
-)
-
 type findIter struct {
-	fsm                 *iNFA
-	prestate            *prefilterState
-	haystack            []byte
-	pos                 int
-	matchOnlyWholeWords bool
+	fsm      *iNFA
+	prestate *prefilterState
+	haystack []byte
+	pos      int
 }
 
 func newFindIter(ac AhoCorasick, haystack []byte) findIter {
@@ -22,11 +17,10 @@ func newFindIter(ac AhoCorasick, haystack []byte) findIter {
 	}
 
 	return findIter{
-		fsm:                 ac.i,
-		prestate:            &prestate,
-		haystack:            haystack,
-		pos:                 0,
-		matchOnlyWholeWords: ac.matchOnlyWholeWords,
+		fsm:      ac.i,
+		prestate: &prestate,
+		haystack: haystack,
+		pos:      0,
 	}
 }
 
@@ -37,66 +31,42 @@ type Iter interface {
 
 // Next gives a pointer to the next match yielded by the iterator or nil, if there is none.
 func (f *findIter) Next() *Match {
-	for {
-		if f.pos > len(f.haystack) {
-			return nil
-		}
-
-		result := findAtNoState(f.fsm, f.prestate, f.haystack, f.pos)
-
-		if result == nil {
-			return nil
-		}
-
-		f.pos = result.end - result.len + 1
-
-		if f.matchOnlyWholeWords {
-			if result.Start()-1 >= 0 && (unicode.IsLetter(rune(f.haystack[result.Start()-1])) || unicode.IsDigit(rune(f.haystack[result.Start()-1]))) {
-				continue
-			}
-			if result.end < len(f.haystack) && (unicode.IsLetter(rune(f.haystack[result.end])) || unicode.IsDigit(rune(f.haystack[result.end]))) {
-				continue
-			}
-		}
-		return result
+	if f.pos > len(f.haystack) {
+		return nil
 	}
+
+	result := findAtNoState(f.fsm, f.prestate, f.haystack, f.pos)
+
+	if result == nil {
+		return nil
+	}
+
+	f.pos = result.end - result.len + 1
+	return result
 }
 
 type overlappingIter struct {
-	fsm                 *iNFA
-	prestate            *prefilterState
-	haystack            []byte
-	pos                 int
-	stateID             stateID
-	matchIndex          int
-	matchOnlyWholeWords bool
+	fsm        *iNFA
+	prestate   *prefilterState
+	haystack   []byte
+	pos        int
+	stateID    stateID
+	matchIndex int
 }
 
 func (f *overlappingIter) Next() *Match {
-	for {
-		if f.pos > len(f.haystack) {
-			return nil
-		}
-
-		result := overlappingFindAt(f.fsm, f.prestate, f.haystack, f.pos, &f.stateID, &f.matchIndex)
-
-		if result == nil {
-			return nil
-		}
-
-		f.pos = result.End()
-
-		if f.matchOnlyWholeWords {
-			if result.Start()-1 >= 0 && (unicode.IsLetter(rune(f.haystack[result.Start()-1])) || unicode.IsDigit(rune(f.haystack[result.Start()-1]))) {
-				continue
-			}
-			if result.end < len(f.haystack) && (unicode.IsLetter(rune(f.haystack[result.end])) || unicode.IsDigit(rune(f.haystack[result.end]))) {
-				continue
-			}
-		}
-
-		return result
+	if f.pos > len(f.haystack) {
+		return nil
 	}
+
+	result := overlappingFindAt(f.fsm, f.prestate, f.haystack, f.pos, &f.stateID, &f.matchIndex)
+
+	if result == nil {
+		return nil
+	}
+
+	f.pos = result.End()
+	return result
 }
 
 func newOverlappingIter(ac AhoCorasick, haystack []byte) overlappingIter {
@@ -108,28 +78,22 @@ func newOverlappingIter(ac AhoCorasick, haystack []byte) overlappingIter {
 		lastScanAt:  0,
 	}
 	return overlappingIter{
-		fsm:                 ac.i,
-		prestate:            &prestate,
-		haystack:            haystack,
-		pos:                 0,
-		stateID:             ac.i.startID,
-		matchIndex:          0,
-		matchOnlyWholeWords: ac.matchOnlyWholeWords,
+		fsm:        ac.i,
+		prestate:   &prestate,
+		haystack:   haystack,
+		pos:        0,
+		stateID:    ac.i.startID,
+		matchIndex: 0,
 	}
 }
 
 // AhoCorasick is the main data structure that does most of the work.
 type AhoCorasick struct {
-	i                   *iNFA
-	matchKind           matchKind
-	matchOnlyWholeWords bool
+	i *iNFA
 }
 
 // IterOverlappingByte gives an iterator over the built patterns with overlapping matches.
 func (ac AhoCorasick) IterOverlappingByte(haystack []byte) Iter {
-	if ac.matchKind != StandardMatch {
-		panic("only StandardMatch allowed for overlapping matches")
-	}
 	i := newOverlappingIter(ac, haystack)
 	return &i
 }
@@ -153,37 +117,13 @@ func (ac AhoCorasick) FindAll(haystack string) []Match {
 
 // AhoCorasickBuilder defines a set of options applied before the patterns are built.
 type AhoCorasickBuilder struct {
-	nfaBuilder          *iNFABuilder
-	matchOnlyWholeWords bool
+	nfaBuilder *iNFABuilder
 }
 
-// Opts defines a set of options applied before the patterns are built.
-// MatchOnlyWholeWords does filtering after matching with MatchKind
-// this could lead to situations where, in this case, nothing is matched
-//
-//	    trieBuilder := NewAhoCorasickBuilder(Opts{
-//		     MatchOnlyWholeWords: true,
-//		     MatchKind:           LeftMostLongestMatch,
-//	    })
-//
-//			trie := trieBuilder.Build([]string{"testing", "testing 123"})
-//			result := trie.FindAll("testing 12345")
-//		 len(result) == 0
-//
-// this is due to the fact LeftMostLongestMatch is the matching strategy
-// "testing 123" is found but then is filtered out by MatchOnlyWholeWords
-// use MatchOnlyWholeWords with caution
-type Opts struct {
-	AsciiCaseInsensitive bool
-	MatchOnlyWholeWords  bool
-	MatchKind            matchKind
-}
-
-// NewAhoCorasickBuilder creates a new AhoCorasickBuilder based on Opts.
-func NewAhoCorasickBuilder(o Opts) AhoCorasickBuilder {
+// NewAhoCorasickBuilder creates a new AhoCorasickBuilder.
+func NewAhoCorasickBuilder() AhoCorasickBuilder {
 	return AhoCorasickBuilder{
-		nfaBuilder:          newNFABuilder(o.MatchKind, o.AsciiCaseInsensitive),
-		matchOnlyWholeWords: o.MatchOnlyWholeWords,
+		nfaBuilder: newNFABuilder(),
 	}
 }
 
@@ -200,32 +140,7 @@ func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
 // BuildByte builds an automaton from the user provided patterns.
 func (a *AhoCorasickBuilder) BuildByte(patterns [][]byte) AhoCorasick {
 	nfa := a.nfaBuilder.build(patterns)
-	return AhoCorasick{nfa, nfa.matchKind, a.matchOnlyWholeWords}
-}
-
-type matchKind int
-
-const (
-	// Use standard match semantics, which support overlapping matches. When
-	// used with non-overlapping matches, matches are reported as they are seen.
-	StandardMatch matchKind = iota
-	// Use leftmost-first match semantics, which reports leftmost matches.
-	// When there are multiple possible leftmost matches, the match
-	// corresponding to the pattern that appeared earlier when constructing
-	// the automaton is reported.
-	// This does **not** support overlapping matches or stream searching
-	LeftMostFirstMatch
-	// Use leftmost-longest match semantics, which reports leftmost matches.
-	// When there are multiple possible leftmost matches, the longest match is chosen.
-	LeftMostLongestMatch
-)
-
-func (m matchKind) isLeftmost() bool {
-	return m == LeftMostFirstMatch || m == LeftMostLongestMatch
-}
-
-func (m matchKind) isLeftmostFirst() bool {
-	return m == LeftMostFirstMatch
+	return AhoCorasick{nfa}
 }
 
 // A representation of a match reported by an Aho-Corasick automaton.

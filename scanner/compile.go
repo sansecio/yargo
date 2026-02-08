@@ -98,7 +98,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 	rules.patterns = allPatterns
 	if len(allPatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{})
+		builder := ahocorasick.NewAhoCorasickBuilder()
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
 	}

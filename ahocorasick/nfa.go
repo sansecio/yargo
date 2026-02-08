@@ -1,7 +1,6 @@
 package ahocorasick
 
 type iNFA struct {
-	matchKind     matchKind
 	startID       stateID
 	maxPatternLen int
 	patternCount  int
@@ -113,11 +112,7 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	c.addDeadStateLoop()
 
 	if !c.builder.anchored {
-		if c.builder.matchKind.isLeftmost() {
-			c.fillFailureTransitionsLeftmost()
-		} else {
-			c.fillFailureTransitionsStandard()
-		}
+		c.fillFailureTransitionsStandard()
 	}
 	c.closeStartStateLoop()
 
@@ -136,7 +131,7 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 }
 
 func (c *compiler) closeStartStateLoop() {
-	if c.builder.anchored || (c.builder.matchKind.isLeftmost() && c.nfa.state(c.nfa.startID).isMatch()) {
+	if c.builder.anchored {
 		startId := c.nfa.startID
 		start := c.nfa.state(startId)
 
@@ -146,42 +141,6 @@ func (c *compiler) closeStartStateLoop() {
 			}
 		}
 	}
-}
-
-type queuedState struct {
-	id           stateID
-	matchAtDepth *int
-}
-
-func startQueuedState(nfa *iNFA) queuedState {
-	var matchAtDepth *int
-	if nfa.states[nfa.startID].isMatch() {
-		r := 0
-		matchAtDepth = &r
-	}
-	return queuedState{id: nfa.startID, matchAtDepth: matchAtDepth}
-}
-
-func (q *queuedState) nextQueuedState(nfa *iNFA, id stateID) queuedState {
-	nextMatchAtDepth := q.nextMatchAtDepth(nfa, id)
-	return queuedState{id, nextMatchAtDepth}
-}
-
-func (q *queuedState) nextMatchAtDepth(
-	nfa *iNFA,
-	next stateID,
-) *int {
-	switch q.matchAtDepth {
-	case nil:
-		if !nfa.state(next).isMatch() {
-			return nil
-		}
-	default:
-		return q.matchAtDepth
-	}
-
-	depth := nfa.state(next).depth - *nfa.state(next).getLongestMatch() + 1
-	return &depth
 }
 
 func (c *compiler) fillFailureTransitionsStandard() {
@@ -221,72 +180,6 @@ func (c *compiler) fillFailureTransitionsStandard() {
 			it.nfa.copyMatches(fail, tr.id)
 		}
 		it.nfa.copyEmptyMatches(id)
-	}
-}
-
-func (c *compiler) fillFailureTransitionsLeftmost() {
-	queue := make([]queuedState, 0, len(c.nfa.states))
-	seen := c.queuedSet()
-	start := startQueuedState(&c.nfa)
-
-	for b := 0; b < 256; b++ {
-		nextId := c.nfa.state(c.nfa.startID).nextState(byte(b))
-		if nextId != start.id {
-			next := start.nextQueuedState(&c.nfa, nextId)
-			if !seen.contains(next.id) {
-				queue = append(queue, next)
-				seen.insert(next.id)
-			}
-			if c.nfa.state(nextId).isMatch() {
-				c.nfa.state(nextId).fail = deadStateID
-			}
-		}
-	}
-
-	for len(queue) > 0 {
-		item := queue[0]
-		queue = queue[1:]
-		anyTrans := false
-		it := newIterTransitions(&c.nfa, item.id)
-		tr, ok := it.next()
-		for ok {
-			anyTrans = true
-			nxt := item.nextQueuedState(it.nfa, tr.id)
-			if seen.contains(nxt.id) {
-				tr, ok = it.next()
-				continue
-			}
-			queue = append(queue, nxt)
-			seen.insert(nxt.id)
-
-			fail := it.nfa.state(item.id).fail
-			failState := it.nfa.state(fail)
-			for failState.nextState(tr.key) == failedStateID {
-				fail = failState.fail
-				failState = it.nfa.state(fail)
-			}
-			fail = failState.nextState(tr.key)
-
-			if nxt.matchAtDepth != nil {
-				failDepth := it.nfa.state(fail).depth
-				nextDepth := it.nfa.state(nxt.id).depth
-				if nextDepth-*nxt.matchAtDepth+1 > failDepth {
-					it.nfa.state(nxt.id).fail = deadStateID
-					tr, ok = it.next()
-					continue
-				}
-
-				if start.id == it.nfa.state(nxt.id).fail {
-					panic("states that are match states or follow match states should never have a failure transition back to the start state in leftmost searching")
-				}
-			}
-			it.nfa.state(nxt.id).fail = fail
-			it.nfa.copyMatches(fail, nxt.id)
-			tr, ok = it.next()
-		}
-		if !anyTrans && it.nfa.state(item.id).isMatch() {
-			it.nfa.state(item.id).fail = deadStateID
-		}
 	}
 }
 
@@ -423,20 +316,13 @@ func max(a, b int) int {
 }
 
 func (c *compiler) buildTrie(patterns [][]byte) {
-Patterns:
 	for pati, pat := range patterns {
 		c.nfa.maxPatternLen = max(c.nfa.maxPatternLen, len(pat))
 		c.nfa.patternCount += 1
 
 		prev := c.nfa.startID
-		sawMatch := false
 
 		for depth, b := range pat {
-			sawMatch = sawMatch || c.nfa.state(prev).isMatch()
-			if c.builder.matchKind.isLeftmostFirst() && sawMatch {
-				continue Patterns
-			}
-
 			next := c.nfa.state(prev).nextState(b)
 
 			if next != failedStateID {
@@ -444,10 +330,6 @@ Patterns:
 			} else {
 				next := c.addState(depth + 1)
 				c.nfa.state(prev).setNextState(b, next)
-				if c.builder.asciiCaseInsensitive {
-					b := oppositeAsciiCase(b)
-					c.nfa.state(prev).setNextState(b, next)
-				}
 				prev = next
 			}
 		}
@@ -459,26 +341,6 @@ Patterns:
 	}
 }
 
-const asciiCaseMask byte = 0b0010_0000
-
-func toAsciiLowercase(b byte) byte {
-	return b | (1 * asciiCaseMask)
-}
-
-func toAsciiUpper(b byte) byte {
-	b &= ^(1 * asciiCaseMask)
-	return b
-}
-
-func oppositeAsciiCase(b byte) byte {
-	if 'A' <= b && b <= 'Z' {
-		return toAsciiLowercase(b)
-	} else if 'a' <= b && b <= 'z' {
-		return toAsciiUpper(b)
-	}
-	return b
-}
-
 func (c *compiler) addState(depth int) stateID {
 	if depth < c.builder.denseDepth {
 		return c.nfa.addDenseState(depth)
@@ -487,13 +349,12 @@ func (c *compiler) addState(depth int) stateID {
 }
 
 func newCompiler(builder iNFABuilder) compiler {
-	p := newPrefilterBuilder(builder.asciiCaseInsensitive)
+	p := newPrefilterBuilder()
 
 	return compiler{
 		builder:   builder,
 		prefilter: p,
 		nfa: iNFA{
-			matchKind:     builder.matchKind,
 			startID:       2,
 			maxPatternLen: 0,
 			patternCount:  0,
@@ -505,20 +366,16 @@ func newCompiler(builder iNFABuilder) compiler {
 }
 
 type iNFABuilder struct {
-	denseDepth           int
-	matchKind            matchKind
-	prefilter            bool
-	anchored             bool
-	asciiCaseInsensitive bool
+	denseDepth int
+	prefilter  bool
+	anchored   bool
 }
 
-func newNFABuilder(kind matchKind, asciiCaseInsensitive bool) *iNFABuilder {
+func newNFABuilder() *iNFABuilder {
 	return &iNFABuilder{
-		denseDepth:           3,
-		matchKind:            kind,
-		prefilter:            true,
-		anchored:             false,
-		asciiCaseInsensitive: asciiCaseInsensitive,
+		denseDepth: 3,
+		prefilter:  true,
+		anchored:   false,
 	}
 }
 
@@ -548,14 +405,6 @@ func (s *state) addMatch(patternID, patternLength int) {
 
 func (s *state) isMatch() bool {
 	return len(s.matches) > 0
-}
-
-func (s *state) getLongestMatch() *int {
-	if len(s.matches) == 0 {
-		return nil
-	}
-	longest := s.matches[0].PatternLength
-	return &longest
 }
 
 func (s *state) nextState(input byte) stateID {
