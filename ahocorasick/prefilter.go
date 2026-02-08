@@ -84,7 +84,6 @@ func (r *rareByteOffsets) set(b byte, off rareByteOffset) {
 }
 
 type prefilterBuilder struct {
-	count                int
 	asciiCaseInsensitive bool
 	startBytes           startBytesBuilder
 	rareBytes            rareBytesBuilder
@@ -116,14 +115,12 @@ func (p *prefilterBuilder) build() prefilter {
 }
 
 func (p *prefilterBuilder) add(bytes []byte) {
-	p.count += 1
 	p.startBytes.add(bytes)
 	p.rareBytes.add(bytes)
 }
 
 func newPrefilterBuilder(asciiCaseInsensitive bool) prefilterBuilder {
 	return prefilterBuilder{
-		count:                0,
 		asciiCaseInsensitive: asciiCaseInsensitive,
 		startBytes:           newStartBytesBuilder(asciiCaseInsensitive),
 		rareBytes:            newRareBytesBuilder(asciiCaseInsensitive),
