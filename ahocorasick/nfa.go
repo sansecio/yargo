@@ -403,10 +403,6 @@ func (s *state) addMatch(patternID, patternLength int) {
 	})
 }
 
-func (s *state) isMatch() bool {
-	return len(s.matches) > 0
-}
-
 func (s *state) nextState(input byte) stateID {
 	return s.trans.nextState(input)
 }
