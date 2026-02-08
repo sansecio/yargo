@@ -1,18 +1,12 @@
 package ahocorasick
 
-import (
-	"unsafe"
-)
-
 type iNFA struct {
 	matchKind     matchKind
 	startID       stateID
 	maxPatternLen int
 	patternCount  int
-	heapBytes     int
 	prefil        prefilter
 	anchored      bool
-	byteClasses   byteClasses
 	states        []state
 }
 
@@ -92,10 +86,9 @@ func (n *iNFA) state(id stateID) *state {
 }
 
 type compiler struct {
-	builder          iNFABuilder
-	prefilter        prefilterBuilder
-	nfa              iNFA
-	byteclassBuilder byteClassBuilder
+	builder   iNFABuilder
+	prefilter prefilterBuilder
+	nfa       iNFA
 }
 
 func (c *compiler) compile(patterns [][]byte) *iNFA {
@@ -123,22 +116,11 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	}
 	c.closeStartStateLoop()
 
-	c.nfa.byteClasses = c.byteclassBuilder.build()
 	if !c.builder.anchored {
 		c.nfa.prefil = c.prefilter.build()
 	}
-	c.calculateSize()
 
 	return &c.nfa
-}
-
-func (c *compiler) calculateSize() {
-	var size int
-	for _, state := range c.nfa.states {
-		size += state.heapBytes()
-	}
-
-	c.nfa.heapBytes = size
 }
 
 func (c *compiler) closeStartStateLoop() {
@@ -443,13 +425,6 @@ Patterns:
 				continue Patterns
 			}
 
-			c.byteclassBuilder.setRange(b, b)
-
-			if c.builder.asciiCaseInsensitive {
-				b := oppositeAsciiCase(b)
-				c.byteclassBuilder.setRange(b, b)
-			}
-
 			next := c.nfa.state(prev).nextState(b)
 
 			if next != failedStateID {
@@ -510,13 +485,10 @@ func newCompiler(builder iNFABuilder) compiler {
 			startID:       2,
 			maxPatternLen: 0,
 			patternCount:  0,
-			heapBytes:     0,
 			prefil:        nil,
 			anchored:      builder.anchored,
-			byteClasses:   singletons(),
 			states:        nil,
 		},
-		byteclassBuilder: newByteClassBuilder(),
 	}
 }
 
@@ -555,12 +527,6 @@ type state struct {
 	depth   int
 }
 
-func (s *state) heapBytes() int {
-	var i int
-	intSize := int(unsafe.Sizeof(i))
-	return s.trans.heapBytes() + (len(s.matches) * (intSize * 2))
-}
-
 func (s *state) addMatch(patternID, patternLength int) {
 	s.matches = append(s.matches, pattern{
 		PatternID:     patternID,
@@ -591,15 +557,6 @@ func (s *state) setNextState(input byte, next stateID) {
 type transitions struct {
 	sparse []innerSparse
 	dense  []stateID
-}
-
-func (t *transitions) heapBytes() int {
-	var i int
-	intSize := int(unsafe.Sizeof(i))
-	if t.dense == nil {
-		return len(t.sparse) * (2 * intSize)
-	}
-	return len(t.dense) * intSize
 }
 
 func (t *transitions) nextState(input byte) stateID {
