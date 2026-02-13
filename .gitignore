@@ -10,6 +10,9 @@
 *.out
 coverage.html
 
+# Fuzz corpus
+**/testdata/fuzz/
+
 # Coverage files
 *.coverprofile
 coverage.txt
