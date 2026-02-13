@@ -2,60 +2,22 @@ package ahocorasick
 
 import (
 	"math"
+	"slices"
 )
 
-type startBytesThree struct {
-	byte1 byte
-	byte2 byte
-	byte3 byte
+type startBytes struct {
+	bytes [3]byte
+	count int
 }
 
-func (s startBytesThree) NextCandidate(_ *prefilterState, haystack []byte, at int) int {
+func (s startBytes) NextCandidate(_ *prefilterState, haystack []byte, at int) int {
+	rare := s.bytes[:s.count]
 	for i, b := range haystack[at:] {
-		if s.byte1 == b || s.byte2 == b || s.byte3 == b {
+		if slices.Contains(rare, b) {
 			return at + i
 		}
 	}
 	return noneCandidate
-}
-
-func (s startBytesThree) ReportsFalsePositives() bool {
-	return true
-}
-
-type startBytesTwo struct {
-	byte1 byte
-	byte2 byte
-}
-
-func (s startBytesTwo) NextCandidate(_ *prefilterState, haystack []byte, at int) int {
-	for i, b := range haystack[at:] {
-		if s.byte1 == b || s.byte2 == b {
-			return at + i
-		}
-	}
-	return noneCandidate
-}
-
-func (s startBytesTwo) ReportsFalsePositives() bool {
-	return true
-}
-
-type startBytesOne struct {
-	byte1 byte
-}
-
-func (s startBytesOne) NextCandidate(_ *prefilterState, haystack []byte, at int) int {
-	for i, b := range haystack[at:] {
-		if s.byte1 == b {
-			return at + i
-		}
-	}
-	return noneCandidate
-}
-
-func (s startBytesOne) ReportsFalsePositives() bool {
-	return true
 }
 
 type byteSet [256]bool
@@ -131,67 +93,22 @@ type rareBytesBuilder struct {
 	rankSum     uint16
 }
 
-type rareBytesOne struct {
-	byte1  byte
-	offset rareByteOffset
-}
-
-func (r rareBytesOne) NextCandidate(state *prefilterState, haystack []byte, at int) int {
-	for i, b := range haystack[at:] {
-		if r.byte1 == b {
-			pos := at + i
-			state.lastScanAt = pos
-			return max(at, max(pos-int(r.offset.max), 0))
-		}
-	}
-	return noneCandidate
-}
-
-func (r rareBytesOne) ReportsFalsePositives() bool {
-	return true
-}
-
-type rareBytesTwo struct {
+type rareBytes struct {
 	offsets rareByteOffsets
-	byte1   byte
-	byte2   byte
+	bytes   [3]byte
+	count   int
 }
 
-func (r rareBytesTwo) NextCandidate(state *prefilterState, haystack []byte, at int) int {
+func (r rareBytes) NextCandidate(state *prefilterState, haystack []byte, at int) int {
+	rare := r.bytes[:r.count]
 	for i, b := range haystack[at:] {
-		if r.byte1 == b || r.byte2 == b {
+		if slices.Contains(rare, b) {
 			pos := at + i
 			state.updateAt(pos)
 			return max(at, max(pos-int(r.offsets.rbo[haystack[pos]].max), 0))
 		}
 	}
 	return noneCandidate
-}
-
-func (r rareBytesTwo) ReportsFalsePositives() bool {
-	return true
-}
-
-type rareBytesThree struct {
-	offsets rareByteOffsets
-	byte1   byte
-	byte2   byte
-	byte3   byte
-}
-
-func (r rareBytesThree) NextCandidate(state *prefilterState, haystack []byte, at int) int {
-	for i, b := range haystack[at:] {
-		if r.byte1 == b || r.byte2 == b || r.byte3 == b {
-			pos := at + i
-			state.updateAt(pos)
-			return max(at, max(pos-int(r.offsets.rbo[haystack[pos]].max), 0))
-		}
-	}
-	return noneCandidate
-}
-
-func (r rareBytesThree) ReportsFalsePositives() bool {
-	return true
 }
 
 func (r *rareBytesBuilder) build() prefilter {
@@ -201,36 +118,20 @@ func (r *rareBytesBuilder) build() prefilter {
 	var length int
 	bytes := [3]byte{}
 
-	for b := 0; b <= 255; b++ {
+	for b := range 256 {
 		if r.rareSet.contains(byte(b)) {
 			bytes[length] = byte(b)
 			length += 1
 		}
 	}
 
-	switch length {
-	case 0:
+	if length == 0 {
 		return nil
-	case 1:
-		return &rareBytesOne{
-			byte1:  bytes[0],
-			offset: r.byteOffsets.rbo[bytes[0]],
-		}
-	case 2:
-		return &rareBytesTwo{
-			offsets: r.byteOffsets,
-			byte1:   bytes[0],
-			byte2:   bytes[1],
-		}
-	case 3:
-		return &rareBytesThree{
-			offsets: r.byteOffsets,
-			byte1:   bytes[0],
-			byte2:   bytes[1],
-			byte3:   bytes[2],
-		}
-	default:
-		return nil
+	}
+	return &rareBytes{
+		offsets: r.byteOffsets,
+		bytes:   bytes,
+		count:   length,
 	}
 }
 
@@ -330,25 +231,10 @@ func (s *startBytesBuilder) build() prefilter {
 		length += 1
 	}
 
-	switch length {
-	case 0:
-		return nil
-	case 1:
-		return &startBytesOne{byte1: bytes[0]}
-	case 2:
-		return &startBytesTwo{
-			byte1: bytes[0],
-			byte2: bytes[1],
-		}
-	case 3:
-		return &startBytesThree{
-			byte1: bytes[0],
-			byte2: bytes[1],
-			byte3: bytes[2],
-		}
-	default:
+	if length == 0 {
 		return nil
 	}
+	return &startBytes{bytes: bytes, count: length}
 }
 
 func (s *startBytesBuilder) add(bytes []byte) {
@@ -423,7 +309,6 @@ const noneCandidate = -1
 
 type prefilter interface {
 	NextCandidate(state *prefilterState, haystack []byte, at int) int
-	ReportsFalsePositives() bool
 }
 
 func nextPrefilter(state *prefilterState, prefilter prefilter, haystack []byte, at int) int {
