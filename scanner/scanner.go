@@ -62,19 +62,6 @@ func (m *MatchRule) MetaString(identifier, defValue string) string {
 	return defValue
 }
 
-// Trust returns the confidence/trust level from rule metadata, defaulting to 100.
-func (m *MatchRule) Trust() int32 {
-	switch val := m.Meta("trust").(type) {
-	case int:
-		return int32(val)
-	case int32:
-		return val
-	case int64:
-		return int32(val)
-	}
-	return 100
-}
-
 // MatchRules collects matching rules and implements ScanCallback.
 type MatchRules []MatchRule
 
