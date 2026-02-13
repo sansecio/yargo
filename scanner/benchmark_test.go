@@ -63,8 +63,7 @@ func BenchmarkCompileRegexPatterns(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := Compile(rs)
 		if err != nil {
 			b.Fatalf("Compile() error = %v", err)
@@ -107,10 +106,9 @@ func BenchmarkScanStringLiterals(b *testing.B) {
 	copy(data[5000:], []byte("eval($_POST['cmd'])"))
 	copy(data[100000:], []byte("Some virus detected"))
 
-	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var matches MatchRules
 		err := rules.ScanMem(data, 0, 30*time.Second, &matches)
 		if err != nil {
@@ -151,10 +149,9 @@ func BenchmarkScanRegexPatterns(b *testing.B) {
 	copy(data[5000:], []byte("call 555-123-4567"))
 	copy(data[100000:], []byte("EVAL ( something )"))
 
-	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var matches MatchRules
 		err := rules.ScanMem(data, 0, 30*time.Second, &matches)
 		if err != nil {
@@ -189,10 +186,9 @@ func BenchmarkScanMixed(b *testing.B) {
 	copy(data[5000:], []byte("username123"))
 	copy(data[100000:], []byte("This is a virus here"))
 
-	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var matches MatchRules
 		err := rules.ScanMem(data, 0, 30*time.Second, &matches)
 		if err != nil {
