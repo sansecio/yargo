@@ -85,11 +85,9 @@ The `cmd/` directory contains comparison and benchmarking tools that require [go
 
 - **corpus-bench** — benchmarks yargo vs go-yara scan speed over a file corpus
 - **corpus-diff** — compares rule matches between yargo and go-yara across a file corpus
-- **corpus-validator** — validates that yargo finds trusted matches for all corpus files
 - **freq-gen** — generates byte frequency tables for atom scoring
 - **parse-bench** — benchmarks rule parsing/compilation speed
 - **regex-bench** — benchmarks regex libraries (go-re2 vs stdlib regexp vs coregex)
-- **sort-diff** — compares match ordering between yargo and go-yara
 
 ## Current Limitations
 
