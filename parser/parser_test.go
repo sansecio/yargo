@@ -127,20 +127,35 @@ func TestParseRegex(t *testing.T) {
 
 func TestParseModifiers(t *testing.T) {
 	tests := []struct {
-		input string
-		mods  ast.StringModifiers
+		input   string
+		mods    ast.StringModifiers
+		wantErr bool
 	}{
-		{`"x" base64`, ast.StringModifiers{Base64: true}},
-		{`"x" fullword`, ast.StringModifiers{Fullword: true}},
-		{`"x" wide ascii`, ast.StringModifiers{}},
-		{`"x" nocase fullword`, ast.StringModifiers{Fullword: true}},
-		{`{ FF } base64`, ast.StringModifiers{Base64: true}},
-		{`/pattern/ nocase`, ast.StringModifiers{}},
+		{`"x" base64`, ast.StringModifiers{Base64: true}, false},
+		{`"x" fullword`, ast.StringModifiers{Fullword: true}, false},
+		{`"x" base64 fullword`, ast.StringModifiers{Base64: true, Fullword: true}, false},
+		{`{ FF } base64`, ast.StringModifiers{Base64: true}, false},
+		{`"x" ascii`, ast.StringModifiers{Ascii: true}, false},
+		{`"x" wide`, ast.StringModifiers{}, true},
+		{`"x" nocase`, ast.StringModifiers{}, true},
+		{`"x" xor`, ast.StringModifiers{}, true},
+		{`"x" base64wide`, ast.StringModifiers{}, true},
+		{`"x" private`, ast.StringModifiers{}, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			rs := mustParse(t, `rule test { strings: $ = `+tt.input+` condition: any of them }`)
+			p := New()
+			rs, err := p.Parse(`rule test { strings: $ = ` + tt.input + ` condition: any of them }`)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for %q", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			got := rs.Rules[0].Strings[0].Modifiers
 			if got != tt.mods {
 				t.Errorf("expected %+v, got %+v", tt.mods, got)

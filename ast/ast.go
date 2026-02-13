@@ -29,6 +29,7 @@ type StringDef struct {
 
 // StringModifiers represents the modifiers applied to a string.
 type StringModifiers struct {
+	Ascii    bool
 	Base64   bool
 	Fullword bool
 }

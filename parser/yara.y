@@ -189,22 +189,14 @@ modifiers:
 	{
 		$$ = $1
 		switch $2 {
-		case "base64":
-			$$.Base64 = true
-		case "base64wide":
-			$$.Base64Wide = true
-		case "fullword":
-			$$.Fullword = true
-		case "wide":
-			$$.Wide = true
 		case "ascii":
 			$$.Ascii = true
-		case "nocase":
-			$$.Nocase = true
-		case "xor":
-			$$.Xor = true
-		case "private":
-			$$.Private = true
+		case "base64":
+			$$.Base64 = true
+		case "fullword":
+			$$.Fullword = true
+		default:
+			yylex.Error("unsupported modifier: " + $2)
 		}
 	}
 	;

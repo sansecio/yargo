@@ -8,6 +8,9 @@
 # Test outputs
 *.test
 *.out
+
+# goyacc debug output
+parser/y.output
 coverage.html
 
 # Fuzz corpus
