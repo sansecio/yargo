@@ -3,11 +3,14 @@
 package main
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	yara "github.com/hillu/go-yara/v4"
@@ -90,16 +93,29 @@ func main() {
 		return nil
 	})
 
+	sortByCount := func(m map[string]int) []string {
+		return slices.SortedFunc(maps.Keys(m), func(a, b string) int {
+			return cmp.Compare(m[b], m[a])
+		})
+	}
+	sumValues := func(m map[string]int) int {
+		sum := 0
+		for _, v := range m {
+			sum += v
+		}
+		return sum
+	}
+
 	// Sort and print yargo-only matches
-	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", internal.SumValues(yargoOnly))
-	for _, rule := range internal.SortByCount(yargoOnly) {
+	fmt.Printf("Rules matching in YARGO but NOT in go-yara (%d total extra matches):\n", sumValues(yargoOnly))
+	for _, rule := range sortByCount(yargoOnly) {
 		fmt.Printf("  %s: %d occurrences (e.g. %s)\n", rule, yargoOnly[rule], filepath.Base(exampleFiles["yargo:"+rule]))
 	}
 
-	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", internal.SumValues(goYaraOnly))
+	fmt.Printf("\nRules matching in go-yara but NOT in yargo (%d total missing matches):\n", sumValues(goYaraOnly))
 
 	var unexplained []string
-	for _, rule := range internal.SortByCount(goYaraOnly) {
+	for _, rule := range sortByCount(goYaraOnly) {
 		fmt.Printf("  %s: %d occurrences (e.g. %s) [UNEXPECTED]\n", rule, goYaraOnly[rule], filepath.Base(exampleFiles["goyara:"+rule]))
 		unexplained = append(unexplained, rule)
 	}
