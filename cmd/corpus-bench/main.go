@@ -28,6 +28,8 @@ var (
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo scan only)")
 	filter     = flag.String("filter", "", "only scan corpus files whose path contains this substring")
 	repeat     = flag.Int("repeat", 1, "number of times to repeat the scan (useful with -filter for profiling)")
+	yaraFlag   = flag.String("yara", "", "path to YARA rules file (required)")
+	corpusFlag = flag.String("corpus", "", "path to corpus directory (required)")
 )
 
 func truncName(path string, maxLen int) string {
@@ -41,35 +43,32 @@ func truncName(path string, maxLen int) string {
 func main() {
 	flag.Parse()
 
-	yaraFile := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/build/ecomscan.yar")
-	corpusBase := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/corpus")
-	corpusDirs := []string{
-		filepath.Join(corpusBase, "backend"),
-		filepath.Join(corpusBase, "frontend"),
+	if *yaraFlag == "" || *corpusFlag == "" {
+		fmt.Fprintf(os.Stderr, "Usage: corpus-bench -yara <rules.yar> -corpus <dir> [flags]\n")
+		os.Exit(1)
 	}
+	yaraFile := *yaraFlag
 
 	// Load corpus files into memory
 	var files []corpusFile
-	for _, dir := range corpusDirs {
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
-				return nil
-			}
-			files = append(files, corpusFile{path: path, data: data})
-			return nil
-		})
+	err := filepath.WalkDir(*corpusFlag, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error walking %s: %v\n", dir, err)
-			os.Exit(1)
+			return err
 		}
+		if d.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
+			return nil
+		}
+		files = append(files, corpusFile{path: path, data: data})
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error walking %s: %v\n", *corpusFlag, err)
+		os.Exit(1)
 	}
 
 	if *filter != "" {

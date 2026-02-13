@@ -6,19 +6,25 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/pprof"
 	"time"
 
 	"github.com/sansecio/yargo/cmd/internal"
 )
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo parsing/compilation only)")
+var (
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file (profiles yargo parsing/compilation only)")
+	yaraFlag   = flag.String("yara", "", "path to YARA rules file (required)")
+)
 
 func main() {
 	flag.Parse()
 
-	yaraFile := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/build/ecomscan.yar")
+	if *yaraFlag == "" {
+		fmt.Fprintf(os.Stderr, "Usage: parse-bench -yara <rules.yar> [flags]\n")
+		os.Exit(1)
+	}
+	yaraFile := *yaraFlag
 
 	fmt.Printf("Benchmarking parsing/compilation of %s\n\n", yaraFile)
 

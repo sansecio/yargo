@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,11 +13,14 @@ import (
 )
 
 func main() {
-	yaraFile := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/build/ecomscan.yar")
-	corpusBase := filepath.Join(os.Getenv("HOME"), "Code/ecomscan-signatures/corpus")
-	corpusDirs := []string{
-		filepath.Join(corpusBase, "backend"),
-		filepath.Join(corpusBase, "frontend"),
+	var yaraFile, corpusDir string
+	flag.StringVar(&yaraFile, "yara", "", "path to YARA rules file")
+	flag.StringVar(&corpusDir, "corpus", "", "path to corpus directory")
+	flag.Parse()
+
+	if yaraFile == "" || corpusDir == "" {
+		fmt.Fprintf(os.Stderr, "Usage: corpus-validator -yara <rules.yar> -corpus <dir>\n")
+		os.Exit(1)
 	}
 
 	rules, err := internal.YargoRules(yaraFile)
@@ -31,51 +35,49 @@ func main() {
 	fmt.Printf("AC patterns: %d, Regex patterns: %d\n", acPatterns, regexPatterns)
 	var missing []string
 
-	for _, dir := range corpusDirs {
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
+	err = filepath.WalkDir(corpusDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
 
-			data, err := os.ReadFile(path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
-				return nil
-			}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", path, err)
+			return nil
+		}
 
-			var matches scanner.MatchRules
-			if err := rules.ScanMem(data, 0, 30*time.Second, &matches); err != nil {
-				fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", path, err)
-				return nil
-			}
+		var matches scanner.MatchRules
+		if err := rules.ScanMem(data, 0, 30*time.Second, &matches); err != nil {
+			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", path, err)
+			return nil
+		}
 
-			if debug != "" && filepath.Base(path) == debug {
-				fmt.Printf("DEBUG %s: %d matches\n", path, len(matches))
-				for _, m := range matches {
-					trust := int64(100)
-					for _, meta := range m.Metas {
-						if meta.Identifier == "trust" {
-							if v, ok := meta.Value.(int64); ok {
-								trust = v
-							}
+		if debug != "" && filepath.Base(path) == debug {
+			fmt.Printf("DEBUG %s: %d matches\n", path, len(matches))
+			for _, m := range matches {
+				trust := int64(100)
+				for _, meta := range m.Metas {
+					if meta.Identifier == "trust" {
+						if v, ok := meta.Value.(int64); ok {
+							trust = v
 						}
 					}
-					fmt.Printf("  Rule: %s (trust=%d)\n", m.Rule, trust)
 				}
+				fmt.Printf("  Rule: %s (trust=%d)\n", m.Rule, trust)
 			}
-
-			if !hasTrustedMatch(matches) {
-				missing = append(missing, path)
-			}
-
-			return nil
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error walking %s: %v\n", dir, err)
 		}
+
+		if !hasTrustedMatch(matches) {
+			missing = append(missing, path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error walking %s: %v\n", corpusDir, err)
 	}
 
 	if len(missing) > 0 {
