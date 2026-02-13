@@ -135,7 +135,7 @@ func (c *compiler) closeStartStateLoop() {
 		startId := c.nfa.startID
 		start := c.nfa.state(startId)
 
-		for b := 0; b < 256; b++ {
+		for b := range 256 {
 			if start.nextState(byte(b)) == startId {
 				start.setNextState(byte(b), deadStateID)
 			}
@@ -147,7 +147,7 @@ func (c *compiler) fillFailureTransitionsStandard() {
 	queue := make([]stateID, 0, len(c.nfa.states))
 	seen := c.queuedSet()
 
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		next := c.nfa.state(c.nfa.startID).nextState(byte(b))
 		if next != c.nfa.startID {
 			if !seen.contains(next) {
@@ -294,7 +294,7 @@ func (c *compiler) queuedSet() queuedSet {
 func (c *compiler) addStartStateLoop() {
 	startId := c.nfa.startID
 	start := c.nfa.state(startId)
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if start.nextState(byte(b)) == failedStateID {
 			start.setNextState(byte(b), startId)
 		}
@@ -303,16 +303,9 @@ func (c *compiler) addStartStateLoop() {
 
 func (c *compiler) addDeadStateLoop() {
 	dead := c.nfa.state(deadStateID)
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		dead.setNextState(byte(b), deadStateID)
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (c *compiler) buildTrie(patterns [][]byte) {
