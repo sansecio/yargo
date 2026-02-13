@@ -132,10 +132,10 @@ func TestParseModifiers(t *testing.T) {
 	}{
 		{`"x" base64`, ast.StringModifiers{Base64: true}},
 		{`"x" fullword`, ast.StringModifiers{Fullword: true}},
-		{`"x" wide ascii`, ast.StringModifiers{Wide: true, Ascii: true}},
-		{`"x" nocase fullword`, ast.StringModifiers{Nocase: true, Fullword: true}},
+		{`"x" wide ascii`, ast.StringModifiers{}},
+		{`"x" nocase fullword`, ast.StringModifiers{Fullword: true}},
 		{`{ FF } base64`, ast.StringModifiers{Base64: true}},
-		{`/pattern/ nocase`, ast.StringModifiers{Nocase: true}},
+		{`/pattern/ nocase`, ast.StringModifiers{}},
 	}
 
 	for _, tt := range tests {

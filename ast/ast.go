@@ -29,14 +29,8 @@ type StringDef struct {
 
 // StringModifiers represents the modifiers applied to a string.
 type StringModifiers struct {
-	Base64     bool
-	Base64Wide bool
-	Fullword   bool
-	Wide       bool
-	Ascii      bool
-	Nocase     bool
-	Xor        bool
-	Private    bool
+	Base64   bool
+	Fullword bool
 }
 
 // StringValue is an interface for the different string types.

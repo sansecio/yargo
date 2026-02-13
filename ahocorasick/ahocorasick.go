@@ -1,56 +1,5 @@
 package ahocorasick
 
-import "unsafe"
-
-func unsafeBytes(s string) []byte {
-	return unsafe.Slice(unsafe.StringData(s), len(s))
-}
-
-type findIter struct {
-	fsm      *iNFA
-	prestate *prefilterState
-	haystack []byte
-	pos      int
-}
-
-func newFindIter(ac AhoCorasick, haystack []byte) findIter {
-	prestate := prefilterState{
-		skips:       0,
-		skipped:     0,
-		maxMatchLen: ac.i.MaxPatternLen(),
-		inert:       false,
-		lastScanAt:  0,
-	}
-
-	return findIter{
-		fsm:      ac.i,
-		prestate: &prestate,
-		haystack: haystack,
-		pos:      0,
-	}
-}
-
-// Iter is an iterator over matches found on the current haystack.
-type Iter interface {
-	Next() *Match
-}
-
-// Next gives a pointer to the next match yielded by the iterator or nil, if there is none.
-func (f *findIter) Next() *Match {
-	if f.pos > len(f.haystack) {
-		return nil
-	}
-
-	result := findAtNoState(f.fsm, f.prestate, f.haystack, f.pos)
-
-	if result == nil {
-		return nil
-	}
-
-	f.pos = result.end - result.len + 1
-	return result
-}
-
 type overlappingIter struct {
 	fsm        *iNFA
 	prestate   *prefilterState
@@ -60,6 +9,7 @@ type overlappingIter struct {
 	matchIndex int
 }
 
+// Next gives a pointer to the next match yielded by the iterator or nil, if there is none.
 func (f *overlappingIter) Next() *Match {
 	if f.pos > len(f.haystack) {
 		return nil
@@ -99,26 +49,9 @@ type AhoCorasick struct {
 }
 
 // IterOverlappingByte gives an iterator over the built patterns with overlapping matches.
-func (ac AhoCorasick) IterOverlappingByte(haystack []byte) Iter {
+func (ac AhoCorasick) IterOverlappingByte(haystack []byte) *overlappingIter {
 	i := newOverlappingIter(ac, haystack)
 	return &i
-}
-
-// FindAll returns the matches found in the haystack.
-func (ac AhoCorasick) FindAll(haystack string) []Match {
-	iter := newFindIter(ac, unsafeBytes(haystack))
-
-	var matches []Match
-	for {
-		next := iter.Next()
-		if next == nil {
-			break
-		}
-
-		matches = append(matches, *next)
-	}
-
-	return matches
 }
 
 // AhoCorasickBuilder defines a set of options applied before the patterns are built.
@@ -131,16 +64,6 @@ func NewAhoCorasickBuilder() AhoCorasickBuilder {
 	return AhoCorasickBuilder{
 		nfaBuilder: newNFABuilder(),
 	}
-}
-
-// Build builds a (non)deterministic finite automata from the user provided patterns.
-func (a *AhoCorasickBuilder) Build(patterns []string) AhoCorasick {
-	bytePatterns := make([][]byte, len(patterns))
-	for pati, pat := range patterns {
-		bytePatterns[pati] = unsafeBytes(pat)
-	}
-
-	return a.BuildByte(bytePatterns)
 }
 
 // BuildByte builds an automaton from the user provided patterns.
@@ -238,22 +161,4 @@ func overlappingFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at in
 
 	*matchIndex = 1
 	return match
-}
-
-func earliestFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, id *stateID) *Match {
-	if *id == a.startID {
-		if a.anchored && at > 0 {
-			return nil
-		}
-		match := a.GetMatch(*id, 0, at)
-		if match != nil {
-			return match
-		}
-	}
-	return standardFindAt(a, prestate, haystack, at, id)
-}
-
-func findAtNoState(a *iNFA, prestate *prefilterState, haystack []byte, at int) *Match {
-	state := a.startID
-	return earliestFindAt(a, prestate, haystack, at, &state)
 }

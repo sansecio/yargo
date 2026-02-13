@@ -3,7 +3,6 @@ package ahocorasick
 type iNFA struct {
 	startID       stateID
 	maxPatternLen int
-	patternCount  int
 	prefil        *prefilter
 	anchored      bool
 	states        []state
@@ -29,10 +28,6 @@ func (n *iNFA) MaxPatternLen() int {
 	return n.maxPatternLen
 }
 
-func (n *iNFA) PatternCount() int {
-	return n.patternCount
-}
-
 func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
 	if int(id) >= len(n.states) {
 		return nil
@@ -49,11 +44,10 @@ func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
 	}
 }
 
-func (n *iNFA) addDenseState(depth int) stateID {
+func (n *iNFA) addDenseState() stateID {
 	id := stateID(len(n.states))
 
 	fail := n.startID
-
 	if n.anchored {
 		fail = deadStateID
 	}
@@ -62,16 +56,14 @@ func (n *iNFA) addDenseState(depth int) stateID {
 		trans:   transitions{dense: make([]stateID, 256)},
 		fail:    fail,
 		matches: nil,
-		depth:   depth,
 	})
 	return id
 }
 
-func (n *iNFA) addSparseState(depth int) stateID {
+func (n *iNFA) addSparseState() stateID {
 	id := stateID(len(n.states))
 
 	fail := n.startID
-
 	if n.anchored {
 		fail = deadStateID
 	}
@@ -80,7 +72,6 @@ func (n *iNFA) addSparseState(depth int) stateID {
 		trans:   transitions{},
 		fail:    fail,
 		matches: nil,
-		depth:   depth,
 	})
 	return id
 }
@@ -311,7 +302,6 @@ func (c *compiler) addDeadStateLoop() {
 func (c *compiler) buildTrie(patterns [][]byte) {
 	for pati, pat := range patterns {
 		c.nfa.maxPatternLen = max(c.nfa.maxPatternLen, len(pat))
-		c.nfa.patternCount += 1
 
 		prev := c.nfa.startID
 
@@ -336,9 +326,9 @@ func (c *compiler) buildTrie(patterns [][]byte) {
 
 func (c *compiler) addState(depth int) stateID {
 	if depth < c.builder.denseDepth {
-		return c.nfa.addDenseState(depth)
+		return c.nfa.addDenseState()
 	}
-	return c.nfa.addSparseState(depth)
+	return c.nfa.addSparseState()
 }
 
 func newCompiler(builder iNFABuilder) compiler {
@@ -350,7 +340,6 @@ func newCompiler(builder iNFABuilder) compiler {
 		nfa: iNFA{
 			startID:       2,
 			maxPatternLen: 0,
-			patternCount:  0,
 			prefil:        nil,
 			anchored:      builder.anchored,
 			states:        nil,
@@ -386,7 +375,6 @@ type state struct {
 	trans   transitions
 	fail    stateID
 	matches []pattern
-	depth   int
 }
 
 func (s *state) addMatch(patternID, patternLength int) {

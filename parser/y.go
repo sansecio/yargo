@@ -699,20 +699,8 @@ yydefault:
 			switch yyDollar[2].str {
 			case "base64":
 				yyVAL.mods.Base64 = true
-			case "base64wide":
-				yyVAL.mods.Base64Wide = true
 			case "fullword":
 				yyVAL.mods.Fullword = true
-			case "wide":
-				yyVAL.mods.Wide = true
-			case "ascii":
-				yyVAL.mods.Ascii = true
-			case "nocase":
-				yyVAL.mods.Nocase = true
-			case "xor":
-				yyVAL.mods.Xor = true
-			case "private":
-				yyVAL.mods.Private = true
 			}
 		}
 	case 22:

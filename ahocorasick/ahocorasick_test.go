@@ -5,10 +5,27 @@ import (
 	"testing"
 )
 
-func TestFindAll_SinglePattern(t *testing.T) {
+func buildAC(patterns ...string) AhoCorasick {
 	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"abc"})
-	matches := ac.FindAll("xxabcxxabcxx")
+	bytePatterns := make([][]byte, len(patterns))
+	for i, p := range patterns {
+		bytePatterns[i] = []byte(p)
+	}
+	return builder.BuildByte(bytePatterns)
+}
+
+func collectMatches(ac AhoCorasick, haystack string) []Match {
+	iter := ac.IterOverlappingByte([]byte(haystack))
+	var matches []Match
+	for next := iter.Next(); next != nil; next = iter.Next() {
+		matches = append(matches, *next)
+	}
+	return matches
+}
+
+func TestIterOverlapping_SinglePattern(t *testing.T) {
+	ac := buildAC("abc")
+	matches := collectMatches(ac, "xxabcxxabcxx")
 
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches, got %d", len(matches))
@@ -21,62 +38,10 @@ func TestFindAll_SinglePattern(t *testing.T) {
 	}
 }
 
-func TestFindAll_MultiplePatterns(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"he", "she", "his", "hers"})
-	matches := ac.FindAll("ushers")
+func TestIterOverlapping_MultiplePatterns(t *testing.T) {
+	ac := buildAC("he", "she", "his", "hers")
+	matches := collectMatches(ac, "ushers")
 
-	if len(matches) == 0 {
-		t.Fatal("expected at least one match")
-	}
-
-	// Standard (earliest) match semantics: non-overlapping, reports as seen.
-	// "she" starts at 1, then "he" starts at 2 — but since FindAll advances
-	// past each match, we get "she" then "he" (which overlaps, so just "she"
-	// is found first at pos 1, then scanning from pos 2 finds "he" at pos 2).
-	found := make(map[int]bool)
-	for _, m := range matches {
-		found[m.Pattern()] = true
-	}
-	if !found[0] {
-		t.Error("expected to find pattern 'he'")
-	}
-	if !found[1] {
-		t.Error("expected to find pattern 'she'")
-	}
-}
-
-func TestFindAll_NoMatch(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"foo", "bar"})
-	matches := ac.FindAll("nothing here")
-
-	if len(matches) != 0 {
-		t.Errorf("expected 0 matches, got %d", len(matches))
-	}
-}
-
-func TestFindAll_EmptyHaystack(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"abc"})
-	matches := ac.FindAll("")
-
-	if len(matches) != 0 {
-		t.Errorf("expected 0 matches, got %d", len(matches))
-	}
-}
-
-func TestIterOverlapping(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"he", "she", "his", "hers"})
-	iter := ac.IterOverlappingByte([]byte("ushers"))
-
-	var matches []Match
-	for next := iter.Next(); next != nil; next = iter.Next() {
-		matches = append(matches, *next)
-	}
-
-	// Overlapping: should find "she", "he", "hers"
 	if len(matches) < 3 {
 		t.Fatalf("expected at least 3 overlapping matches, got %d", len(matches))
 	}
@@ -96,34 +61,49 @@ func TestIterOverlapping(t *testing.T) {
 	}
 }
 
-func TestIterOverlapping_SubstringPatterns(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"a", "ab", "abc"})
-	iter := ac.IterOverlappingByte([]byte("abc"))
+func TestIterOverlapping_NoMatch(t *testing.T) {
+	ac := buildAC("foo", "bar")
+	matches := collectMatches(ac, "nothing here")
 
-	var matches []Match
-	for next := iter.Next(); next != nil; next = iter.Next() {
-		matches = append(matches, *next)
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(matches))
 	}
+}
+
+func TestIterOverlapping_EmptyHaystack(t *testing.T) {
+	ac := buildAC("abc")
+	matches := collectMatches(ac, "")
+
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestIterOverlapping_SubstringPatterns(t *testing.T) {
+	ac := buildAC("a", "ab", "abc")
+	matches := collectMatches(ac, "abc")
 
 	if len(matches) != 3 {
 		t.Fatalf("expected 3 overlapping matches, got %d", len(matches))
 	}
 }
 
-func TestFindAll_Parallel(t *testing.T) {
-	builder := NewAhoCorasickBuilder()
-	ac := builder.Build([]string{"bear", "masha"})
-	haystack := "The bear and masha"
+func TestIterOverlapping_Parallel(t *testing.T) {
+	ac := buildAC("bear", "masha")
+	haystack := []byte("The bear and masha")
 
 	var w sync.WaitGroup
 	w.Add(50)
 	for range 50 {
 		go func() {
 			defer w.Done()
-			matches := ac.FindAll(haystack)
-			if len(matches) != 2 {
-				t.Errorf("expected 2 matches, got %d", len(matches))
+			iter := ac.IterOverlappingByte(haystack)
+			var count int
+			for next := iter.Next(); next != nil; next = iter.Next() {
+				count++
+			}
+			if count != 2 {
+				t.Errorf("expected 2 matches, got %d", count)
 			}
 		}()
 	}
