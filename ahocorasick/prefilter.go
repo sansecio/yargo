@@ -5,21 +5,6 @@ import (
 	"slices"
 )
 
-type startBytes struct {
-	bytes [3]byte
-	count int
-}
-
-func (s startBytes) NextCandidate(_ *prefilterState, haystack []byte, at int) int {
-	rare := s.bytes[:s.count]
-	for i, b := range haystack[at:] {
-		if slices.Contains(rare, b) {
-			return at + i
-		}
-	}
-	return noneCandidate
-}
-
 type byteSet [256]bool
 
 func (b *byteSet) contains(bb byte) bool {
@@ -50,20 +35,18 @@ type prefilterBuilder struct {
 	rareBytes  rareBytesBuilder
 }
 
-func (p *prefilterBuilder) build() prefilter {
+func (p *prefilterBuilder) build() *prefilter {
 	startBytes := p.startBytes.build()
 	rareBytes := p.rareBytes.build()
 
-	switch true {
+	switch {
 	case startBytes != nil && rareBytes != nil:
 		hasFewerBytes := p.startBytes.count < p.rareBytes.count
-
 		hasRarerBytes := p.startBytes.rankSum <= p.rareBytes.rankSum+50
 		if hasFewerBytes || hasRarerBytes {
 			return startBytes
-		} else {
-			return rareBytes
 		}
+		return rareBytes
 	case startBytes != nil:
 		return startBytes
 	case rareBytes != nil:
@@ -93,25 +76,25 @@ type rareBytesBuilder struct {
 	rankSum     uint16
 }
 
-type rareBytes struct {
+type prefilter struct {
 	offsets rareByteOffsets
 	bytes   [3]byte
 	count   int
 }
 
-func (r rareBytes) NextCandidate(state *prefilterState, haystack []byte, at int) int {
-	rare := r.bytes[:r.count]
+func (p *prefilter) nextCandidate(state *prefilterState, haystack []byte, at int) int {
+	rare := p.bytes[:p.count]
 	for i, b := range haystack[at:] {
 		if slices.Contains(rare, b) {
 			pos := at + i
 			state.updateAt(pos)
-			return max(at, max(pos-int(r.offsets.rbo[haystack[pos]].max), 0))
+			return max(at, max(pos-int(p.offsets.rbo[haystack[pos]].max), 0))
 		}
 	}
 	return noneCandidate
 }
 
-func (r *rareBytesBuilder) build() prefilter {
+func (r *rareBytesBuilder) build() *prefilter {
 	if !r.available || r.count > 3 {
 		return nil
 	}
@@ -128,7 +111,7 @@ func (r *rareBytesBuilder) build() prefilter {
 	if length == 0 {
 		return nil
 	}
-	return &rareBytes{
+	return &prefilter{
 		offsets: r.byteOffsets,
 		bytes:   bytes,
 		count:   length,
@@ -213,7 +196,7 @@ type startBytesBuilder struct {
 	rankSum uint16
 }
 
-func (s *startBytesBuilder) build() prefilter {
+func (s *startBytesBuilder) build() *prefilter {
 	if s.count > 3 {
 		return nil
 	}
@@ -234,7 +217,7 @@ func (s *startBytesBuilder) build() prefilter {
 	if length == 0 {
 		return nil
 	}
-	return &startBytes{bytes: bytes, count: length}
+	return &prefilter{bytes: bytes, count: length}
 }
 
 func (s *startBytesBuilder) add(bytes []byte) {
@@ -307,12 +290,8 @@ func (p *prefilterState) updateSkippedBytes(skipped int) {
 
 const noneCandidate = -1
 
-type prefilter interface {
-	NextCandidate(state *prefilterState, haystack []byte, at int) int
-}
-
-func nextPrefilter(state *prefilterState, prefilter prefilter, haystack []byte, at int) int {
-	cand := prefilter.NextCandidate(state, haystack, at)
+func nextPrefilter(state *prefilterState, pf *prefilter, haystack []byte, at int) int {
+	cand := pf.nextCandidate(state, haystack, at)
 	if cand < 0 {
 		state.updateSkippedBytes(len(haystack) - at)
 	} else {

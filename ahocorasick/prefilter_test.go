@@ -6,11 +6,20 @@ func newState() *prefilterState {
 	return &prefilterState{maxMatchLen: 1}
 }
 
-func TestStartBytes_NextCandidate(t *testing.T) {
+func TestPrefilter_NextCandidate(t *testing.T) {
+	makeOffsets := func(m map[byte]byte) rareByteOffsets {
+		var offsets rareByteOffsets
+		for b, max := range m {
+			offsets.rbo[b] = rareByteOffset{max: max}
+		}
+		return offsets
+	}
+
 	tests := []struct {
 		name     string
 		bytes    [3]byte
 		count    int
+		offsets  rareByteOffsets
 		haystack []byte
 		at       int
 		want     int
@@ -71,45 +80,6 @@ func TestStartBytes_NextCandidate(t *testing.T) {
 			at:       0,
 			want:     noneCandidate,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := startBytes{bytes: tt.bytes, count: tt.count}
-			got := s.NextCandidate(newState(), tt.haystack, tt.at)
-			if got != tt.want {
-				t.Errorf("NextCandidate() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestRareBytes_NextCandidate(t *testing.T) {
-	makeOffsets := func(m map[byte]byte) rareByteOffsets {
-		var offsets rareByteOffsets
-		for b, max := range m {
-			offsets.rbo[b] = rareByteOffset{max: max}
-		}
-		return offsets
-	}
-
-	tests := []struct {
-		name     string
-		bytes    [3]byte
-		count    int
-		offsets  rareByteOffsets
-		haystack []byte
-		at       int
-		want     int
-	}{
-		{
-			name:     "single byte no offset",
-			bytes:    [3]byte{'x'},
-			count:    1,
-			offsets:  makeOffsets(map[byte]byte{'x': 0}),
-			haystack: []byte("abxcd"),
-			at:       0,
-			want:     2,
-		},
 		{
 			name:     "single byte with offset rewinds",
 			bytes:    [3]byte{'x'},
@@ -129,31 +99,13 @@ func TestRareBytes_NextCandidate(t *testing.T) {
 			want:     1,
 		},
 		{
-			name:     "two bytes finds first",
+			name:     "two bytes with offsets finds first",
 			bytes:    [3]byte{'x', 'y'},
 			count:    2,
 			offsets:  makeOffsets(map[byte]byte{'x': 1, 'y': 0}),
 			haystack: []byte("abycxd"),
 			at:       0,
 			want:     2,
-		},
-		{
-			name:     "three bytes finds first",
-			bytes:    [3]byte{'x', 'y', 'z'},
-			count:    3,
-			offsets:  makeOffsets(map[byte]byte{'x': 0, 'y': 0, 'z': 0}),
-			haystack: []byte("abzcd"),
-			at:       0,
-			want:     2,
-		},
-		{
-			name:     "no match",
-			bytes:    [3]byte{'x'},
-			count:    1,
-			offsets:  makeOffsets(map[byte]byte{'x': 0}),
-			haystack: []byte("abcde"),
-			at:       0,
-			want:     noneCandidate,
 		},
 		{
 			name:     "offset larger than position clamps to zero then at",
@@ -167,11 +119,10 @@ func TestRareBytes_NextCandidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := rareBytes{offsets: tt.offsets, bytes: tt.bytes, count: tt.count}
-			state := newState()
-			got := r.NextCandidate(state, tt.haystack, tt.at)
+			pf := &prefilter{offsets: tt.offsets, bytes: tt.bytes, count: tt.count}
+			got := pf.nextCandidate(newState(), tt.haystack, tt.at)
 			if got != tt.want {
-				t.Errorf("NextCandidate() = %v, want %v", got, tt.want)
+				t.Errorf("nextCandidate() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -185,9 +136,9 @@ func TestStartBytesBuilder_Build(t *testing.T) {
 		if pf == nil {
 			t.Fatal("expected non-nil prefilter")
 		}
-		got := pf.NextCandidate(newState(), []byte("xxhello"), 0)
+		got := pf.nextCandidate(newState(), []byte("xxhello"), 0)
 		if got != 2 {
-			t.Errorf("NextCandidate() = %v, want 2", got)
+			t.Errorf("nextCandidate() = %v, want 2", got)
 		}
 	})
 
@@ -199,9 +150,9 @@ func TestStartBytesBuilder_Build(t *testing.T) {
 		if pf == nil {
 			t.Fatal("expected non-nil prefilter")
 		}
-		got := pf.NextCandidate(newState(), []byte("__x__a"), 0)
+		got := pf.nextCandidate(newState(), []byte("__x__a"), 0)
 		if got != 2 {
-			t.Errorf("NextCandidate() = %v, want 2", got)
+			t.Errorf("nextCandidate() = %v, want 2", got)
 		}
 	})
 

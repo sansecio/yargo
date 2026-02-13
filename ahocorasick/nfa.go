@@ -4,7 +4,7 @@ type iNFA struct {
 	startID       stateID
 	maxPatternLen int
 	patternCount  int
-	prefil        prefilter
+	prefil        *prefilter
 	anchored      bool
 	states        []state
 	matchBitset   []uint64

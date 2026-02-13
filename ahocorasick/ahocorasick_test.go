@@ -118,7 +118,7 @@ func TestFindAll_Parallel(t *testing.T) {
 
 	var w sync.WaitGroup
 	w.Add(50)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		go func() {
 			defer w.Done()
 			matches := ac.FindAll(haystack)

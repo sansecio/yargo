@@ -187,12 +187,12 @@ func standardFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, 
 	return standardFindAtImp(a, prestate, a.prefil, haystack, at, sID)
 }
 
-func standardFindAtImp(a *iNFA, prestate *prefilterState, prefilter prefilter, haystack []byte, at int, sID *stateID) *Match {
+func standardFindAtImp(a *iNFA, prestate *prefilterState, pf *prefilter, haystack []byte, at int, sID *stateID) *Match {
 	sid := *sID
 	for at < len(haystack) {
-		if prefilter != nil {
+		if pf != nil {
 			if prestate.IsEffective(at) && sID == &a.startID {
-				c := nextPrefilter(prestate, prefilter, haystack, at)
+				c := nextPrefilter(prestate, pf, haystack, at)
 				if c == noneCandidate {
 					*sID = sid
 					return nil
