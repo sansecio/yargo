@@ -141,15 +141,7 @@ func (r rareBytesOne) NextCandidate(state *prefilterState, haystack []byte, at i
 		if r.byte1 == b {
 			pos := at + i
 			state.lastScanAt = pos
-			r := pos - int(r.offset.max)
-			if r < 0 {
-				r = 0
-			}
-
-			if at > r {
-				r = at
-			}
-			return r
+			return max(at, max(pos-int(r.offset.max), 0))
 		}
 	}
 	return noneCandidate
@@ -170,15 +162,7 @@ func (r rareBytesTwo) NextCandidate(state *prefilterState, haystack []byte, at i
 		if r.byte1 == b || r.byte2 == b {
 			pos := at + i
 			state.updateAt(pos)
-			r := pos - int(r.offsets.rbo[haystack[pos]].max)
-			if r < 0 {
-				r = 0
-			}
-
-			if at > r {
-				r = at
-			}
-			return r
+			return max(at, max(pos-int(r.offsets.rbo[haystack[pos]].max), 0))
 		}
 	}
 	return noneCandidate
@@ -200,15 +184,7 @@ func (r rareBytesThree) NextCandidate(state *prefilterState, haystack []byte, at
 		if r.byte1 == b || r.byte2 == b || r.byte3 == b {
 			pos := at + i
 			state.updateAt(pos)
-			r := pos - int(r.offsets.rbo[haystack[pos]].max)
-			if r < 0 {
-				r = 0
-			}
-
-			if at > r {
-				r = at
-			}
-			return r
+			return max(at, max(pos-int(r.offsets.rbo[haystack[pos]].max), 0))
 		}
 	}
 	return noneCandidate
@@ -343,7 +319,7 @@ func (s *startBytesBuilder) build() prefilter {
 	var length int
 	bytes := [3]byte{}
 
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if !s.byteset[b] {
 			continue
 		}
