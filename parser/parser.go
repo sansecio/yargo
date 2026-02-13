@@ -104,6 +104,9 @@ func parseRegex(s string) (string, ast.RegexModifiers) {
 }
 
 func parseHexAlt(s string) ast.HexAlt {
+	if len(s) < 2 {
+		return ast.HexAlt{}
+	}
 	s = s[1 : len(s)-1]
 	parts := strings.Split(s, "|")
 	items := make([]ast.HexAltItem, len(parts))

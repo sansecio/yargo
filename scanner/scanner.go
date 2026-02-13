@@ -110,6 +110,7 @@ func (r *Rules) Stats() (acPatterns, regexPatterns int) {
 	return len(r.patterns), len(r.regexPatterns)
 }
 
+// NumRules returns the number of compiled rules.
 func (r *Rules) NumRules() int {
 	return len(r.rules)
 }
