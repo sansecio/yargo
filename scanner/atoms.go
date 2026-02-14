@@ -579,6 +579,7 @@ func byteQuality(b byte) int {
 	if isCommonByte(b) {
 		return 12
 	}
+	// Alphabetic bytes (slightly penalized - common in text)
 	if isAlpha(b) {
 		return 18
 	}
