@@ -171,7 +171,13 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Track match positions and data per rule and string
+	ruleMatches := r.collectMatches(buf)
+	return r.evaluateRules(ctx, buf, ruleMatches, cb)
+}
+
+// collectMatches runs AC matching, atom-based regex verification, and full-scan
+// regex to collect all match positions per rule and string.
+func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 	ruleMatches := make(map[int]map[string][]matchInfo)
 	atomCandidates := make(map[int][]int)
 
@@ -226,14 +232,18 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 		}
 	}
 
-	// Collect rule indices and sort for deterministic iteration order
+	return ruleMatches
+}
+
+// evaluateRules evaluates conditions for rules with matches, invokes the
+// callback for matching rules, and handles abort/timeout.
+func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[int]map[string][]matchInfo, cb ScanCallback) error {
 	ruleIndices := make([]int, 0, len(ruleMatches))
 	for ruleIdx := range ruleMatches {
 		ruleIndices = append(ruleIndices, ruleIdx)
 	}
 	slices.Sort(ruleIndices)
 
-	// Evaluate conditions for each rule with matches
 	for _, ruleIdx := range ruleIndices {
 		matchedStrings := ruleMatches[ruleIdx]
 		select {
@@ -244,7 +254,6 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 
 		cr := r.rules[ruleIdx]
 
-		// Convert matchInfo to positions for condition evaluation
 		matchPositions := make(map[string][]int, len(matchedStrings))
 		for name, infos := range matchedStrings {
 			positions := make([]int, len(infos))
@@ -254,7 +263,6 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 			matchPositions[name] = positions
 		}
 
-		// Evaluate condition
 		evalCtx := &evalContext{
 			matches:     matchPositions,
 			buf:         buf,
