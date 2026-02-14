@@ -5,6 +5,21 @@ import (
 	"strconv"
 )
 
+// commonTokens are tokens too prevalent in code to be useful as atoms.
+var commonTokens = [][]byte{
+	[]byte("return"),
+	[]byte("function"),
+	[]byte("var"),
+	[]byte("();"),
+	[]byte("="),
+}
+
+// altGroup represents a parenthesized alternation group within a regex pattern.
+type altGroup struct {
+	start, end int
+	content    string
+}
+
 // extractAtoms parses a regex and extracts literal atoms for matching.
 // For alternation patterns (a|b|c), returns atoms from all branches.
 // For patterns with nested alternations like "prefix(a|b|c)suffix", returns
@@ -62,15 +77,6 @@ func findBestRun(runs [][]byte, minLen int) []byte {
 		}
 	}
 	return best
-}
-
-// commonTokens are tokens too prevalent in code to be useful as atoms.
-var commonTokens = [][]byte{
-	[]byte("return"),
-	[]byte("function"),
-	[]byte("var"),
-	[]byte("();"),
-	[]byte("="),
 }
 
 // isCommonToken returns true for atoms that, after trimming spaces, match
@@ -177,11 +183,6 @@ func extractNestedAlternationAtoms(pattern string, minLen int) [][]byte {
 		return nil
 	}
 	return best.atoms
-}
-
-type altGroup struct {
-	start, end int
-	content    string
 }
 
 // findAlternationGroups finds parenthesized groups that contain alternation.

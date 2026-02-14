@@ -24,6 +24,15 @@ type CompileOptions struct {
 	SkipSubtypes []string
 }
 
+const (
+	maxRepetition = 1000
+
+	// minAtomLength is the minimum length of atoms extracted from regexes
+	// for use in the Aho-Corasick matcher. 3 bytes gives 16M possible values
+	// (255^3), making false positives rare while still allowing generic regexes.
+	minAtomLength = 3
+)
+
 // Compile compiles an AST RuleSet into Rules ready for scanning.
 func Compile(rs *ast.RuleSet) (*Rules, error) {
 	return CompileWithOptions(rs, CompileOptions{})
@@ -312,13 +321,6 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 	}
 	return prefix + fixQuantifiers(pattern)
 }
-
-const maxRepetition = 1000
-
-// minAtomLength is the minimum length of atoms extracted from regexes
-// for use in the Aho-Corasick matcher. 3 bytes gives 16M possible values
-// (255^3), making false positives rare while still allowing generic regexes.
-const minAtomLength = 3
 
 // isValidQuantifier checks if inner looks like a valid regex quantifier:
 // digits, digits+comma, digits+comma+digits, or comma+digits.

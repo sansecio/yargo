@@ -17,32 +17,99 @@ import (
 	"github.com/sansecio/yargo/ast"
 )
 
-// ScanFlags controls scanning behavior.
-type ScanFlags int
+type (
+	// ScanFlags controls scanning behavior.
+	ScanFlags int
 
-// ScanCallback is the interface for receiving match notifications.
-type ScanCallback interface {
-	RuleMatching(r *MatchRule) (abort bool, err error)
-}
+	// ScanCallback is the interface for receiving match notifications.
+	ScanCallback interface {
+		RuleMatching(r *MatchRule) (abort bool, err error)
+	}
 
-// MatchString represents a matched string within a rule.
-type MatchString struct {
-	Name string
-	Data []byte
-}
+	// MatchString represents a matched string within a rule.
+	MatchString struct {
+		Name string
+		Data []byte
+	}
 
-// Meta represents a metadata entry from a rule.
-type Meta struct {
-	Identifier string
-	Value      any
-}
+	// Meta represents a metadata entry from a rule.
+	Meta struct {
+		Identifier string
+		Value      any
+	}
 
-// MatchRule represents a rule that matched during scanning.
-type MatchRule struct {
-	Rule    string
-	Metas   []Meta
-	Strings []MatchString
-}
+	// MatchRule represents a rule that matched during scanning.
+	MatchRule struct {
+		Rule    string
+		Metas   []Meta
+		Strings []MatchString
+	}
+
+	// MatchRules collects matching rules and implements ScanCallback.
+	MatchRules []MatchRule
+
+	// Rules holds compiled YARA rules ready for scanning.
+	Rules struct {
+		rules         []*compiledRule
+		matcher       *ahocorasick.AhoCorasick
+		patterns      [][]byte
+		patternMap    []patternRef
+		regexPatterns []*regexPattern
+	}
+
+	// RegexTiming holds the timing result for a single regex pattern.
+	RegexTiming struct {
+		Rule           string
+		String         string
+		Pattern        string
+		MatchedAtoms   []string // Atoms that actually matched in the buffer
+		ExtractedAtoms []string // All atoms extracted from the regex
+		Duration       time.Duration
+		Calls          int
+	}
+)
+
+type (
+	// patternRef maps a pattern index back to its source rule and string.
+	patternRef struct {
+		ruleIndex  int
+		stringName string
+		fullword   bool
+		isAtom     bool
+		regexIdx   int
+	}
+
+	// regexPattern holds a compiled regex for complex regex matching.
+	regexPattern struct {
+		re         *regexp.Regexp
+		ruleIndex  int
+		stringName string
+		hasAtom    bool
+	}
+
+	// compiledRule holds the compiled form of a single YARA rule.
+	compiledRule struct {
+		name        string
+		metas       []Meta
+		condition   ast.Expr
+		stringNames []string
+	}
+
+	// matchInfo records the position and data of a single pattern match.
+	matchInfo struct {
+		pos  int
+		data []byte
+	}
+
+	// atomCandidate tracks atom match positions for regex verification.
+	atomCandidate struct {
+		positions []int
+		atoms     map[string]struct{}
+	}
+)
+
+// maxMatchLen is the window size around atom hits used for regex verification.
+const maxMatchLen = 1024
 
 // Meta returns the value of the meta field with the given identifier, or nil.
 func (m *MatchRule) Meta(identifier string) any {
@@ -62,47 +129,10 @@ func (m *MatchRule) MetaString(identifier, defValue string) string {
 	return defValue
 }
 
-// MatchRules collects matching rules and implements ScanCallback.
-type MatchRules []MatchRule
-
 // RuleMatching implements ScanCallback, collecting all matching rules.
 func (m *MatchRules) RuleMatching(r *MatchRule) (abort bool, err error) {
 	*m = append(*m, *r)
 	return false, nil
-}
-
-// patternRef maps a pattern index back to its source rule and string.
-type patternRef struct {
-	ruleIndex  int
-	stringName string
-	fullword   bool
-	isAtom     bool
-	regexIdx   int
-}
-
-// regexPattern holds a compiled regex for complex regex matching.
-type regexPattern struct {
-	re         *regexp.Regexp
-	ruleIndex  int
-	stringName string
-	hasAtom    bool
-}
-
-// compiledRule holds the compiled form of a single YARA rule.
-type compiledRule struct {
-	name        string
-	metas       []Meta
-	condition   ast.Expr
-	stringNames []string
-}
-
-// Rules holds compiled YARA rules ready for scanning.
-type Rules struct {
-	rules         []*compiledRule
-	matcher       *ahocorasick.AhoCorasick
-	patterns      [][]byte
-	patternMap    []patternRef
-	regexPatterns []*regexPattern
 }
 
 // Stats returns compilation statistics.
@@ -113,13 +143,6 @@ func (r *Rules) Stats() (acPatterns, regexPatterns int) {
 // NumRules returns the number of compiled rules.
 func (r *Rules) NumRules() int {
 	return len(r.rules)
-}
-
-const maxMatchLen = 1024
-
-type matchInfo struct {
-	pos  int
-	data []byte
 }
 
 func isWordChar(b byte) bool {
@@ -312,22 +335,6 @@ func dedupe(positions []int) []int {
 		}
 	}
 	return positions[:j]
-}
-
-// RegexTiming holds the timing result for a single regex pattern.
-type RegexTiming struct {
-	Rule           string
-	String         string
-	Pattern        string
-	MatchedAtoms   []string // Atoms that actually matched in the buffer
-	ExtractedAtoms []string // All atoms extracted from the regex
-	Duration       time.Duration
-	Calls          int
-}
-
-type atomCandidate struct {
-	positions []int
-	atoms     map[string]struct{}
 }
 
 // RegexProfile scans a buffer and returns per-regex timing information,
