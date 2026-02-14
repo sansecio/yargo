@@ -520,7 +520,16 @@ func isQuantifier(pattern string, i int) bool {
 		return false
 	}
 	i++
-	if i >= len(pattern) || pattern[i] < '0' || pattern[i] > '9' {
+	if i >= len(pattern) {
+		return false
+	}
+	// Accept {,N} syntax (skip straight to comma handling)
+	if pattern[i] == ',' {
+		for i++; i < len(pattern) && pattern[i] >= '0' && pattern[i] <= '9'; i++ {
+		}
+		return i < len(pattern) && pattern[i] == '}'
+	}
+	if pattern[i] < '0' || pattern[i] > '9' {
 		return false
 	}
 	for i < len(pattern) && pattern[i] >= '0' && pattern[i] <= '9' {

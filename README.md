@@ -114,7 +114,7 @@ Not yet supported:
 
 **TextString** - Fully supported, including `base64` and `fullword` modifiers.
 
-**RegexString** - Supported via RE2. RE2 does not support backreferences, lookahead/lookbehind, or possessive quantifiers.
+**RegexString** - Supported via RE2. RE2 does not support backreferences, lookahead/lookbehind, or possessive quantifiers. RE2 also limits repetition quantifiers to 1000, so patterns like `{0,4000}` must be rewritten to stay within this limit.
 
 **HexString** - Fully supported. Simple hex strings are matched as literals via Aho-Corasick. Complex hex strings (wildcards, jumps, alternations) are compiled to regex.
 
