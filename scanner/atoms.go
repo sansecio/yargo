@@ -25,7 +25,7 @@ type altGroup struct {
 // atoms from all branches of the alternation when they're the best choice.
 // Returns the atoms and whether any were found meeting minLen.
 func extractAtoms(pattern string, minLen int) ([][]byte, bool) {
-	if isTopLevelAlternation(pattern) {
+	if hasTopLevelAlternation(pattern) {
 		return extractAlternationAtoms(pattern, minLen)
 	}
 
@@ -90,11 +90,11 @@ func isCommonToken(atom []byte) bool {
 	return false
 }
 
-// isTopLevelAlternation checks if the pattern has alternation at the top level.
-func isTopLevelAlternation(pattern string) bool {
+// hasTopLevelAlternation checks if the string has | at depth 0.
+func hasTopLevelAlternation(s string) bool {
 	depth := 0
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
 		case '\\':
 			i++
 		case '(':
@@ -113,7 +113,7 @@ func isTopLevelAlternation(pattern string) bool {
 // extractAlternationAtoms extracts atoms from each branch of a top-level alternation.
 func extractAlternationAtoms(pattern string, minLen int) ([][]byte, bool) {
 	var atoms [][]byte
-	for _, branch := range splitTopLevelAlternation(pattern) {
+	for _, branch := range splitAlternation(pattern) {
 		if best := findBestRun(extractLiteralRuns(branch), minLen); best != nil {
 			atoms = append(atoms, best)
 		}
@@ -201,33 +201,13 @@ func findAlternationGroups(pattern string) []altGroup {
 				stack = stack[:len(stack)-1]
 				content := pattern[start+1 : i]
 				// Check if this group contains alternation at its level
-				if containsAlternationAtDepth0(content) {
+				if hasTopLevelAlternation(content) {
 					groups = append(groups, altGroup{start, i, content})
 				}
 			}
 		}
 	}
 	return groups
-}
-
-// containsAlternationAtDepth0 checks if the string has | at depth 0.
-func containsAlternationAtDepth0(s string) bool {
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case '|':
-			if depth == 0 {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // splitAlternation splits a string by | at depth 0.
@@ -311,29 +291,6 @@ func findOptionalGroups(pattern string) []altGroup {
 		}
 	}
 	return groups
-}
-
-// splitTopLevelAlternation splits a pattern by top-level | characters.
-func splitTopLevelAlternation(pattern string) []string {
-	var branches []string
-	depth, start := 0, 0
-
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '\\':
-			i++
-		case '(':
-			depth++
-		case ')':
-			depth--
-		case '|':
-			if depth == 0 {
-				branches = append(branches, pattern[start:i])
-				start = i + 1
-			}
-		}
-	}
-	return append(branches, pattern[start:])
 }
 
 // atomQuality scores an atom using YARA-inspired heuristics.
