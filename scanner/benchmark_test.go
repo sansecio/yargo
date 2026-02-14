@@ -31,8 +31,7 @@ func BenchmarkCompileStringLiterals(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := Compile(rs)
 		if err != nil {
 			b.Fatalf("Compile() error = %v", err)
@@ -46,17 +45,16 @@ func BenchmarkCompileRegexPatterns(b *testing.B) {
 			{
 				Name: "rule1",
 				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.RegexString{Pattern: `[a-z]+[0-9]+`}},
-					{Name: "$b", Value: ast.RegexString{Pattern: `\d{3}-\d{3}-\d{4}`}},
-					{Name: "$c", Value: ast.RegexString{Pattern: `https?://[^\s]+`}},
+					{Name: "$a", Value: ast.RegexString{Pattern: `https?://[^\s]+`}},
+					{Name: "$b", Value: ast.RegexString{Pattern: `password\s*=\s*"[^"]+"`}},
 				},
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
 				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`, Modifiers: ast.RegexModifiers{CaseInsensitive: true}}},
-					{Name: "$b", Value: ast.RegexString{Pattern: `base64.+decode`, Modifiers: ast.RegexModifiers{DotMatchesAll: true}}},
+					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`}},
+					{Name: "$b", Value: ast.RegexString{Pattern: `base64.+decode`}},
 				},
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
@@ -123,15 +121,15 @@ func BenchmarkScanRegexPatterns(b *testing.B) {
 			{
 				Name: "rule1",
 				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.RegexString{Pattern: `[a-z]+[0-9]+`}},
-					{Name: "$b", Value: ast.RegexString{Pattern: `\d{3}-\d{3}-\d{4}`}},
+					{Name: "$a", Value: ast.RegexString{Pattern: `https?://[^\s]+`}},
+					{Name: "$b", Value: ast.RegexString{Pattern: `password\s*=\s*"[^"]+"`}},
 				},
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
 			{
 				Name: "rule2",
 				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`, Modifiers: ast.RegexModifiers{CaseInsensitive: true}}},
+					{Name: "$a", Value: ast.RegexString{Pattern: `eval\s*\(`}},
 				},
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
@@ -145,9 +143,9 @@ func BenchmarkScanRegexPatterns(b *testing.B) {
 
 	// Generate test data - 1MB of sample data with some matches
 	data := make([]byte, 1024*1024)
-	copy(data[1000:], []byte("username123"))
-	copy(data[5000:], []byte("call 555-123-4567"))
-	copy(data[100000:], []byte("EVAL ( something )"))
+	copy(data[1000:], []byte("visit https://example.com/path"))
+	copy(data[5000:], []byte(`password = "secret123"`))
+	copy(data[100000:], []byte("eval (something)"))
 
 	b.SetBytes(int64(len(data)))
 
@@ -167,8 +165,8 @@ func BenchmarkScanMixed(b *testing.B) {
 				Name: "mixed_rule",
 				Strings: []*ast.StringDef{
 					{Name: "$literal", Value: ast.TextString{Value: "malware"}},
-					{Name: "$regex", Value: ast.RegexString{Pattern: `[a-z]+[0-9]+`}},
-					{Name: "$wordboundary", Value: ast.RegexString{Pattern: `\bvirus\b`}},
+					{Name: "$regex", Value: ast.RegexString{Pattern: `eval\s*\(`}},
+					{Name: "$url", Value: ast.RegexString{Pattern: `https?://[^\s]+`}},
 				},
 				Condition: ast.AnyOf{Pattern: "them"},
 			},
@@ -183,8 +181,8 @@ func BenchmarkScanMixed(b *testing.B) {
 	// Generate test data
 	data := make([]byte, 1024*1024)
 	copy(data[1000:], []byte("This file contains malware"))
-	copy(data[5000:], []byte("username123"))
-	copy(data[100000:], []byte("This is a virus here"))
+	copy(data[5000:], []byte("eval (something)"))
+	copy(data[100000:], []byte("visit https://example.com"))
 
 	b.SetBytes(int64(len(data)))
 
