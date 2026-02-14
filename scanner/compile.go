@@ -319,27 +319,6 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 	return prefix + fixCommaQuantifiers(pattern)
 }
 
-// fixCommaQuantifiers rewrites {,N} to {0,N} because RE2 treats {,N}
-// as literal text rather than a quantifier.
-func fixCommaQuantifiers(pattern string) string {
-	var b strings.Builder
-	b.Grow(len(pattern))
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] == '\\' && i+1 < len(pattern) {
-			b.WriteByte(pattern[i])
-			b.WriteByte(pattern[i+1])
-			i++
-			continue
-		}
-		if pattern[i] == '{' && i+1 < len(pattern) && pattern[i+1] == ',' {
-			b.WriteString("{0")
-			continue
-		}
-		b.WriteByte(pattern[i])
-	}
-	return b.String()
-}
-
 func metaValue(r *ast.Rule, key string) string {
 	for _, m := range r.Meta {
 		if m.Key == key {
