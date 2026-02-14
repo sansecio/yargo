@@ -62,7 +62,6 @@ type (
 		ruleIndex  int
 		stringName string
 		fullword   bool
-		isAtom     bool
 		regexIdx   int
 	}
 
@@ -71,7 +70,6 @@ type (
 		re         *regexp.Regexp
 		ruleIndex  int
 		stringName string
-		hasAtom    bool
 	}
 
 	// compiledRule holds the compiled form of a single YARA rule.
@@ -167,7 +165,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 		for match := iter.Next(); match != nil; match = iter.Next() {
 			ref := r.patternMap[match.Pattern()]
 
-			if ref.isAtom {
+			if ref.regexIdx >= 0 {
 				atomCandidates[ref.regexIdx] = append(atomCandidates[ref.regexIdx], match.Start())
 				continue
 			}
@@ -199,17 +197,6 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 				addMatch(ruleMatches, rp.ruleIndex, rp.stringName, matchStart, data)
 				break
 			}
-		}
-	}
-
-	for _, rp := range r.regexPatterns {
-		if rp.hasAtom {
-			continue
-		}
-		if loc := rp.re.FindIndex(buf); loc != nil {
-			data := make([]byte, loc[1]-loc[0])
-			copy(data, buf[loc[0]:loc[1]])
-			addMatch(ruleMatches, rp.ruleIndex, rp.stringName, loc[0], data)
 		}
 	}
 

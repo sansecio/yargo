@@ -96,6 +96,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 					ruleIndex:  ruleIdx,
 					stringName: s.Name,
 					fullword:   s.Modifiers.Fullword,
+					regexIdx:   -1,
 				})
 				allPatterns = append(allPatterns, p)
 			}
@@ -156,10 +157,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
 
-	rp.hasAtom = true
 	for _, atom := range atoms {
 		rules.patternMap = append(rules.patternMap, patternRef{
-			isAtom:   true,
 			regexIdx: regexIdx,
 		})
 		allPatterns = append(allPatterns, atom)
