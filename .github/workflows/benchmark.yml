@@ -16,7 +16,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run benchmarks
-        run: go test -bench=. -benchmem ./parser/ ./scanner/ | tee output.txt
+        run: go test -bench=. ./parser/ ./scanner/ | tee output.txt
       - name: Download previous benchmark data
         uses: actions/cache@v5
         with:
