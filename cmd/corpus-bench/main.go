@@ -163,18 +163,4 @@ func main() {
 	for i, t := range timings[:min(5, len(timings))] {
 		fmt.Printf("  %2d. %v %s\n", i+1, t.duration, truncName(t.path, 100))
 	}
-
-	// Profile regexes on the 5 slowest files
-	for _, t := range timings[:min(5, len(timings))] {
-		data, err := os.ReadFile(t.path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", t.path, err)
-			continue
-		}
-		rt := yargoRules.RegexProfile(data)
-		fmt.Printf("\nRegex profile for %s (%d regexes matched):\n", t.path, len(rt))
-		for i, p := range rt[:min(5, len(rt))] {
-			fmt.Printf("  %2d. %v (%d calls) rule=%s str=%s matched=%q extracted=%q re=%s\n", i+1, p.Duration, p.Calls, p.Rule, p.String, p.MatchedAtoms, p.ExtractedAtoms, p.Pattern)
-		}
-	}
 }
