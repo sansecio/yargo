@@ -579,12 +579,16 @@ func byteQuality(b byte) int {
 	if isCommonByte(b) {
 		return 12
 	}
-	// Alphabetic bytes (slightly penalized - common in text)
-	if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+	if isAlpha(b) {
 		return 18
 	}
 	// Normal bytes (most selective)
 	return 20
+}
+
+// isAlpha reports whether b is an ASCII letter.
+func isAlpha(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // isCommonByte returns true for bytes that commonly appear in web files.
