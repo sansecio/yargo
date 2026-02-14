@@ -430,22 +430,19 @@ func fixRepetition(inner string) string {
 		inner = "0" + inner
 	}
 
-	commaIdx := strings.IndexByte(inner, ',')
-	if commaIdx == -1 {
+	before, after, ok := strings.Cut(inner, ",")
+	if !ok {
 		n := parseIntCapped(inner)
 		return fmt.Sprintf("%d", n)
 	}
 
-	minStr := inner[:commaIdx]
-	maxStr := inner[commaIdx+1:]
+	minVal := parseIntCapped(before)
 
-	minVal := parseIntCapped(minStr)
-
-	if maxStr == "" {
+	if after == "" {
 		return fmt.Sprintf("%d,", minVal)
 	}
 
-	maxVal := parseIntCapped(maxStr)
+	maxVal := parseIntCapped(after)
 	return fmt.Sprintf("%d,%d", minVal, maxVal)
 }
 
