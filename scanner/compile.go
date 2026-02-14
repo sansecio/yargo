@@ -25,6 +25,8 @@ type CompileOptions struct {
 }
 
 const (
+	// maxRepetition caps quantifier repetition counts to stay within
+	// RE2's limit of 1000.
 	maxRepetition = 1000
 
 	// minAtomLength is the minimum length of atoms extracted from regexes
