@@ -127,13 +127,13 @@ func parseHexJump(s string) ast.HexJump {
 	if s == "-" {
 		return ast.HexJump{}
 	}
-	if idx := strings.Index(s, "-"); idx >= 0 {
+	if before, after, ok := strings.Cut(s, "-"); ok {
 		var jump ast.HexJump
-		if minStr := strings.TrimSpace(s[:idx]); minStr != "" {
+		if minStr := strings.TrimSpace(before); minStr != "" {
 			min, _ := strconv.Atoi(minStr)
 			jump.Min = &min
 		}
-		if maxStr := strings.TrimSpace(s[idx+1:]); maxStr != "" {
+		if maxStr := strings.TrimSpace(after); maxStr != "" {
 			max, _ := strconv.Atoi(maxStr)
 			jump.Max = &max
 		}
