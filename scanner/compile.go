@@ -22,6 +22,10 @@ type CompileOptions struct {
 	// any of the given values. Rules without a "subtype" meta or with an
 	// empty subtype value are never filtered.
 	SkipSubtypes []string
+
+	// RegexCompiler overrides the function used to compile regex patterns.
+	// When nil, defaults to go-re2's experimental.CompileLatin1.
+	RegexCompiler CompileFunc
 }
 
 const (
@@ -38,6 +42,12 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 
 // CompileWithOptions compiles an AST RuleSet with the given options.
 func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
+	if opts.RegexCompiler == nil {
+		opts.RegexCompiler = func(pattern string) (Regexp, error) {
+			return experimental.CompileLatin1(pattern)
+		}
+	}
+
 	rules := &Rules{
 		rules: make([]*compiledRule, 0, len(rs.Rules)),
 	}
@@ -128,7 +138,7 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	default:
 		return allPatterns, nil
 	}
-	compiled, err := experimental.CompileLatin1(rePattern)
+	compiled, err := opts.RegexCompiler(rePattern)
 	if err != nil {
 		if opts.SkipInvalidRegex {
 			return allPatterns, nil
