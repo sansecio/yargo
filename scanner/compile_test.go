@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/sansecio/yargo/ast"
+	"github.com/wasilibs/go-re2/experimental"
 )
 
 func TestCommaQuantifier(t *testing.T) {
@@ -155,6 +156,71 @@ func TestSkipSubtypes(t *testing.T) {
 
 func intPtr(n int) *int    { return &n }
 func bytePtr(b byte) *byte { return &b }
+
+func TestCustomRegexCompiler(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "test_regex",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.RegexString{Pattern: `file_get_contents\(base64_decode\([^)]{0,100}`}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	called := false
+	rules, err := CompileWithOptions(rs, CompileOptions{
+		RegexCompiler: func(pattern string) (Regexp, error) {
+			called = true
+			return experimental.CompileLatin1(pattern)
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompileWithOptions() error = %v", err)
+	}
+	if !called {
+		t.Fatal("custom RegexCompiler was not called")
+	}
+
+	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
+	var matches MatchRules
+	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 1 || matches[0].Rule != "test_regex" {
+		t.Errorf("expected 1 match for test_regex, got %d matches", len(matches))
+	}
+}
+
+func TestDefaultRegexCompiler(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "test_regex",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.RegexString{Pattern: `file_get_contents\(base64_decode\([^)]{0,100}`}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
+	var matches MatchRules
+	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 1 || matches[0].Rule != "test_regex" {
+		t.Errorf("expected 1 match for test_regex, got %d matches", len(matches))
+	}
+}
 
 func Test_hexStringToRegex(t *testing.T) {
 	tests := []struct {

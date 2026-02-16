@@ -10,12 +10,21 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/sansecio/yargo/ahocorasick"
-	regexp "github.com/wasilibs/go-re2"
 
 	"github.com/sansecio/yargo/ast"
 )
 
 type (
+	// Regexp is the interface for a compiled regular expression.
+	// It is satisfied by *regexp.Regexp from the standard library,
+	// go-re2, and coregex.
+	Regexp interface {
+		FindIndex(b []byte) []int
+	}
+
+	// CompileFunc compiles a regex pattern string into a Regexp.
+	CompileFunc func(string) (Regexp, error)
+
 	// ScanFlags controls scanning behavior.
 	ScanFlags int
 
@@ -67,7 +76,7 @@ type (
 
 	// regexPattern holds a compiled regex for complex regex matching.
 	regexPattern struct {
-		re         *regexp.Regexp
+		re         Regexp
 		ruleIndex  int
 		stringName string
 	}
