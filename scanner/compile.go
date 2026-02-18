@@ -47,6 +47,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			return experimental.CompileLatin1(pattern)
 		}
 	}
+	opts.RegexCompiler = recoverCompile(opts.RegexCompiler)
 
 	rules := &Rules{
 		rules: make([]*compiledRule, 0, len(rs.Rules)),
@@ -327,6 +328,20 @@ func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {
 		prefix += "(?m)"
 	}
 	return prefix + fixCommaQuantifiers(pattern)
+}
+
+// recoverCompile wraps a CompileFunc to recover from panics. go-re2's WASM
+// backend panics on internal errors (e.g. OOM during compilation) instead of
+// returning them, so we convert these to errors.
+func recoverCompile(compile CompileFunc) CompileFunc {
+	return func(pattern string) (re Regexp, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("regex compile panic: %v", r)
+			}
+		}()
+		return compile(pattern)
+	}
 }
 
 func metaValue(r *ast.Rule, key string) string {
