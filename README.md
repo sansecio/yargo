@@ -87,6 +87,7 @@ The `cmd/` directory contains comparison and benchmarking tools that require [go
 - **corpus-diff** — compares rule matches between yargo and go-yara across a file corpus
 - **freq-gen** — generates byte frequency tables for atom scoring
 - **parse-bench** — benchmarks rule parsing/compilation speed
+- **regex-bench** — benchmarks regex engine performance (go-re2, stdlib, coregex)
 
 ## Current Limitations
 
@@ -101,6 +102,7 @@ Supported:
 - Quantifiers: `any of them`, `all of them`, `any of ($prefix_*)`, `all of ($prefix_*)`
 
 Not yet supported:
+- `not`
 - `filesize`, `entrypoint`
 - String count/offset/length operators: `#a`, `@a`, `!a`
 - Numeric quantifiers: `2 of them`, `50% of them`
@@ -119,8 +121,8 @@ Not yet supported:
 
 ### Modifiers
 
-- **Supported**: `base64`, `fullword`
-- **Not yet implemented**: `wide`, `nocase`, `xor`, `base64wide`
+- **Supported**: `ascii`, `base64`, `fullword`
+- **Not yet implemented**: `wide`, `nocase`, `xor`, `base64wide`, `private`
 
 ## License
 
