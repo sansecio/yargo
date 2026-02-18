@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -156,6 +157,59 @@ func TestSkipSubtypes(t *testing.T) {
 
 func intPtr(n int) *int    { return &n }
 func bytePtr(b byte) *byte { return &b }
+
+func TestRegexCompilerPanicRecovery(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "panic_regex",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.RegexString{Pattern: `file_get_contents\(base64_decode\([^)]{0,100}`}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	_, err := CompileWithOptions(rs, CompileOptions{
+		RegexCompiler: func(pattern string) (Regexp, error) {
+			panic("wasm error: unreachable")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error from panicking compiler, got nil")
+	}
+	if !strings.Contains(err.Error(), "regex compile panic") {
+		t.Errorf("expected panic error, got: %v", err)
+	}
+}
+
+func TestRegexCompilerPanicRecoverySkipInvalid(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "panic_regex",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.RegexString{Pattern: `file_get_contents\(base64_decode\([^)]{0,100}`}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := CompileWithOptions(rs, CompileOptions{
+		SkipInvalidRegex: true,
+		RegexCompiler: func(pattern string) (Regexp, error) {
+			panic("wasm error: unreachable")
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected nil error with SkipInvalidRegex, got: %v", err)
+	}
+	if len(rules.regexPatterns) != 0 {
+		t.Errorf("expected 0 regex patterns, got %d", len(rules.regexPatterns))
+	}
+}
 
 func TestCustomRegexCompiler(t *testing.T) {
 	rs := &ast.RuleSet{
