@@ -198,7 +198,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 			start := max(0, pos-halfWindow)
 			end := min(len(buf), pos+halfWindow)
 
-			if loc := rp.re.FindIndex(buf[start:end]); loc != nil {
+			if loc := recoverFindIndex(rp.re, buf[start:end]); loc != nil {
 				matchStart := start + loc[0]
 				matchEnd := start + loc[1]
 				data := make([]byte, matchEnd-matchStart)
@@ -305,6 +305,18 @@ func addMatch(m map[int]map[string][]matchInfo, ruleIdx int, stringName string, 
 		m[ruleIdx] = make(map[string][]matchInfo)
 	}
 	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], matchInfo{pos: pos, data: data})
+}
+
+// recoverFindIndex wraps Regexp.FindIndex to recover from panics.
+// go-re2's WASM backend can panic during regex execution (e.g. OOM),
+// so we treat a panic as no match.
+func recoverFindIndex(re Regexp, b []byte) (loc []int) {
+	defer func() {
+		if r := recover(); r != nil {
+			loc = nil
+		}
+	}()
+	return re.FindIndex(b)
 }
 
 func dedupe(positions []int) []int {

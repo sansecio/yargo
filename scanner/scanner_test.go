@@ -7,7 +7,80 @@ import (
 
 	"github.com/sansecio/yargo/ast"
 	"github.com/sansecio/yargo/parser"
+	"github.com/wasilibs/go-re2/experimental"
 )
+
+type panicRegexp struct{}
+
+func (panicRegexp) FindIndex([]byte) []int {
+	panic("wasm error: unreachable")
+}
+
+func TestRecoverFindIndex(t *testing.T) {
+	re := panicRegexp{}
+	loc := recoverFindIndex(re, []byte("test"))
+	if loc != nil {
+		t.Errorf("expected nil from panicking FindIndex, got %v", loc)
+	}
+}
+
+func TestRecoverFindIndexNoPanic(t *testing.T) {
+	re, err := experimental.CompileLatin1(`test`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := recoverFindIndex(re, []byte("this is a test string"))
+	if loc == nil {
+		t.Fatal("expected match, got nil")
+	}
+	if loc[0] != 10 || loc[1] != 14 {
+		t.Errorf("expected [10 14], got %v", loc)
+	}
+}
+
+func TestRecoverFindIndexNoMatch(t *testing.T) {
+	re, err := experimental.CompileLatin1(`nothere`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := recoverFindIndex(re, []byte("this is a test string"))
+	if loc != nil {
+		t.Errorf("expected nil for no match, got %v", loc)
+	}
+}
+
+func TestScanWithPanickingFindIndex(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "panic_scan",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.RegexString{Pattern: `file_get_contents\(base64_decode\([^)]{0,100}`}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := CompileWithOptions(rs, CompileOptions{
+		RegexCompiler: func(pattern string) (Regexp, error) {
+			return panicRegexp{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// Should not panic, just silently skip the match.
+	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
+	var matches MatchRules
+	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches from panicking regex, got %d", len(matches))
+	}
+}
 
 func TestBasicStringMatch(t *testing.T) {
 	rs := &ast.RuleSet{
