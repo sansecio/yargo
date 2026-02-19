@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/sansecio/yargo/ast"
+	"github.com/wasilibs/go-re2/experimental"
 )
 
 func BenchmarkCompileStringLiterals(b *testing.B) {
@@ -193,4 +194,23 @@ func BenchmarkScanMixed(b *testing.B) {
 			b.Fatalf("ScanMem() error = %v", err)
 		}
 	}
+}
+
+func BenchmarkFindIndexRecovery(b *testing.B) {
+	re, err := experimental.CompileLatin1(`eval\s*\(`)
+	if err != nil {
+		b.Fatal(err)
+	}
+	buf := []byte("some text eval (something) more text")
+
+	b.Run("direct", func(b *testing.B) {
+		for b.Loop() {
+			re.FindIndex(buf)
+		}
+	})
+	b.Run("recover", func(b *testing.B) {
+		for b.Loop() {
+			recoverFindIndex(re, buf)
+		}
+	})
 }
