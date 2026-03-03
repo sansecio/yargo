@@ -144,7 +144,7 @@ func overlappingFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at in
 		return nil
 	}
 
-	matchCount := len(a.states[*id].matches)
+	matchCount := len(a.matches[*id])
 
 	if *matchIndex < matchCount {
 		result := a.GetMatch(*id, *matchIndex, at)
