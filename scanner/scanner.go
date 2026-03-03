@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"slices"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -74,8 +75,11 @@ type (
 		regexIdx   int
 	}
 
-	// regexPattern holds a compiled regex for complex regex matching.
+	// regexPattern holds a lazily compiled regex for complex regex matching.
 	regexPattern struct {
+		pattern    string
+		compile    CompileFunc
+		once       sync.Once
 		re         Regexp
 		ruleIndex  int
 		stringName string
@@ -192,13 +196,17 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 	halfWindow := maxMatchLen / 2
 	for regexIdx, positions := range atomCandidates {
 		rp := r.regexPatterns[regexIdx]
+		re := rp.compiled()
+		if re == nil {
+			continue
+		}
 		positions = dedupe(positions)
 
 		for _, pos := range positions {
 			start := max(0, pos-halfWindow)
 			end := min(len(buf), pos+halfWindow)
 
-			if loc := recoverFindIndex(rp.re, buf[start:end]); loc != nil {
+			if loc := recoverFindIndex(re, buf[start:end]); loc != nil {
 				matchStart := start + loc[0]
 				matchEnd := start + loc[1]
 				data := make([]byte, matchEnd-matchStart)
@@ -305,6 +313,18 @@ func addMatch(m map[int]map[string][]matchInfo, ruleIdx int, stringName string, 
 		m[ruleIdx] = make(map[string][]matchInfo)
 	}
 	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], matchInfo{pos: pos, data: data})
+}
+
+// compiled returns the compiled Regexp, compiling it on first use.
+// If compilation fails, it returns nil.
+func (rp *regexPattern) compiled() Regexp {
+	rp.once.Do(func() {
+		re, err := rp.compile(rp.pattern)
+		if err == nil {
+			rp.re = re
+		}
+	})
+	return rp.re
 }
 
 // recoverFindIndex wraps Regexp.FindIndex to recover from panics.

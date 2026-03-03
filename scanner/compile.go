@@ -139,14 +139,6 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	default:
 		return allPatterns, nil
 	}
-	compiled, err := opts.RegexCompiler(rePattern)
-	if err != nil {
-		if opts.SkipInvalidRegex {
-			return allPatterns, nil
-		}
-		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
-	}
-
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
 	requiresFullScan := !hasAtoms || caseInsensitive
 	if requiresFullScan {
@@ -157,7 +149,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	}
 
 	rp := &regexPattern{
-		re:         compiled,
+		pattern:    rePattern,
+		compile:    opts.RegexCompiler,
 		ruleIndex:  ruleIdx,
 		stringName: s.Name,
 	}

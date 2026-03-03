@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -171,16 +170,23 @@ func TestRegexCompilerPanicRecovery(t *testing.T) {
 		},
 	}
 
-	_, err := CompileWithOptions(rs, CompileOptions{
+	rules, err := CompileWithOptions(rs, CompileOptions{
 		RegexCompiler: func(pattern string) (Regexp, error) {
 			panic("wasm error: unreachable")
 		},
 	})
-	if err == nil {
-		t.Fatal("expected error from panicking compiler, got nil")
+	if err != nil {
+		t.Fatalf("expected nil error with lazy compilation, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "regex compile panic") {
-		t.Errorf("expected panic error, got: %v", err)
+
+	// Scanning should gracefully handle the panicking compiler (no match, no crash).
+	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
+	var matches MatchRules
+	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches from panicking compiler, got %d", len(matches))
 	}
 }
 
@@ -206,8 +212,16 @@ func TestRegexCompilerPanicRecoverySkipInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error with SkipInvalidRegex, got: %v", err)
 	}
-	if len(rules.regexPatterns) != 0 {
-		t.Errorf("expected 0 regex patterns, got %d", len(rules.regexPatterns))
+
+	// Regex patterns are still registered (lazy compilation), but scanning
+	// should gracefully handle the panicking compiler.
+	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
+	var matches MatchRules
+	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches from panicking compiler, got %d", len(matches))
 	}
 }
 
@@ -234,14 +248,17 @@ func TestCustomRegexCompiler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompileWithOptions() error = %v", err)
 	}
-	if !called {
-		t.Fatal("custom RegexCompiler was not called")
+	if called {
+		t.Fatal("custom RegexCompiler should not be called at compile time (lazy)")
 	}
 
 	input := []byte(`file_get_contents(base64_decode("dGVzdA=="))`)
 	var matches MatchRules
 	if err := rules.ScanMem(input, 0, 10*time.Second, &matches); err != nil {
 		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if !called {
+		t.Fatal("custom RegexCompiler was not called during scan")
 	}
 	if len(matches) != 1 || matches[0].Rule != "test_regex" {
 		t.Errorf("expected 1 match for test_regex, got %d matches", len(matches))
