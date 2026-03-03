@@ -6,6 +6,8 @@ type iNFA struct {
 	prefil        *prefilter
 	anchored      bool
 	states        []state
+	denseTable    []stateID
+	matches       map[stateID][]pattern
 	matchBitset   []uint64
 }
 
@@ -15,12 +17,59 @@ func (n *iNFA) hasMatch(id stateID) bool {
 
 func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
 	for {
-		state := &n.states[id]
-		next := state.nextState(b)
+		next := n.nextState(id, b)
 		if next != failedStateID {
 			return next
 		}
-		id = state.fail
+		id = n.states[id].fail
+	}
+}
+
+func (n *iNFA) nextState(id stateID, input byte) stateID {
+	s := &n.states[id]
+	if s.dense >= 0 {
+		return n.denseTable[int(s.dense)+int(input)]
+	}
+	lo, hi := 0, len(s.sparse)
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if s.sparse[mid].b < input {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	if lo < len(s.sparse) && s.sparse[lo].b == input {
+		return s.sparse[lo].s
+	}
+	return failedStateID
+}
+
+func (n *iNFA) setNextState(id stateID, input byte, next stateID) {
+	s := &n.states[id]
+	if s.dense >= 0 {
+		n.denseTable[int(s.dense)+int(input)] = next
+		return
+	}
+	lo, hi := 0, len(s.sparse)
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if s.sparse[mid].b < input {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	if lo < len(s.sparse) && s.sparse[lo].b == input {
+		s.sparse[lo].s = next
+	} else {
+		is := innerSparse{b: input, s: next}
+		if lo == len(s.sparse) {
+			s.sparse = append(s.sparse, is)
+		} else {
+			s.sparse = append(s.sparse[:lo+1], s.sparse[lo:]...)
+			s.sparse[lo] = is
+		}
 	}
 }
 
@@ -29,19 +78,23 @@ func (n *iNFA) MaxPatternLen() int {
 }
 
 func (n *iNFA) GetMatch(id stateID, matchIndex int, end int) *Match {
-	if int(id) >= len(n.states) {
+	m := n.matches[id]
+	if matchIndex >= len(m) {
 		return nil
 	}
-	state := &n.states[id]
-	if matchIndex >= len(state.matches) {
-		return nil
-	}
-	pat := state.matches[matchIndex]
+	pat := m[matchIndex]
 	return &Match{
 		pattern: pat.PatternID,
 		len:     pat.PatternLength,
 		end:     end,
 	}
+}
+
+func (n *iNFA) addMatch(id stateID, patternID, patternLength int) {
+	n.matches[id] = append(n.matches[id], pattern{
+		PatternID:     patternID,
+		PatternLength: patternLength,
+	})
 }
 
 func (n *iNFA) addDenseState() stateID {
@@ -52,10 +105,11 @@ func (n *iNFA) addDenseState() stateID {
 		fail = deadStateID
 	}
 
+	denseIdx := int32(len(n.denseTable))
+	n.denseTable = append(n.denseTable, make([]stateID, 256)...)
 	n.states = append(n.states, state{
-		trans:   transitions{dense: make([]stateID, 256)},
-		fail:    fail,
-		matches: nil,
+		fail:  fail,
+		dense: denseIdx,
 	})
 	return id
 }
@@ -69,15 +123,10 @@ func (n *iNFA) addSparseState() stateID {
 	}
 
 	n.states = append(n.states, state{
-		trans:   transitions{},
-		fail:    fail,
-		matches: nil,
+		fail:  fail,
+		dense: -1,
 	})
 	return id
-}
-
-func (n *iNFA) state(id stateID) *state {
-	return &n.states[int(id)]
 }
 
 type compiler struct {
@@ -91,7 +140,9 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	for _, pat := range patterns {
 		totalBytes += len(pat)
 	}
-	c.nfa.states = make([]state, 0, 3+totalBytes)
+	// Trie prefix sharing means actual states ≈ 2/3 of totalBytes.
+	// 3/4 gives headroom to avoid reallocations while using 25% less memory.
+	c.nfa.states = make([]state, 0, max(256, totalBytes*3/4))
 
 	c.addState(0)
 	c.addState(0)
@@ -112,10 +163,8 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	}
 
 	c.nfa.matchBitset = make([]uint64, (len(c.nfa.states)+63)/64)
-	for i, s := range c.nfa.states {
-		if len(s.matches) > 0 {
-			c.nfa.matchBitset[uint(i)/64] |= 1 << (uint(i) % 64)
-		}
+	for id := range c.nfa.matches {
+		c.nfa.matchBitset[uint(id)/64] |= 1 << (uint(id) % 64)
 	}
 
 	return &c.nfa
@@ -124,11 +173,9 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 func (c *compiler) closeStartStateLoop() {
 	if c.builder.anchored {
 		startId := c.nfa.startID
-		start := c.nfa.state(startId)
-
 		for b := range 256 {
-			if start.nextState(byte(b)) == startId {
-				start.setNextState(byte(b), deadStateID)
+			if c.nfa.nextState(startId, byte(b)) == startId {
+				c.nfa.setNextState(startId, byte(b), deadStateID)
 			}
 		}
 	}
@@ -139,7 +186,7 @@ func (c *compiler) fillFailureTransitionsStandard() {
 	seen := c.queuedSet()
 
 	for b := range 256 {
-		next := c.nfa.state(c.nfa.startID).nextState(byte(b))
+		next := c.nfa.nextState(c.nfa.startID, byte(b))
 		if next != c.nfa.startID {
 			if !seen.contains(next) {
 				queue = append(queue, next)
@@ -160,14 +207,12 @@ func (c *compiler) fillFailureTransitionsStandard() {
 			queue = append(queue, tr.id)
 			seen.insert(tr.id)
 
-			fail := it.nfa.state(id).fail
-			failState := it.nfa.state(fail)
-			for failState.nextState(tr.key) == failedStateID {
-				fail = failState.fail
-				failState = it.nfa.state(fail)
+			fail := it.nfa.states[id].fail
+			for it.nfa.nextState(fail, tr.key) == failedStateID {
+				fail = it.nfa.states[fail].fail
 			}
-			fail = failState.nextState(tr.key)
-			it.nfa.state(tr.id).fail = fail
+			fail = it.nfa.nextState(fail, tr.key)
+			it.nfa.states[tr.id].fail = fail
 			it.nfa.copyMatches(fail, tr.id)
 		}
 		it.nfa.copyEmptyMatches(id)
@@ -179,33 +224,24 @@ func (n *iNFA) copyEmptyMatches(dst stateID) {
 }
 
 func (n *iNFA) copyMatches(src stateID, dst stateID) {
-	if len(n.states[src].matches) == 0 {
+	srcMatches := n.matches[src]
+	if len(srcMatches) == 0 {
 		return
 	}
-	srcState, dstState := n.getTwo(src, dst)
-	dstState.matches = append(dstState.matches, srcState.matches...)
-}
-
-func (n *iNFA) getTwo(i stateID, j stateID) (*state, *state) {
-	if i == j {
-		panic("src and dst should not be equal")
-	}
-
-	if i < j {
-		before, after := n.states[0:j], n.states[j:]
-		return &before[i], &after[0]
-	}
-
-	before, after := n.states[0:i], n.states[i:]
-	return &after[0], &before[j]
+	n.matches[dst] = append(n.matches[dst], srcMatches...)
 }
 
 func newIterTransitions(nfa *iNFA, stateId stateID) iterTransitions {
-	trans := &nfa.states[int(stateId)].trans
+	s := &nfa.states[int(stateId)]
+	var dense []stateID
+	if s.dense >= 0 {
+		off := int(s.dense)
+		dense = nfa.denseTable[off : off+256]
+	}
 	return iterTransitions{
 		nfa:    nfa,
-		sparse: trans.sparse,
-		dense:  trans.dense,
+		sparse: s.sparse,
+		dense:  dense,
 		cur:    0,
 	}
 }
@@ -284,18 +320,16 @@ func (c *compiler) queuedSet() queuedSet {
 
 func (c *compiler) addStartStateLoop() {
 	startId := c.nfa.startID
-	start := c.nfa.state(startId)
 	for b := range 256 {
-		if start.nextState(byte(b)) == failedStateID {
-			start.setNextState(byte(b), startId)
+		if c.nfa.nextState(startId, byte(b)) == failedStateID {
+			c.nfa.setNextState(startId, byte(b), startId)
 		}
 	}
 }
 
 func (c *compiler) addDeadStateLoop() {
-	dead := c.nfa.state(deadStateID)
 	for b := range 256 {
-		dead.setNextState(byte(b), deadStateID)
+		c.nfa.setNextState(deadStateID, byte(b), deadStateID)
 	}
 }
 
@@ -306,17 +340,17 @@ func (c *compiler) buildTrie(patterns [][]byte) {
 		prev := c.nfa.startID
 
 		for depth, b := range pat {
-			next := c.nfa.state(prev).nextState(b)
+			next := c.nfa.nextState(prev, b)
 
 			if next != failedStateID {
 				prev = next
 			} else {
 				next := c.addState(depth + 1)
-				c.nfa.state(prev).setNextState(b, next)
+				c.nfa.setNextState(prev, b, next)
 				prev = next
 			}
 		}
-		c.nfa.state(prev).addMatch(pati, len(pat))
+		c.nfa.addMatch(prev, pati, len(pat))
 
 		if c.builder.prefilter {
 			c.prefilter.add(pat)
@@ -342,7 +376,7 @@ func newCompiler(builder iNFABuilder) compiler {
 			maxPatternLen: 0,
 			prefil:        nil,
 			anchored:      builder.anchored,
-			states:        nil,
+			matches:       make(map[stateID][]pattern),
 		},
 	}
 }
@@ -372,81 +406,9 @@ type pattern struct {
 }
 
 type state struct {
-	trans   transitions
-	fail    stateID
-	matches []pattern
-}
-
-func (s *state) addMatch(patternID, patternLength int) {
-	s.matches = append(s.matches, pattern{
-		PatternID:     patternID,
-		PatternLength: patternLength,
-	})
-}
-
-func (s *state) nextState(input byte) stateID {
-	return s.trans.nextState(input)
-}
-
-func (s *state) setNextState(input byte, next stateID) {
-	s.trans.setNextState(input, next)
-}
-
-type transitions struct {
 	sparse []innerSparse
-	dense  []stateID
-}
-
-func (t *transitions) nextState(input byte) stateID {
-	if t.dense == nil {
-		lo, hi := 0, len(t.sparse)
-		for lo < hi {
-			mid := lo + (hi-lo)/2
-			if t.sparse[mid].b < input {
-				lo = mid + 1
-			} else {
-				hi = mid
-			}
-		}
-		if lo < len(t.sparse) && t.sparse[lo].b == input {
-			return t.sparse[lo].s
-		}
-		return failedStateID
-	}
-	return t.dense[input]
-}
-
-func (t *transitions) setNextState(input byte, next stateID) {
-	if t.dense == nil {
-		lo, hi := 0, len(t.sparse)
-		for lo < hi {
-			mid := lo + (hi-lo)/2
-			if t.sparse[mid].b < input {
-				lo = mid + 1
-			} else {
-				hi = mid
-			}
-		}
-
-		if lo < len(t.sparse) && t.sparse[lo].b == input {
-			t.sparse[lo].s = next
-		} else {
-			is := innerSparse{
-				b: input,
-				s: next,
-			}
-			if lo == len(t.sparse) {
-				t.sparse = append(t.sparse, is)
-			} else {
-				t.sparse = append(
-					t.sparse[:lo+1],
-					t.sparse[lo:]...)
-				t.sparse[lo] = is
-			}
-		}
-		return
-	}
-	t.dense[int(input)] = next
+	fail   stateID
+	dense  int32
 }
 
 type innerSparse struct {
