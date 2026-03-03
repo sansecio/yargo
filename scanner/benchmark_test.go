@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,28 +10,23 @@ import (
 )
 
 func BenchmarkCompileStringLiterals(b *testing.B) {
-	rs := &ast.RuleSet{
-		Rules: []*ast.Rule{
-			{
-				Name: "rule1",
-				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.TextString{Value: "malware"}},
-					{Name: "$b", Value: ast.TextString{Value: "virus"}},
-					{Name: "$c", Value: ast.TextString{Value: "trojan"}},
-				},
-				Condition: ast.AnyOf{Pattern: "them"},
-			},
-			{
-				Name: "rule2",
-				Strings: []*ast.StringDef{
-					{Name: "$a", Value: ast.TextString{Value: "eval("}},
-					{Name: "$b", Value: ast.TextString{Value: "base64_decode"}},
-					{Name: "$c", Value: ast.TextString{Value: "exec("}},
-				},
-				Condition: ast.AnyOf{Pattern: "them"},
-			},
-		},
+	// 50 rules × 5 strings = 250 patterns, representative of a real ruleset.
+	rules := make([]*ast.Rule, 50)
+	for i := range rules {
+		strs := make([]*ast.StringDef, 5)
+		for j := range strs {
+			strs[j] = &ast.StringDef{
+				Name:  fmt.Sprintf("$s%d", j),
+				Value: ast.TextString{Value: fmt.Sprintf("pattern_rule%d_str%d", i, j)},
+			}
+		}
+		rules[i] = &ast.Rule{
+			Name:      fmt.Sprintf("rule%d", i),
+			Strings:   strs,
+			Condition: ast.AnyOf{Pattern: "them"},
+		}
 	}
+	rs := &ast.RuleSet{Rules: rules}
 
 	for b.Loop() {
 		_, err := Compile(rs)
