@@ -3,6 +3,7 @@ name: Benchmark
 on:
   push:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: write
@@ -21,7 +22,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./cache
-          key: ${{ runner.os }}-benchmark
+          key: ${{ runner.os }}-benchmark-v2
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
