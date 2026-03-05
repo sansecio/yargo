@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	yarax "github.com/VirusTotal/yara-x/go"
 	yara "github.com/hillu/go-yara/v4"
 	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
@@ -91,6 +92,14 @@ func main() {
 	}
 	fmt.Printf("Compiled %d go-yara rules\n", len(goYaraRules.GetRules()))
 
+	// Compile yara-x rules
+	yaraXRules, err := internal.YaraXRules(yaraFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error compiling yara-x rules: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Compiled %d yara-x rules\n", yaraXRules.Count())
+
 	// Compile yargo rules (suppress absl/RE2 stderr noise)
 	yargoRules, err := internal.YargoRules(yaraFile)
 	if err != nil {
@@ -114,6 +123,24 @@ func main() {
 	}
 	fmt.Fprint(os.Stderr, "\r\033[K")
 	goYaraDuration := time.Since(start)
+
+	// Benchmark yara-x
+	yaraXScanner := yarax.NewScanner(yaraXRules)
+	yaraXScanner.SetTimeout(30 * time.Second)
+	start = time.Now()
+	var yaraXMatches int
+	for r := range *repeat {
+		for i, file := range files {
+			fmt.Fprintf(os.Stderr, "\ryara-x [%d/%d]: %d/%d %s\033[K", r+1, *repeat, i+1, len(files), truncName(file.path, 100))
+			results, err := yaraXScanner.Scan(file.data)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\nyara-x error scanning %s: %v\n", file.path, err)
+			}
+			yaraXMatches += len(results.MatchingRules())
+		}
+	}
+	fmt.Fprint(os.Stderr, "\r\033[K")
+	yaraXDuration := time.Since(start)
 
 	// Benchmark yargo
 	if *cpuprofile != "" {
@@ -153,8 +180,10 @@ func main() {
 	}
 
 	fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, goYaraMatches)
+	fmt.Printf("yara-x:              %v (%d matches)\n", yaraXDuration, yaraXMatches)
 	fmt.Printf("yargo:               %v (%d matches)\n", yargoDuration, yargoMatches)
 	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
+	fmt.Printf("yargo/yara-x ratio:  %.2fx\n", float64(yargoDuration)/float64(yaraXDuration))
 
 	slices.SortFunc(timings, func(a, b fileTiming) int {
 		return cmp.Compare(b.duration, a.duration)
