@@ -88,11 +88,11 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		}
 		rules.rules = append(rules.rules, cr)
 
-		for _, s := range r.Strings {
+		for si, s := range r.Strings {
 			patterns, isRegex := generatePatterns(s)
 			if isRegex {
 				var err error
-				allPatterns, err = compileRegex(rules, s, r.Name, ruleIdx, allPatterns, opts)
+				allPatterns, err = compileRegex(rules, s, si, r.Name, ruleIdx, allPatterns, opts)
 				if err != nil {
 					errs = append(errs, err)
 				}
@@ -100,10 +100,10 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			}
 			for _, p := range patterns {
 				rules.patternMap = append(rules.patternMap, patternRef{
-					ruleIndex:  ruleIdx,
-					stringName: s.Name,
-					fullword:   s.Modifiers.Fullword,
-					regexIdx:   -1,
+					ruleIndex:   ruleIdx,
+					stringIndex: si,
+					fullword:    s.Modifiers.Fullword,
+					regexIdx:    -1,
 				})
 				allPatterns = append(allPatterns, p)
 			}
@@ -125,7 +125,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	return rules, nil
 }
 
-func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, allPatterns [][]byte, opts CompileOptions) ([][]byte, error) {
+func compileRegex(rules *Rules, s *ast.StringDef, stringIndex int, ruleName string, ruleIdx int, allPatterns [][]byte, opts CompileOptions) ([][]byte, error) {
 	var rePattern string
 	var caseInsensitive bool
 
@@ -149,10 +149,10 @@ func compileRegex(rules *Rules, s *ast.StringDef, ruleName string, ruleIdx int, 
 	}
 
 	rp := &regexPattern{
-		pattern:    rePattern,
-		compile:    opts.RegexCompiler,
-		ruleIndex:  ruleIdx,
-		stringName: s.Name,
+		pattern:     rePattern,
+		compile:     opts.RegexCompiler,
+		ruleIndex:   ruleIdx,
+		stringIndex: stringIndex,
 	}
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)

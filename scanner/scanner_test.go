@@ -1308,6 +1308,103 @@ func TestAllOfThemCondition(t *testing.T) {
 	}
 }
 
+func TestAllOfThemAnonymousStrings(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "all_anon",
+				Strings: []*ast.StringDef{
+					{Name: "$", Value: ast.TextString{Value: "foo"}},
+					{Name: "$", Value: ast.TextString{Value: "bar"}},
+					{Name: "$", Value: ast.TextString{Value: "baz"}},
+				},
+				Condition: ast.AllOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// All three present: should match
+	data := []byte("foo bar baz")
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 1 {
+		t.Errorf("expected 1 match when all strings present, got %d", len(matches))
+	}
+
+	// Only one present: must NOT match
+	data2 := []byte("foo only")
+	var matches2 MatchRules
+	err = rules.ScanMem(data2, 0, time.Second, &matches2)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches2) != 0 {
+		t.Errorf("expected 0 matches when only one anonymous string present, got %d", len(matches2))
+	}
+
+	// Two of three present: must NOT match
+	data3 := []byte("foo bar")
+	var matches3 MatchRules
+	err = rules.ScanMem(data3, 0, time.Second, &matches3)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches3) != 0 {
+		t.Errorf("expected 0 matches when only 2 of 3 anonymous strings present, got %d", len(matches3))
+	}
+}
+
+func TestAnyOfThemAnonymousStrings(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "any_anon",
+				Strings: []*ast.StringDef{
+					{Name: "$", Value: ast.TextString{Value: "foo"}},
+					{Name: "$", Value: ast.TextString{Value: "bar"}},
+					{Name: "$", Value: ast.TextString{Value: "baz"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	// One present: should match
+	data := []byte("bar only")
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches) != 1 {
+		t.Errorf("expected 1 match when one anonymous string present, got %d", len(matches))
+	}
+
+	// None present: must NOT match
+	data2 := []byte("none here")
+	var matches2 MatchRules
+	err = rules.ScanMem(data2, 0, time.Second, &matches2)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+	if len(matches2) != 0 {
+		t.Errorf("expected 0 matches when no anonymous string present, got %d", len(matches2))
+	}
+}
+
 func TestNoWarningForSupportedCondition(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{

@@ -66,20 +66,20 @@ type (
 type (
 	// patternRef maps a pattern index back to its source rule and string.
 	patternRef struct {
-		ruleIndex  int
-		stringName string
-		fullword   bool
-		regexIdx   int
+		ruleIndex   int
+		stringIndex int
+		fullword    bool
+		regexIdx    int
 	}
 
 	// regexPattern holds a lazily compiled regex for complex regex matching.
 	regexPattern struct {
-		pattern    string
-		compile    CompileFunc
-		once       sync.Once
-		re         Regexp
-		ruleIndex  int
-		stringName string
+		pattern     string
+		compile     CompileFunc
+		once        sync.Once
+		re          Regexp
+		ruleIndex   int
+		stringIndex int
 	}
 
 	// compiledRule holds the compiled form of a single YARA rule.
@@ -165,9 +165,9 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 }
 
 // collectMatches runs AC matching, atom-based regex verification, and full-scan
-// regex to collect all match positions per rule and string.
-func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
-	ruleMatches := make(map[int]map[string][]matchInfo)
+// regex to collect all match positions per rule and string index.
+func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
+	ruleMatches := make(map[int]map[int][]matchInfo)
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
@@ -186,7 +186,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 
 			data := make([]byte, match.End()-match.Start())
 			copy(data, buf[match.Start():match.End()])
-			addMatch(ruleMatches, ref.ruleIndex, ref.stringName, match.Start(), data)
+			addMatch(ruleMatches, ref.ruleIndex, ref.stringIndex, match.Start(), data)
 		}
 	}
 
@@ -208,7 +208,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 				matchEnd := start + loc[1]
 				data := make([]byte, matchEnd-matchStart)
 				copy(data, buf[matchStart:matchEnd])
-				addMatch(ruleMatches, rp.ruleIndex, rp.stringName, matchStart, data)
+				addMatch(ruleMatches, rp.ruleIndex, rp.stringIndex, matchStart, data)
 				break
 			}
 		}
@@ -219,7 +219,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[string][]matchInfo {
 
 // evaluateRules evaluates conditions for rules with matches, invokes the
 // callback for matching rules, and handles abort/timeout.
-func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[int]map[string][]matchInfo, cb ScanCallback) error {
+func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[int]map[int][]matchInfo, cb ScanCallback) error {
 	ruleIndices := make([]int, 0, len(ruleMatches))
 	for ruleIdx := range ruleMatches {
 		ruleIndices = append(ruleIndices, ruleIdx)
@@ -236,13 +236,13 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[i
 
 		cr := r.rules[ruleIdx]
 
-		matchPositions := make(map[string][]int, len(matchedStrings))
-		for name, infos := range matchedStrings {
+		matchPositions := make(map[int][]int, len(matchedStrings))
+		for idx, infos := range matchedStrings {
 			positions := make([]int, len(infos))
 			for i, info := range infos {
 				positions[i] = info.pos
 			}
-			matchPositions[name] = positions
+			matchPositions[idx] = positions
 		}
 
 		evalCtx := &evalContext{
@@ -255,7 +255,8 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[i
 		}
 
 		strings := make([]MatchString, 0, len(matchedStrings))
-		for name, infos := range matchedStrings {
+		for idx, infos := range matchedStrings {
+			name := cr.stringNames[idx]
 			for _, info := range infos {
 				strings = append(strings, MatchString{Name: name, Data: info.data})
 			}
@@ -285,11 +286,11 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, ruleMatches map[i
 //
 // See scanfile_unix.go, scanfile_windows.go, and scanfile_js.go.
 
-func addMatch(m map[int]map[string][]matchInfo, ruleIdx int, stringName string, pos int, data []byte) {
+func addMatch(m map[int]map[int][]matchInfo, ruleIdx int, stringIndex int, pos int, data []byte) {
 	if m[ruleIdx] == nil {
-		m[ruleIdx] = make(map[string][]matchInfo)
+		m[ruleIdx] = make(map[int][]matchInfo)
 	}
-	m[ruleIdx][stringName] = append(m[ruleIdx][stringName], matchInfo{pos: pos, data: data})
+	m[ruleIdx][stringIndex] = append(m[ruleIdx][stringIndex], matchInfo{pos: pos, data: data})
 }
 
 // compiled returns the compiled Regexp, compiling it on first use.
