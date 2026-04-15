@@ -2,6 +2,7 @@
 package scanner
 
 import (
+	"bytes"
 	"context"
 	"slices"
 	"sync"
@@ -55,11 +56,14 @@ type (
 
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
-		rules         []*compiledRule
-		matcher       *ahocorasick.AhoCorasick
-		patterns      [][]byte
-		patternMap    []patternRef
-		regexPatterns []*regexPattern
+		rules            []*compiledRule
+		matcher          *ahocorasick.AhoCorasick
+		patterns         [][]byte
+		patternMap       []patternRef
+		nocaseMatcher    *ahocorasick.AhoCorasick
+		nocasePatterns   [][]byte
+		nocasePatternMap []patternRef
+		regexPatterns    []*regexPattern
 	}
 )
 
@@ -126,7 +130,7 @@ func (m *MatchRules) RuleMatching(r *MatchRule) (abort bool, err error) {
 
 // Stats returns compilation statistics.
 func (r *Rules) Stats() (acPatterns, regexPatterns int) {
-	return len(r.patterns), len(r.regexPatterns)
+	return len(r.patterns) + len(r.nocasePatterns), len(r.regexPatterns)
 }
 
 // NumRules returns the number of compiled rules.
@@ -153,7 +157,7 @@ func checkWordBoundary(buf []byte, start, end int) bool {
 
 // ScanMem scans a byte buffer for matching rules.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
-	if r.matcher == nil && len(r.regexPatterns) == 0 {
+	if r.matcher == nil && r.nocaseMatcher == nil && len(r.regexPatterns) == 0 {
 		return nil
 	}
 
@@ -179,6 +183,23 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 				atomCandidates[ref.regexIdx] = append(atomCandidates[ref.regexIdx], match.Start())
 				continue
 			}
+
+			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
+				continue
+			}
+
+			data := make([]byte, match.End()-match.Start())
+			copy(data, buf[match.Start():match.End()])
+			addMatch(ruleMatches, ref.ruleIndex, ref.stringIndex, match.Start(), data)
+		}
+	}
+
+	// run nocase AC matcher on a lowercased copy of the buffer
+	if r.nocaseMatcher != nil {
+		bufLower := bytes.ToLower(buf)
+		iter := r.nocaseMatcher.IterOverlappingByte(bufLower)
+		for match := iter.Next(); match != nil; match = iter.Next() {
+			ref := r.nocasePatternMap[match.Pattern()]
 
 			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
 				continue

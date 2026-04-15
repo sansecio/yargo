@@ -521,6 +521,194 @@ func TestFullwordModifier(t *testing.T) {
 	}
 }
 
+func TestNocaseModifier(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "nocase_test",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "evil.com"},
+						Modifiers: ast.StringModifiers{Nocase: true},
+					},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"lowercase", []byte("visit evil.com today"), true},
+		{"uppercase", []byte("visit EVIL.COM today"), true},
+		{"mixed_case", []byte("visit Evil.Com today"), true},
+		{"random_case", []byte("visit eViL.cOm today"), true},
+		{"no_match", []byte("visit good.com today"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNocaseFullword(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "nocase_fullword_test",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "evil.com"},
+						Modifiers: ast.StringModifiers{Nocase: true, Fullword: true},
+					},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"lowercase_fullword", []byte("visit evil.com today"), true},
+		{"uppercase_fullword", []byte("visit EVIL.COM today"), true},
+		{"mixed_fullword", []byte("visit Evil.Com today"), true},
+		{"embedded_no_match", []byte("notevil.comstuff"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNocaseWithCaseSensitiveRule(t *testing.T) {
+	// ensure nocase doesn't affect case-sensitive rules in the same ruleset
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name: "case_sensitive",
+				Strings: []*ast.StringDef{
+					{Name: "$s", Value: ast.TextString{Value: "secret"}},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+			{
+				Name: "case_insensitive",
+				Strings: []*ast.StringDef{
+					{
+						Name:      "$s",
+						Value:     ast.TextString{Value: "password"},
+						Modifiers: ast.StringModifiers{Nocase: true},
+					},
+				},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	data := []byte("PASSWORD but no SECRET here")
+	var matches MatchRules
+	err = rules.ScanMem(data, 0, time.Second, &matches)
+	if err != nil {
+		t.Fatalf("ScanMem() error = %v", err)
+	}
+
+	// only "case_insensitive" should match (PASSWORD matches password nocase)
+	// "case_sensitive" should NOT match (no lowercase "secret")
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d: %v", len(matches), matches)
+	}
+	if matches[0].Rule != "case_insensitive" {
+		t.Errorf("expected case_insensitive rule, got %q", matches[0].Rule)
+	}
+}
+
+func TestNocaseEndToEnd(t *testing.T) {
+	rule := `rule test_nocase {
+		strings:
+			$ = "ApexPulse.org" fullword nocase
+		condition: any of them
+	}`
+	p := parser.New()
+	rs, err := p.Parse(rule)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"original_case", []byte("visit ApexPulse.org now"), true},
+		{"lowercase", []byte("visit apexpulse.org now"), true},
+		{"uppercase", []byte("visit APEXPULSE.ORG now"), true},
+		{"random_case", []byte("visit aPeXpUlSe.OrG now"), true},
+		{"no_match", []byte("visit example.org now"), false},
+		{"fullword_boundary", []byte("notapexpulse.org"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := len(matches) > 0
+			if got != tt.want {
+				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFullwordWithMultipleMatches(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{

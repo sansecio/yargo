@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -54,6 +55,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	var allPatterns [][]byte
+	var nocasePatterns [][]byte
 	var errs []error
 	ruleIdx := 0
 
@@ -99,13 +101,19 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				continue
 			}
 			for _, p := range patterns {
-				rules.patternMap = append(rules.patternMap, patternRef{
+				ref := patternRef{
 					ruleIndex:   ruleIdx,
 					stringIndex: si,
 					fullword:    s.Modifiers.Fullword,
 					regexIdx:    -1,
-				})
-				allPatterns = append(allPatterns, p)
+				}
+				if s.Modifiers.Nocase {
+					rules.nocasePatternMap = append(rules.nocasePatternMap, ref)
+					nocasePatterns = append(nocasePatterns, p)
+				} else {
+					rules.patternMap = append(rules.patternMap, ref)
+					allPatterns = append(allPatterns, p)
+				}
 			}
 		}
 		ruleIdx++
@@ -120,6 +128,13 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		builder := ahocorasick.NewAhoCorasickBuilder()
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
+	}
+
+	rules.nocasePatterns = nocasePatterns
+	if len(nocasePatterns) > 0 {
+		builder := ahocorasick.NewAhoCorasickBuilder()
+		ac := builder.BuildByte(nocasePatterns)
+		rules.nocaseMatcher = &ac
 	}
 
 	return rules, nil
@@ -171,6 +186,9 @@ func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
 	case ast.TextString:
 		if s.Modifiers.Base64 {
 			return generateBase64Patterns([]byte(v.Value)), false
+		}
+		if s.Modifiers.Nocase {
+			return [][]byte{bytes.ToLower([]byte(v.Value))}, false
 		}
 		return [][]byte{[]byte(v.Value)}, false
 	case ast.RegexString:
