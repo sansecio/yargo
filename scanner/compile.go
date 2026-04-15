@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -55,7 +54,6 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	var allPatterns [][]byte
-	var nocasePatterns [][]byte
 	var errs []error
 	ruleIdx := 0
 
@@ -101,18 +99,16 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				continue
 			}
 			for _, p := range patterns {
-				ref := patternRef{
+				rules.patternMap = append(rules.patternMap, patternRef{
 					ruleIndex:   ruleIdx,
 					stringIndex: si,
 					fullword:    s.Modifiers.Fullword,
+					nocase:      s.Modifiers.Nocase,
 					regexIdx:    -1,
-				}
+				})
+				allPatterns = append(allPatterns, p)
 				if s.Modifiers.Nocase {
-					rules.nocasePatternMap = append(rules.nocasePatternMap, ref)
-					nocasePatterns = append(nocasePatterns, p)
-				} else {
-					rules.patternMap = append(rules.patternMap, ref)
-					allPatterns = append(allPatterns, p)
+					rules.hasNocase = true
 				}
 			}
 		}
@@ -123,18 +119,23 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		return nil, errors.Join(errs...)
 	}
 
+	if rules.hasNocase {
+		// keep originals for case-sensitive verification during scan
+		rules.origPatterns = make([][]byte, len(allPatterns))
+		copy(rules.origPatterns, allPatterns)
+
+		// lowercase all patterns so a single AC pass on lowercased buffer
+		// finds both case-sensitive and nocase matches
+		for i, p := range allPatterns {
+			allPatterns[i] = toLowerASCII(p)
+		}
+	}
+
 	rules.patterns = allPatterns
 	if len(allPatterns) > 0 {
 		builder := ahocorasick.NewAhoCorasickBuilder()
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
-	}
-
-	rules.nocasePatterns = nocasePatterns
-	if len(nocasePatterns) > 0 {
-		builder := ahocorasick.NewAhoCorasickBuilder()
-		ac := builder.BuildByte(nocasePatterns)
-		rules.nocaseMatcher = &ac
 	}
 
 	return rules, nil
@@ -186,9 +187,6 @@ func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
 	case ast.TextString:
 		if s.Modifiers.Base64 {
 			return generateBase64Patterns([]byte(v.Value)), false
-		}
-		if s.Modifiers.Nocase {
-			return [][]byte{bytes.ToLower([]byte(v.Value))}, false
 		}
 		return [][]byte{[]byte(v.Value)}, false
 	case ast.RegexString:

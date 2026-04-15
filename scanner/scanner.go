@@ -2,7 +2,6 @@
 package scanner
 
 import (
-	"bytes"
 	"context"
 	"slices"
 	"sync"
@@ -56,14 +55,13 @@ type (
 
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
-		rules            []*compiledRule
-		matcher          *ahocorasick.AhoCorasick
-		patterns         [][]byte
-		patternMap       []patternRef
-		nocaseMatcher    *ahocorasick.AhoCorasick
-		nocasePatterns   [][]byte
-		nocasePatternMap []patternRef
-		regexPatterns    []*regexPattern
+		rules        []*compiledRule
+		matcher      *ahocorasick.AhoCorasick
+		patterns     [][]byte
+		patternMap   []patternRef
+		origPatterns [][]byte // original (non-lowered) patterns, set only when hasNocase
+		hasNocase    bool
+		regexPatterns []*regexPattern
 	}
 )
 
@@ -73,6 +71,7 @@ type (
 		ruleIndex   int
 		stringIndex int
 		fullword    bool
+		nocase      bool
 		regexIdx    int
 	}
 
@@ -130,7 +129,7 @@ func (m *MatchRules) RuleMatching(r *MatchRule) (abort bool, err error) {
 
 // Stats returns compilation statistics.
 func (r *Rules) Stats() (acPatterns, regexPatterns int) {
-	return len(r.patterns) + len(r.nocasePatterns), len(r.regexPatterns)
+	return len(r.patterns), len(r.regexPatterns)
 }
 
 // NumRules returns the number of compiled rules.
@@ -157,7 +156,7 @@ func checkWordBoundary(buf []byte, start, end int) bool {
 
 // ScanMem scans a byte buffer for matching rules.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
-	if r.matcher == nil && r.nocaseMatcher == nil && len(r.regexPatterns) == 0 {
+	if r.matcher == nil && len(r.regexPatterns) == 0 {
 		return nil
 	}
 
@@ -168,6 +167,20 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	return r.evaluateRules(ctx, buf, ruleMatches, cb)
 }
 
+// toLowerASCII returns a copy with ASCII A-Z lowered. Unlike bytes.ToLower,
+// it never changes buffer length (safe for binary/Latin-1 data).
+func toLowerASCII(b []byte) []byte {
+	out := make([]byte, len(b))
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			out[i] = c + 0x20
+		} else {
+			out[i] = c
+		}
+	}
+	return out
+}
+
 // collectMatches runs AC matching, atom-based regex verification, and full-scan
 // regex to collect all match positions per rule and string index.
 func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
@@ -175,7 +188,14 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
-		iter := r.matcher.IterOverlappingByte(buf)
+		// when nocase patterns exist, run AC on lowercased buffer and
+		// verify case-sensitive hits against the original patterns
+		scanBuf := buf
+		if r.hasNocase {
+			scanBuf = toLowerASCII(buf)
+		}
+
+		iter := r.matcher.IterOverlappingByte(scanBuf)
 		for match := iter.Next(); match != nil; match = iter.Next() {
 			ref := r.patternMap[match.Pattern()]
 
@@ -184,22 +204,14 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 				continue
 			}
 
-			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
-				continue
+			// when scanning a lowercased buffer, case-sensitive patterns
+			// need verification against the original buffer
+			if r.hasNocase && !ref.nocase {
+				orig := r.origPatterns[match.Pattern()]
+				if !bytesEqual(buf[match.Start():match.End()], orig) {
+					continue
+				}
 			}
-
-			data := make([]byte, match.End()-match.Start())
-			copy(data, buf[match.Start():match.End()])
-			addMatch(ruleMatches, ref.ruleIndex, ref.stringIndex, match.Start(), data)
-		}
-	}
-
-	// run nocase AC matcher on a lowercased copy of the buffer
-	if r.nocaseMatcher != nil {
-		bufLower := bytes.ToLower(buf)
-		iter := r.nocaseMatcher.IterOverlappingByte(bufLower)
-		for match := iter.Next(); match != nil; match = iter.Next() {
-			ref := r.nocasePatternMap[match.Pattern()]
 
 			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
 				continue
@@ -336,6 +348,18 @@ func recoverFindIndex(re Regexp, b []byte) (loc []int) {
 		}
 	}()
 	return re.FindIndex(b)
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func dedupe(positions []int) []int {
