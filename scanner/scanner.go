@@ -2,6 +2,7 @@
 package scanner
 
 import (
+	"bytes"
 	"context"
 	"slices"
 	"sync"
@@ -55,12 +56,11 @@ type (
 
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
-		rules        []*compiledRule
-		matcher      *ahocorasick.AhoCorasick
-		patterns     [][]byte
-		patternMap   []patternRef
-		origPatterns [][]byte // original (non-lowered) patterns, set only when hasNocase
-		hasNocase    bool
+		rules         []*compiledRule
+		matcher       *ahocorasick.AhoCorasick
+		patterns      [][]byte
+		patternMap    []patternRef
+		origPatterns  [][]byte // original (non-lowered) patterns for case-sensitive verification
 		regexPatterns []*regexPattern
 	}
 )
@@ -188,12 +188,9 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
-		// when nocase patterns exist, run AC on lowercased buffer and
-		// verify case-sensitive hits against the original patterns
-		scanBuf := buf
-		if r.hasNocase {
-			scanBuf = toLowerASCII(buf)
-		}
+		// AC runs on a lowercased buffer so nocase patterns match.
+		// Case-sensitive patterns are verified against the original buffer.
+		scanBuf := toLowerASCII(buf)
 
 		iter := r.matcher.IterOverlappingByte(scanBuf)
 		for match := iter.Next(); match != nil; match = iter.Next() {
@@ -204,11 +201,10 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 				continue
 			}
 
-			// when scanning a lowercased buffer, case-sensitive patterns
-			// need verification against the original buffer
-			if r.hasNocase && !ref.nocase {
+			// case-sensitive patterns need verification against the original buffer
+			if !ref.nocase {
 				orig := r.origPatterns[match.Pattern()]
-				if !bytesEqual(buf[match.Start():match.End()], orig) {
+				if !bytes.Equal(buf[match.Start():match.End()], orig) {
 					continue
 				}
 			}
@@ -348,18 +344,6 @@ func recoverFindIndex(re Regexp, b []byte) (loc []int) {
 		}
 	}()
 	return re.FindIndex(b)
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func dedupe(positions []int) []int {

@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -704,6 +705,72 @@ func TestNocaseEndToEnd(t *testing.T) {
 			got := len(matches) > 0
 			if got != tt.want {
 				t.Errorf("match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNocaseDoesNotAffectRegex(t *testing.T) {
+	// regex verification must use the original buffer, not the lowered one.
+	// a case-sensitive regex like /[a-z]+/ must not match uppercase input
+	// just because another pattern in the ruleset uses nocase.
+	rule := `rule regex_case {
+		strings:
+			$re = /[a-z]{4}\.com/
+		condition: any of them
+	}
+	rule nocase_text {
+		strings:
+			$s = "trigger" nocase
+		condition: any of them
+	}`
+	p := parser.New()
+	rs, err := p.Parse(rule)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	rules, err := Compile(rs)
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		data      []byte
+		wantRules []string
+	}{
+		{
+			"regex matches lowercase, nocase matches uppercase",
+			[]byte("TRIGGER evil.com"),
+			[]string{"nocase_text", "regex_case"},
+		},
+		{
+			"regex should not match uppercase",
+			[]byte("TRIGGER EVIL.COM"),
+			[]string{"nocase_text"},
+		},
+		{
+			"only regex matches",
+			[]byte("test.com"),
+			[]string{"regex_case"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var matches MatchRules
+			err = rules.ScanMem(tt.data, 0, time.Second, &matches)
+			if err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			got := make([]string, len(matches))
+			for i, m := range matches {
+				got[i] = m.Rule
+			}
+			slices.Sort(got)
+			slices.Sort(tt.wantRules)
+			if !slices.Equal(got, tt.wantRules) {
+				t.Errorf("matched rules = %v, want %v", got, tt.wantRules)
 			}
 		})
 	}
