@@ -107,6 +107,9 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 					regexIdx:    -1,
 				})
 				allPatterns = append(allPatterns, p)
+				if s.Modifiers.Nocase {
+					rules.hasNocase = true
+				}
 			}
 		}
 		ruleIdx++
@@ -116,13 +119,15 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		return nil, errors.Join(errs...)
 	}
 
-	// keep originals for case-sensitive verification during scan,
-	// then lowercase all patterns so a single AC pass on a lowercased
-	// buffer finds both case-sensitive and nocase matches
-	rules.origPatterns = make([][]byte, len(allPatterns))
-	copy(rules.origPatterns, allPatterns)
-	for i, p := range allPatterns {
-		allPatterns[i] = toLowerASCII(p)
+	if rules.hasNocase {
+		// keep originals for case-sensitive verification during scan,
+		// then lowercase all patterns so a single AC pass on a lowercased
+		// buffer finds both case-sensitive and nocase matches
+		rules.origPatterns = make([][]byte, len(allPatterns))
+		copy(rules.origPatterns, allPatterns)
+		for i, p := range allPatterns {
+			allPatterns[i] = toLowerASCII(p)
+		}
 	}
 
 	rules.patterns = allPatterns

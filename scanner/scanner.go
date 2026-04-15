@@ -61,6 +61,7 @@ type (
 		patterns      [][]byte
 		patternMap    []patternRef
 		origPatterns  [][]byte // original (non-lowered) patterns for case-sensitive verification
+		hasNocase     bool     // skip toLowerASCII when no nocase patterns exist
 		regexPatterns []*regexPattern
 	}
 )
@@ -188,9 +189,12 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 	atomCandidates := make(map[int][]int)
 
 	if r.matcher != nil {
-		// AC runs on a lowercased buffer so nocase patterns match.
-		// Case-sensitive patterns are verified against the original buffer.
-		scanBuf := toLowerASCII(buf)
+		// when nocase patterns exist, AC runs on a lowercased buffer
+		// and case-sensitive hits are verified against the original
+		scanBuf := buf
+		if r.hasNocase {
+			scanBuf = toLowerASCII(buf)
+		}
 
 		iter := r.matcher.IterOverlappingByte(scanBuf)
 		for match := iter.Next(); match != nil; match = iter.Next() {
@@ -202,7 +206,7 @@ func (r *Rules) collectMatches(buf []byte) map[int]map[int][]matchInfo {
 			}
 
 			// case-sensitive patterns need verification against the original buffer
-			if !ref.nocase {
+			if r.hasNocase && !ref.nocase {
 				orig := r.origPatterns[match.Pattern()]
 				if !bytes.Equal(buf[match.Start():match.End()], orig) {
 					continue
