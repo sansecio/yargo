@@ -1,5 +1,3 @@
-//go:build yara
-
 package main
 
 import (
@@ -14,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	yara "github.com/hillu/go-yara/v4"
 	"github.com/sansecio/yargo/cmd/internal"
 	"github.com/sansecio/yargo/scanner"
 )
@@ -83,13 +80,8 @@ func main() {
 
 	fmt.Printf("Loaded %d corpus files\n", len(files))
 
-	// Compile go-yara rules (suppress absl/RE2 stderr noise)
-	goYaraRules, err := internal.GoYaraRules(yaraFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error compiling go-yara rules: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Compiled %d go-yara rules\n", len(goYaraRules.GetRules()))
+	// Benchmark go-yara (only under -tags yara)
+	goYaraDuration, goYaraMatches, goYaraOK := benchGoYara(yaraFile, files)
 
 	// Compile yargo rules (suppress absl/RE2 stderr noise)
 	yargoRules, err := internal.YargoRules(yaraFile)
@@ -98,22 +90,6 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("Compiled %d yargo rules\n\n", yargoRules.NumRules())
-
-	// Benchmark go-yara (fast mode)
-	start := time.Now()
-	var goYaraMatches int
-	for r := range *repeat {
-		for i, file := range files {
-			fmt.Fprintf(os.Stderr, "\rgo-yara [%d/%d]: %d/%d %s\033[K", r+1, *repeat, i+1, len(files), truncName(file.path, 100))
-			var matches yara.MatchRules
-			if err := goYaraRules.ScanMem(file.data, yara.ScanFlagsFastMode, 30*time.Second, &matches); err != nil {
-				fmt.Fprintf(os.Stderr, "\ngo-yara error scanning %s: %v\n", file.path, err)
-			}
-			goYaraMatches += len(matches)
-		}
-	}
-	fmt.Fprint(os.Stderr, "\r\033[K")
-	goYaraDuration := time.Since(start)
 
 	// Benchmark yargo
 	if *cpuprofile != "" {
@@ -125,7 +101,7 @@ func main() {
 		pprof.StartCPUProfile(f)
 	}
 
-	start = time.Now()
+	start := time.Now()
 	var yargoMatches int
 	type fileTiming struct {
 		path     string
@@ -152,9 +128,13 @@ func main() {
 		pprof.StopCPUProfile()
 	}
 
-	fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, goYaraMatches)
+	if goYaraOK {
+		fmt.Printf("go-yara (fast mode): %v (%d matches)\n", goYaraDuration, goYaraMatches)
+	}
 	fmt.Printf("yargo:               %v (%d matches)\n", yargoDuration, yargoMatches)
-	fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
+	if goYaraOK {
+		fmt.Printf("\nyargo/go-yara ratio: %.2fx\n", float64(yargoDuration)/float64(goYaraDuration))
+	}
 
 	slices.SortFunc(timings, func(a, b fileTiming) int {
 		return cmp.Compare(b.duration, a.duration)
