@@ -98,7 +98,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error creating profile: %v\n", err)
 			os.Exit(1)
 		}
-		pprof.StartCPUProfile(f)
+		_ = pprof.StartCPUProfile(f)
 	}
 
 	start := time.Now()
