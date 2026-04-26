@@ -32,6 +32,7 @@ type StringModifiers struct {
 	Ascii    bool
 	Base64   bool
 	Fullword bool
+	Nocase   bool
 }
 
 // StringValue is an interface for the different string types.

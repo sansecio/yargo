@@ -137,7 +137,7 @@ func TestParseModifiers(t *testing.T) {
 		{`{ FF } base64`, ast.StringModifiers{Base64: true}, false},
 		{`"x" ascii`, ast.StringModifiers{Ascii: true}, false},
 		{`"x" wide`, ast.StringModifiers{}, true},
-		{`"x" nocase`, ast.StringModifiers{}, true},
+		{`"x" nocase`, ast.StringModifiers{Nocase: true}, false},
 		{`"x" xor`, ast.StringModifiers{}, true},
 		{`"x" base64wide`, ast.StringModifiers{}, true},
 		{`"x" private`, ast.StringModifiers{}, true},

@@ -121,8 +121,8 @@ Not yet supported:
 
 ### Modifiers
 
-- **Supported**: `ascii`, `base64`, `fullword`
-- **Not yet implemented**: `wide`, `nocase`, `xor`, `base64wide`, `private`
+- **Supported**: `ascii`, `base64`, `fullword`, `nocase`
+- **Not yet implemented**: `wide`, `xor`, `base64wide`, `private`
 
 ## License
 

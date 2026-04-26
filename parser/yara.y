@@ -195,6 +195,8 @@ modifiers:
 			$$.Base64 = true
 		case "fullword":
 			$$.Fullword = true
+		case "nocase":
+			$$.Nocase = true
 		default:
 			yylex.Error("unsupported modifier: " + $2)
 		}
