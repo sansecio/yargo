@@ -13,8 +13,32 @@ import (
 
 type panicRegexp struct{}
 
+type countingRegexp struct {
+	Regexp
+	calls int
+	bytes int
+}
+
+type maxInputRegexp struct {
+	Regexp
+	max int
+}
+
 func (panicRegexp) FindIndex([]byte) []int {
 	panic("wasm error: unreachable")
+}
+
+func (r *countingRegexp) FindIndex(buf []byte) []int {
+	r.calls++
+	r.bytes += len(buf)
+	return r.Regexp.FindIndex(buf)
+}
+
+func (r maxInputRegexp) FindIndex(buf []byte) []int {
+	if len(buf) > r.max {
+		panic("input too large")
+	}
+	return r.Regexp.FindIndex(buf)
 }
 
 func TestRecoverFindIndex(t *testing.T) {
@@ -47,6 +71,146 @@ func TestRecoverFindIndexNoMatch(t *testing.T) {
 	loc := recoverFindIndex(re, []byte("this is a test string"))
 	if loc != nil {
 		t.Errorf("expected nil for no match, got %v", loc)
+	}
+}
+
+func TestCanPrefilterMergedWindows(t *testing.T) {
+	tests := []struct {
+		pattern string
+		want    bool
+	}{
+		{`abc.*def`, true},
+		{`abc[^$^]+def`, true},
+		{`price\$`, true},
+		{`literal\\b`, true},
+		{`^abc`, false},
+		{`abc$`, false},
+		{`\Aabc`, false},
+		{`abc\z`, false},
+		{`\babc\b`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			if got := canPrefilterMergedWindows(tt.pattern); got != tt.want {
+				t.Errorf("canPrefilterMergedWindows(%q) = %v, want %v", tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyAtomsMergesOverlappingWindows(t *testing.T) {
+	re, err := experimental.CompileLatin1(`abc[0-9]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counting := &countingRegexp{Regexp: re}
+	rules := &Rules{regexPatterns: []*regexPattern{{
+		compile: func(string) (Regexp, error) { return counting, nil },
+	}}}
+
+	buf := make([]byte, 2000)
+	for _, pos := range []int{600, 700, 800} {
+		copy(buf[pos:], "abcX")
+	}
+	atoms := []atomHit{
+		{pos: 600, regexIdx: 0},
+		{pos: 700, regexIdx: 0},
+		{pos: 800, regexIdx: 0},
+	}
+
+	hits, err := rules.verifyAtoms(t.Context(), buf, atoms, nil)
+	if err != nil {
+		t.Fatalf("verifyAtoms() error = %v", err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("verifyAtoms() returned %d hits, want 0", len(hits))
+	}
+	if counting.calls != 1 {
+		t.Errorf("FindIndex calls = %d, want 1", counting.calls)
+	}
+	if counting.bytes != 1224 {
+		t.Errorf("FindIndex bytes = %d, want 1224", counting.bytes)
+	}
+}
+
+func TestVerifyAtomsFallsBackWhenMergedWindowPanics(t *testing.T) {
+	re, err := experimental.CompileLatin1(`abc[0-9]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limited := maxInputRegexp{Regexp: re, max: maxMatchLen}
+	rules := &Rules{regexPatterns: []*regexPattern{{
+		compile: func(string) (Regexp, error) { return limited, nil },
+	}}}
+
+	buf := make([]byte, 2000)
+	copy(buf[600:], "abcX")
+	copy(buf[800:], "abc1")
+	atoms := []atomHit{
+		{pos: 600, regexIdx: 0},
+		{pos: 800, regexIdx: 0},
+	}
+
+	hits, err := rules.verifyAtoms(t.Context(), buf, atoms, nil)
+	if err != nil {
+		t.Fatalf("verifyAtoms() error = %v", err)
+	}
+	if len(hits) != 1 || hits[0].pos != 800 || hits[0].n != 4 {
+		t.Fatalf("verifyAtoms() hits = %v, want one hit at 800", hits)
+	}
+}
+
+func TestVerifyAtomsUsesOriginalWindowForGreedyMatch(t *testing.T) {
+	re, err := experimental.CompileLatin1(`abc.*`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := &Rules{regexPatterns: []*regexPattern{{
+		compile: func(string) (Regexp, error) { return re, nil },
+	}}}
+
+	buf := make([]byte, 2000)
+	copy(buf[600:], "abc")
+	copy(buf[800:], "abc")
+	atoms := []atomHit{
+		{pos: 600, regexIdx: 0},
+		{pos: 800, regexIdx: 0},
+	}
+
+	hits, err := rules.verifyAtoms(t.Context(), buf, atoms, nil)
+	if err != nil {
+		t.Fatalf("verifyAtoms() error = %v", err)
+	}
+	if len(hits) != 1 || hits[0].pos != 600 || hits[0].n != 512 {
+		t.Fatalf("verifyAtoms() hits = %v, want original 1024-byte window match", hits)
+	}
+}
+
+func TestVerifyAtomsDoesNotMergeEndAnchoredWindows(t *testing.T) {
+	const pattern = `abc.{506}abc$`
+	re, err := experimental.CompileLatin1(pattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := &Rules{regexPatterns: []*regexPattern{{
+		pattern: pattern,
+		compile: func(string) (Regexp, error) { return re, nil },
+	}}}
+
+	buf := make([]byte, 2000)
+	copy(buf[600:], "abc")
+	copy(buf[1109:], "abc")
+	atoms := []atomHit{
+		{pos: 600, regexIdx: 0},
+		{pos: 1109, regexIdx: 0},
+	}
+
+	hits, err := rules.verifyAtoms(t.Context(), buf, atoms, nil)
+	if err != nil {
+		t.Fatalf("verifyAtoms() error = %v", err)
+	}
+	if len(hits) != 1 || hits[0].pos != 600 || hits[0].n != 512 {
+		t.Fatalf("verifyAtoms() hits = %v, want original end-anchored window match", hits)
 	}
 }
 

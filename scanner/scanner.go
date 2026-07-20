@@ -115,6 +115,37 @@ type (
 // maxMatchLen is the window size around atom hits used for regex verification.
 const maxMatchLen = 1024
 
+// canPrefilterMergedWindows reports whether a match remains a match when its
+// input window grows. Anchors and word-boundary assertions can depend on an
+// individual window's edges, so those patterns must use the original windows.
+func canPrefilterMergedWindows(pattern string) bool {
+	inClass := false
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			i++
+			if i >= len(pattern) || inClass {
+				continue
+			}
+			switch pattern[i] {
+			case 'A', 'z', 'Z', 'b', 'B':
+				return false
+			}
+		case '[':
+			if !inClass {
+				inClass = true
+			}
+		case ']':
+			inClass = false
+		case '^', '$':
+			if !inClass {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Meta returns the value of the meta field with the given identifier, or nil.
 func (m *MatchRule) Meta(identifier string) any {
 	for _, meta := range m.Metas {
@@ -310,37 +341,76 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 			continue
 		}
 
-		// Verify a window around every candidate position, recording each
-		// distinct match. Candidates inside an already verified match are
-		// skipped and windows start after it (non-overlapping, like RE2's
-		// FindAll), so the same match is never reported twice.
+		// Most atom candidates are false positives, and their verification
+		// windows frequently overlap. Coalesce those windows as a prefilter:
+		// a regex that does not match their union cannot match any individual
+		// window. If the union does match, verify the original windows so
+		// widening a window cannot change a greedy match.
 		lastEnd := 0
-		for k, a := range group {
-			// different atoms of one regex can land on the same position
-			if k > 0 && a.pos == group[k-1].pos {
-				continue
-			}
-			if a.pos < lastEnd {
-				continue
-			}
-			windows++
-			if windows%ctxCheckInterval == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			start := max(max(0, a.pos-halfWindow), lastEnd)
-			end := min(len(buf), a.pos+halfWindow)
+		canPrefilter := canPrefilterMergedWindows(rp.pattern)
+		for k := 0; k < len(group); {
+			runFirst := k
+			runStart := max(0, group[k].pos-halfWindow)
+			runEnd := min(len(buf), group[k].pos+halfWindow)
+			uniqueCandidates := 1
+			lastPos := group[k].pos
+			k++
 
-			loc := recoverFindIndex(re, buf[start:end])
-			if loc == nil {
-				continue
+			for k < len(group) {
+				candidateStart := max(0, group[k].pos-halfWindow)
+				if candidateStart > runEnd {
+					break
+				}
+				runEnd = max(runEnd, min(len(buf), group[k].pos+halfWindow))
+				if group[k].pos != lastPos {
+					uniqueCandidates++
+					lastPos = group[k].pos
+				}
+				k++
 			}
-			matchStart := start + loc[0]
-			matchEnd := start + loc[1]
-			lastEnd = matchEnd
-			if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd) {
-				continue
+
+			run := group[runFirst:k]
+			if uniqueCandidates > 1 && canPrefilter {
+				windows++
+				if windows%ctxCheckInterval == 0 && ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				loc, completed := tryFindIndex(re, buf[runStart:runEnd])
+				if completed && loc == nil {
+					continue
+				}
 			}
-			hits = append(hits, hit{pos: matchStart, slot: rp.slot, n: int32(matchEnd - matchStart)})
+
+			// Record each distinct match using the original candidate windows.
+			// Candidates inside an already verified match are skipped and
+			// windows start after it (non-overlapping, like RE2's FindAll).
+			for candidate, a := range run {
+				// different atoms of one regex can land on the same position
+				if candidate > 0 && a.pos == run[candidate-1].pos {
+					continue
+				}
+				if a.pos < lastEnd {
+					continue
+				}
+				windows++
+				if windows%ctxCheckInterval == 0 && ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				start := max(max(0, a.pos-halfWindow), lastEnd)
+				end := min(len(buf), a.pos+halfWindow)
+
+				loc := recoverFindIndex(re, buf[start:end])
+				if loc == nil {
+					continue
+				}
+				matchStart := start + loc[0]
+				matchEnd := start + loc[1]
+				lastEnd = matchEnd
+				if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd) {
+					continue
+				}
+				hits = append(hits, hit{pos: matchStart, slot: rp.slot, n: int32(matchEnd - matchStart)})
+			}
 		}
 	}
 
@@ -440,11 +510,20 @@ func (rp *regexPattern) compiled() Regexp {
 // recoverFindIndex wraps Regexp.FindIndex to recover from panics.
 // go-re2's WASM backend can panic during regex execution (e.g. OOM),
 // so we treat a panic as no match.
-func recoverFindIndex(re Regexp, b []byte) (loc []int) {
+func recoverFindIndex(re Regexp, b []byte) []int {
+	loc, _ := tryFindIndex(re, b)
+	return loc
+}
+
+// tryFindIndex also reports whether FindIndex completed. A coalesced prefilter
+// window can be larger than an ordinary verification window, so its panic must
+// fall back to the ordinary windows rather than suppressing their matches.
+func tryFindIndex(re Regexp, b []byte) (loc []int, completed bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			loc = nil
+			completed = false
 		}
 	}()
-	return re.FindIndex(b)
+	return re.FindIndex(b), true
 }
