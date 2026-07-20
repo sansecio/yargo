@@ -203,6 +203,41 @@ func bruteForceFold(patterns [][]byte, haystack []byte) []string {
 	return out
 }
 
+var benchmarkNextStateID stateID
+
+func BenchmarkNextStateSparse(b *testing.B) {
+	transitions := make([]innerSparse, 8)
+	for i := range transitions {
+		transitions[i] = innerSparse{b: byte(i * 16), s: stateID(i + 1)}
+	}
+	nfa := iNFA{states: []state{
+		{dense: -1},
+		{dense: -1, sparse: []innerSparse{{b: 'm', s: 2}}},
+		{dense: -1, sparse: transitions},
+	}}
+
+	benchmarks := []struct {
+		name  string
+		state stateID
+		input byte
+	}{
+		{name: "zero", state: 0, input: 'x'},
+		{name: "one-hit", state: 1, input: 'm'},
+		{name: "one-miss", state: 1, input: 'x'},
+		{name: "eight-hit", state: 2, input: 64},
+		{name: "eight-miss", state: 2, input: 65},
+	}
+	for _, bench := range benchmarks {
+		b.Run(bench.name, func(b *testing.B) {
+			var id stateID
+			for b.Loop() {
+				id = nfa.nextState(bench.state, bench.input)
+			}
+			benchmarkNextStateID = id
+		})
+	}
+}
+
 func TestAsciiCaseFoldMatchesBruteForce(t *testing.T) {
 	// small sets keep the prefilter active, large sets disable it —
 	// both paths must fold the haystack identically

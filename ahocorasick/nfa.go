@@ -41,6 +41,15 @@ func (n *iNFA) nextState(id stateID, input byte) stateID {
 	if s.dense >= 0 {
 		return n.denseTable[int(s.dense)+int(input)]
 	}
+	switch len(s.sparse) {
+	case 0:
+		return failedStateID
+	case 1:
+		if s.sparse[0].b == input {
+			return s.sparse[0].s
+		}
+		return failedStateID
+	}
 	lo, hi := 0, len(s.sparse)
 	for lo < hi {
 		mid := lo + (hi-lo)/2
