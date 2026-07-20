@@ -84,6 +84,25 @@ func TestIterOverlapping_EmptyHaystack(t *testing.T) {
 	}
 }
 
+func TestIterOverlapping_EmptyPatternAndSuffixMatches(t *testing.T) {
+	ac := buildAC("", "a")
+	matches := collectMatches(ac, "a")
+
+	if len(matches) != 3 {
+		t.Fatalf("expected empty, literal, and suffix-empty matches, got %d", len(matches))
+	}
+	want := []struct {
+		pattern int
+		start   int
+		end     int
+	}{{0, 0, 0}, {1, 0, 1}, {0, 1, 1}}
+	for i, match := range matches {
+		if match.Pattern() != want[i].pattern || match.Start() != want[i].start || match.End() != want[i].end {
+			t.Errorf("match %d = pattern %d [%d,%d), want pattern %d [%d,%d)", i, match.Pattern(), match.Start(), match.End(), want[i].pattern, want[i].start, want[i].end)
+		}
+	}
+}
+
 func TestIterOverlapping_SubstringPatterns(t *testing.T) {
 	ac := buildAC("a", "ab", "abc")
 	matches := collectMatches(ac, "abc")
@@ -201,6 +220,23 @@ func bruteForceFold(patterns [][]byte, haystack []byte) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+func TestHighDegreeSparseStateBecomesDense(t *testing.T) {
+	patterns := make([][]byte, adaptiveDenseThreshold)
+	for i := range patterns {
+		patterns[i] = []byte{'a', 'b', 'c', byte(i)}
+	}
+
+	builder := NewAhoCorasickBuilder()
+	ac := builder.BuildByte(patterns)
+	id := ac.i.startID
+	for _, b := range []byte("abc") {
+		id = ac.i.NextStateNoFail(id, b)
+	}
+	if ac.i.states[id].dense < 0 {
+		t.Fatalf("state with %d transitions remained sparse", adaptiveDenseThreshold)
+	}
 }
 
 var benchmarkNextStateID stateID

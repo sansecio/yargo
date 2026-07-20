@@ -113,6 +113,7 @@ type stateID uint32
 const (
 	failedStateID stateID = 0
 	deadStateID   stateID = 1
+	matchStateBit stateID = 1 << 31
 )
 
 func standardFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, sID *stateID, dst *Match) bool {
@@ -138,14 +139,17 @@ func standardFindAtImp(a *iNFA, prestate *prefilterState, pf *prefilter, haystac
 		b := haystack[at]
 		// dense rows are premultiplied full DFA rows, so one lookup suffices;
 		// in fold mode their A-Z edges mirror a-z, so bytes need no folding
+		var next stateID
 		if d := states[sid].dense; d >= 0 {
-			sid = denseTable[int(d)+int(b)]
+			next = denseTable[int(d)+int(b)]
 		} else {
-			sid = a.NextStateNoFail(sid, b)
+			next = a.nextStateNoFail(sid, b)
 		}
 		at += 1
 
-		if sid == deadStateID || a.hasMatch(sid) {
+		matched := next&matchStateBit != 0
+		sid = next &^ matchStateBit
+		if sid == deadStateID || matched {
 			*sID = sid
 			if sid == deadStateID {
 				return false
@@ -162,8 +166,7 @@ func overlappingFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at in
 		return false
 	}
 
-	// the bitset check keeps non-matching states out of the matches map
-	if a.hasMatch(*id) && *matchIndex < len(a.matches[*id]) {
+	if *matchIndex < len(a.matches[*id]) {
 		ok := a.getMatch(*id, *matchIndex, at, dst)
 		*matchIndex += 1
 		return ok

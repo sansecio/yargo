@@ -10,7 +10,6 @@ type iNFA struct {
 	states        []state
 	denseTable    []stateID
 	matches       map[stateID][]pattern
-	matchBitset   []uint64
 }
 
 // foldByte lowers ASCII A-Z. It never changes the byte's width, so match
@@ -22,11 +21,11 @@ func foldByte(b byte) byte {
 	return b
 }
 
-func (n *iNFA) hasMatch(id stateID) bool {
-	return n.matchBitset[uint(id)/64]&(1<<(uint(id)%64)) != 0
+func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
+	return n.nextStateNoFail(id, b) &^ matchStateBit
 }
 
-func (n *iNFA) NextStateNoFail(id stateID, b byte) stateID {
+func (n *iNFA) nextStateNoFail(id stateID, b byte) stateID {
 	for {
 		next := n.nextState(id, b)
 		if next != failedStateID {
@@ -157,6 +156,10 @@ type compiler struct {
 	nfa       iNFA
 }
 
+// adaptiveDenseThreshold is the sparse degree at which a 256-entry dense row
+// pays for itself in scan speed without materially increasing automaton size.
+const adaptiveDenseThreshold = 4
+
 func (c *compiler) compile(patterns [][]byte) *iNFA {
 	totalBytes := 0
 	for _, pat := range patterns {
@@ -171,6 +174,7 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	c.addState(0)
 
 	c.buildTrie(patterns)
+	c.densifyHighDegreeStates()
 
 	c.addStartStateLoop()
 	c.addDeadStateLoop()
@@ -195,12 +199,64 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 	}
 	c.compactSparse()
 
-	c.nfa.matchBitset = make([]uint64, (len(c.nfa.states)+63)/64)
-	for id := range c.nfa.matches {
-		c.nfa.matchBitset[uint(id)/64] |= 1 << (uint(id) % 64)
-	}
+	c.tagMatchingTransitions()
 
 	return &c.nfa
+}
+
+// tagMatchingTransitions stores the target state's match status in the high
+// bit of each transition. Scanning can then detect matches without a separate
+// random bitset lookup for every input byte.
+func (c *compiler) tagMatchingTransitions() {
+	matching := make([]uint64, (len(c.nfa.states)+63)/64)
+	for id := range c.nfa.matches {
+		matching[uint(id)/64] |= 1 << (uint(id) % 64)
+	}
+	isMatching := func(id stateID) bool {
+		return matching[uint(id)/64]&(1<<(uint(id)%64)) != 0
+	}
+
+	for i, target := range c.nfa.denseTable {
+		if isMatching(target) {
+			c.nfa.denseTable[i] = target | matchStateBit
+		}
+	}
+	for i := range c.nfa.states {
+		for j := range c.nfa.states[i].sparse {
+			target := c.nfa.states[i].sparse[j].s
+			if isMatching(target) {
+				c.nfa.states[i].sparse[j].s = target | matchStateBit
+			}
+		}
+	}
+}
+
+// densifyHighDegreeStates converts highly branched trie states to dense rows.
+// Most deep states stay sparse, while the few branch points frequently visited
+// during failure traversal get constant-time transitions.
+func (c *compiler) densifyHighDegreeStates() {
+	denseStates := 0
+	for i := range c.nfa.states {
+		if c.nfa.states[i].dense < 0 && len(c.nfa.states[i].sparse) >= adaptiveDenseThreshold {
+			denseStates++
+		}
+	}
+	c.nfa.denseTable = slices.Grow(c.nfa.denseTable, denseStates*256)
+
+	for id := range c.nfa.states {
+		s := &c.nfa.states[id]
+		if s.dense >= 0 || len(s.sparse) < adaptiveDenseThreshold {
+			continue
+		}
+
+		denseIdx := int32(len(c.nfa.denseTable))
+		c.nfa.denseTable = append(c.nfa.denseTable, make([]stateID, 256)...)
+		for _, edge := range s.sparse {
+			c.nfa.denseTable[int(denseIdx)+int(edge.b)] = edge.s
+		}
+		s.sparse = nil
+		s.dense = denseIdx
+	}
 }
 
 // premultiplyDense resolves the failure chain of every missing transition in
