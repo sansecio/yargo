@@ -2646,7 +2646,7 @@ func TestMatchOrderDeterministic(t *testing.T) {
 
 	data := []byte("this is a test string")
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		var matches MatchRules
 		err := rules.ScanMem(data, 0, time.Second, &matches)
 		if err != nil {

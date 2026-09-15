@@ -226,12 +226,7 @@ func (ctx *evalContext) stringIndex(name string) int {
 
 // evalAnyOf evaluates "any of" expressions.
 func evalAnyOf(e ast.AnyOf, ctx *evalContext) bool {
-	for _, idx := range matchingStringIndices(e.Pattern, ctx.stringNames) {
-		if ctx.matched(idx) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(matchingStringIndices(e.Pattern, ctx.stringNames), ctx.matched)
 }
 
 // evalAllOf evaluates "all of" expressions.

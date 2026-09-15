@@ -194,9 +194,6 @@ func TestCompileClassifiesFilesizeAsZeroHitCapable(t *testing.T) {
 	}
 }
 
-func intPtr(n int) *int    { return &n }
-func bytePtr(b byte) *byte { return &b }
-
 func TestRegexCompilerPanicRecovery(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{
@@ -356,12 +353,12 @@ func Test_hexStringToRegex(t *testing.T) {
 		},
 		{
 			name:   "exact jump",
-			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: intPtr(4), Max: intPtr(4)}, ast.HexByte{Value: 0xFF}},
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: new(4), Max: new(4)}, ast.HexByte{Value: 0xFF}},
 			want:   `\x00.{4}\xff`,
 		},
 		{
 			name:   "range jump",
-			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: intPtr(4), Max: intPtr(8)}, ast.HexByte{Value: 0xFF}},
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: new(4), Max: new(8)}, ast.HexByte{Value: 0xFF}},
 			want:   `\x00.{4,8}\xff`,
 		},
 		{
@@ -371,12 +368,12 @@ func Test_hexStringToRegex(t *testing.T) {
 		},
 		{
 			name:   "min only jump",
-			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: intPtr(4), Max: nil}, ast.HexByte{Value: 0xFF}},
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: new(4), Max: nil}, ast.HexByte{Value: 0xFF}},
 			want:   `\x00.{4,}\xff`,
 		},
 		{
 			name:   "max only jump",
-			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: nil, Max: intPtr(8)}, ast.HexByte{Value: 0xFF}},
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: nil, Max: new(8)}, ast.HexByte{Value: 0xFF}},
 			want:   `\x00.{0,8}\xff`,
 		},
 		{
@@ -384,8 +381,8 @@ func Test_hexStringToRegex(t *testing.T) {
 			tokens: []ast.HexToken{
 				ast.HexByte{Value: 0x00},
 				ast.HexAlt{Alternatives: []ast.HexAltItem{
-					{Byte: bytePtr(0x90)},
-					{Byte: bytePtr(0xCC)},
+					{Byte: new(byte(0x90))},
+					{Byte: new(byte(0xCC))},
 				}},
 				ast.HexByte{Value: 0xFF},
 			},
@@ -395,7 +392,7 @@ func Test_hexStringToRegex(t *testing.T) {
 			name: "alternation with wildcard",
 			tokens: []ast.HexToken{
 				ast.HexAlt{Alternatives: []ast.HexAltItem{
-					{Byte: bytePtr(0x41)},
+					{Byte: new(byte(0x41))},
 					{Wildcard: true},
 				}},
 			},
@@ -408,10 +405,10 @@ func Test_hexStringToRegex(t *testing.T) {
 				ast.HexByte{Value: 0x5A},
 				ast.HexWildcard{},
 				ast.HexWildcard{},
-				ast.HexJump{Min: intPtr(4), Max: intPtr(8)},
+				ast.HexJump{Min: new(4), Max: new(8)},
 				ast.HexAlt{Alternatives: []ast.HexAltItem{
-					{Byte: bytePtr(0x90)},
-					{Byte: bytePtr(0xCC)},
+					{Byte: new(byte(0x90))},
+					{Byte: new(byte(0xCC))},
 				}},
 			},
 			want: `\x4d\x5a.{2}.{4,8}(?:\x90|\xcc)`,
@@ -423,7 +420,7 @@ func Test_hexStringToRegex(t *testing.T) {
 		},
 		{
 			name:   "zero min jump",
-			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: intPtr(0), Max: intPtr(10)}, ast.HexByte{Value: 0xFF}},
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x00}, ast.HexJump{Min: new(0), Max: new(10)}, ast.HexByte{Value: 0xFF}},
 			want:   `\x00.{0,10}\xff`,
 		},
 	}
