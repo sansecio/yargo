@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 )
 
@@ -277,16 +278,16 @@ func extractLiteralRunsOutsideAlternations(pattern string) [][]byte {
 	modified := []byte(pattern)
 
 	// Replace alternation groups
-	for i := len(altGroups) - 1; i >= 0; i-- {
-		g := altGroups[i]
+	for _, g := range slices.Backward(altGroups) {
+
 		for j := g.start; j <= g.end && j < len(modified); j++ {
 			modified[j] = '.'
 		}
 	}
 
 	// Replace optional groups
-	for i := len(optGroups) - 1; i >= 0; i-- {
-		g := optGroups[i]
+	for _, g := range slices.Backward(optGroups) {
+
 		for j := g.start; j <= g.end && j < len(modified); j++ {
 			modified[j] = '.'
 		}
