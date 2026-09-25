@@ -193,10 +193,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, a
 		return allPatterns, nil
 	}
 	// The regex itself is compiled lazily on first use, which discards
-	// errors, so reject invalid syntax here. regexp/syntax follows RE2
-	// syntax (including the repetition limit of 1000) and parses in
-	// microseconds, where a go-re2 compile takes a WASM round trip.
-	if _, err := syntax.Parse(rePattern, syntax.Perl); err != nil {
+	// errors, so reject invalid patterns here.
+	if err := checkRegex(rePattern, opts.RegexCompiler); err != nil {
 		if opts.SkipInvalidRegex {
 			return allPatterns, nil
 		}
@@ -268,6 +266,19 @@ func hexStringToBytes(h ast.HexString) []byte {
 		}
 	}
 	return result
+}
+
+// checkRegex reports whether compile would accept pattern. regexp/syntax
+// follows RE2 syntax (including the repetition limit of 1000) and parses in
+// microseconds, where a go-re2 compile takes a WASM round trip. It is
+// stricter than RE2 in places (raw Latin-1 bytes, \C), and compile may be a
+// custom engine, so compile has the final say on anything it rejects.
+func checkRegex(pattern string, compile CompileFunc) error {
+	if _, err := syntax.Parse(pattern, syntax.Perl); err == nil {
+		return nil
+	}
+	_, err := compile(pattern)
+	return err
 }
 
 func hexStringToRegex(h ast.HexString) string {

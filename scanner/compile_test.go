@@ -310,6 +310,73 @@ func TestInvalidRegex(t *testing.T) {
 	}
 }
 
+// TestRegexRejectedByGoSyntax covers patterns that regexp/syntax rejects but
+// the configured compiler accepts. They must compile, and match input if set.
+func TestRegexRejectedByGoSyntax(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+	}{
+		{"raw Latin-1 byte", "abcd\xe9fgh", "xx abcd\xe9fgh yy"},
+		// atom extraction reads \C as a literal C, so only compilation is checked
+		{"RE2 any-byte escape", `abcd\Cfgh`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := &ast.RuleSet{
+				Rules: []*ast.Rule{
+					{
+						Name:      "latin1_regex",
+						Strings:   []*ast.StringDef{{Name: "$s", Value: ast.RegexString{Pattern: tt.pattern}}},
+						Condition: ast.AnyOf{Pattern: "them"},
+					},
+				},
+			}
+
+			rules, err := Compile(rs)
+			if err != nil {
+				t.Fatalf("Compile() error = %v", err)
+			}
+			if _, n := rules.Stats(); n != 1 {
+				t.Fatalf("regex patterns = %d, want 1", n)
+			}
+			if tt.input == "" {
+				return
+			}
+			var matches MatchRules
+			if err := rules.ScanMem([]byte(tt.input), 0, 10*time.Second, &matches); err != nil {
+				t.Fatalf("ScanMem() error = %v", err)
+			}
+			if len(matches) != 1 {
+				t.Errorf("expected 1 match, got %d", len(matches))
+			}
+		})
+	}
+}
+
+func TestInvalidRegexCustomCompiler(t *testing.T) {
+	rs := &ast.RuleSet{
+		Rules: []*ast.Rule{
+			{
+				Name:      "custom_syntax",
+				Strings:   []*ast.StringDef{{Name: "$s", Value: ast.RegexString{Pattern: `lskdjf[a-z]{1,4000}`}}},
+				Condition: ast.AnyOf{Pattern: "them"},
+			},
+		},
+	}
+
+	// a compiler without RE2's repetition limit decides what is valid
+	_, err := CompileWithOptions(rs, CompileOptions{
+		RegexCompiler: func(pattern string) (Regexp, error) {
+			return experimental.CompileLatin1(`lskdjf[a-z]{1,40}`)
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompileWithOptions() error = %v", err)
+	}
+}
+
 func TestCustomRegexCompiler(t *testing.T) {
 	rs := &ast.RuleSet{
 		Rules: []*ast.Rule{

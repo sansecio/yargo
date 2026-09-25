@@ -14,4 +14,4 @@ Never use `go build`. Use `go run .` instead.
 
 To swap the regex library, only change the import path and keep the `regexp` alias. For example, to switch from coregex to go-re2, change `regexp "github.com/coregx/coregex"` to `regexp "github.com/wasilibs/go-re2"`.
 
-Regexes are compiled lazily on first atom hit, and a compile error there counts as "no match". `compileRegex` therefore checks syntax with `regexp/syntax` at compile time so invalid patterns (e.g. repetition above 1000) fail `Compile`. Check the final pattern (after `buildRE2Pattern`/`hexStringToRegex`), never the raw YARA one.
+Regexes are compiled lazily on first atom hit, and a compile error there counts as "no match". `checkRegex` therefore runs at compile time so invalid patterns (e.g. repetition above 1000) fail `Compile`: fast `regexp/syntax` parse, and only if that fails, the configured compiler decides (Go syntax rejects raw Latin-1 bytes and `\C`, which RE2 accepts). Check the final pattern (after `buildRE2Pattern`/`hexStringToRegex`), never the raw YARA one.
