@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp/syntax"
 	"strings"
 
 	"github.com/sansecio/yargo/ahocorasick"
@@ -190,6 +191,16 @@ func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, a
 		caseInsensitive = false
 	default:
 		return allPatterns, nil
+	}
+	// The regex itself is compiled lazily on first use, which discards
+	// errors, so reject invalid syntax here. regexp/syntax follows RE2
+	// syntax (including the repetition limit of 1000) and parses in
+	// microseconds, where a go-re2 compile takes a WASM round trip.
+	if _, err := syntax.Parse(rePattern, syntax.Perl); err != nil {
+		if opts.SkipInvalidRegex {
+			return allPatterns, nil
+		}
+		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
 	requiresFullScan := !hasAtoms || caseInsensitive

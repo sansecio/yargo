@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,6 +260,53 @@ func TestRegexCompilerPanicRecoverySkipInvalid(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches from panicking compiler, got %d", len(matches))
+	}
+}
+
+func TestInvalidRegex(t *testing.T) {
+	tests := []struct {
+		name  string
+		value ast.StringValue
+	}{
+		{"repetition above RE2 limit", ast.RegexString{Pattern: `lskdjf[a-z0-9]{16,4000}xyz`}},
+		{"unbalanced group", ast.RegexString{Pattern: `lskdjf(xyz`}},
+		{"comma quantifier above limit", ast.RegexString{Pattern: `lskdjf.{,4000}xyz`}},
+		{"hex jump above limit", ast.HexString{Tokens: []ast.HexToken{
+			ast.HexByte{Value: 0x61},
+			ast.HexByte{Value: 0x62},
+			ast.HexByte{Value: 0x63},
+			ast.HexJump{Min: new(0), Max: new(2000)},
+			ast.HexByte{Value: 0x64},
+		}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := &ast.RuleSet{
+				Rules: []*ast.Rule{
+					{
+						Name:      "bad_regex",
+						Strings:   []*ast.StringDef{{Name: "$s", Value: tt.value}},
+						Condition: ast.AnyOf{Pattern: "them"},
+					},
+				},
+			}
+
+			_, err := Compile(rs)
+			if err == nil {
+				t.Fatal("Compile() error = nil, want invalid regex error")
+			}
+			if !strings.Contains(err.Error(), "bad_regex") || !strings.Contains(err.Error(), "invalid regex") {
+				t.Errorf("Compile() error = %v, want rule name and \"invalid regex\"", err)
+			}
+
+			rules, err := CompileWithOptions(rs, CompileOptions{SkipInvalidRegex: true})
+			if err != nil {
+				t.Fatalf("CompileWithOptions(SkipInvalidRegex) error = %v", err)
+			}
+			if _, n := rules.Stats(); n != 0 {
+				t.Errorf("regex patterns = %d, want 0 (skipped)", n)
+			}
+		})
 	}
 }
 
