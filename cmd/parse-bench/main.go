@@ -27,7 +27,7 @@ func main() {
 	}
 }
 
-func run() (err error) {
+func run() (runErr error) {
 	yaraFile := flag.String("yara", "", "path to YARA rules file (required)")
 	compile := flag.Bool("compile", false, "include scanner compilation after parsing")
 	compare := flag.Bool("compare", false, "compare compilation time with go-yara (requires -tags yara; implies -compile)")
@@ -49,7 +49,7 @@ func run() (err error) {
 			return err
 		}
 		defer func() {
-			err = errors.Join(err, f.Close())
+			runErr = errors.Join(runErr, f.Close())
 		}()
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return err

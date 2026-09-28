@@ -279,7 +279,6 @@ func extractLiteralRunsOutsideAlternations(pattern string) [][]byte {
 
 	// Replace alternation groups
 	for _, g := range slices.Backward(altGroups) {
-
 		for j := g.start; j <= g.end && j < len(modified); j++ {
 			modified[j] = '.'
 		}
@@ -287,7 +286,6 @@ func extractLiteralRunsOutsideAlternations(pattern string) [][]byte {
 
 	// Replace optional groups
 	for _, g := range slices.Backward(optGroups) {
-
 		for j := g.start; j <= g.end && j < len(modified); j++ {
 			modified[j] = '.'
 		}
