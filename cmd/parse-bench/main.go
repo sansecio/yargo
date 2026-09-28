@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,7 +27,7 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (err error) {
 	yaraFile := flag.String("yara", "", "path to YARA rules file (required)")
 	compile := flag.Bool("compile", false, "include scanner compilation after parsing")
 	compare := flag.Bool("compare", false, "compare compilation time with go-yara (requires -tags yara; implies -compile)")
@@ -47,7 +48,9 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			err = errors.Join(err, f.Close())
+		}()
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return err
 		}
@@ -143,8 +146,8 @@ func peakRSS() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
-	return parsePeakRSS(f)
+	rss, err := parsePeakRSS(f)
+	return rss, errors.Join(err, f.Close())
 }
 
 func parsePeakRSS(r io.Reader) (uint64, error) {
