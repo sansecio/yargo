@@ -81,12 +81,12 @@ Regexes without extractable atoms are rejected at compile time. Use `CompileOpti
 
 ## Tools
 
-The `cmd/` directory contains comparison and benchmarking tools that require [go-yara](https://github.com/hillu/go-yara) (cgo) to diff results against the reference YARA implementation.
+The `cmd/` directory contains comparison and benchmarking tools. Comparisons against the reference YARA implementation require [go-yara](https://github.com/hillu/go-yara) (cgo).
 
 - **corpus-bench** — benchmarks yargo vs go-yara scan speed over a file corpus
 - **corpus-diff** — compares rule matches between yargo and go-yara across a file corpus
 - **freq-gen** — generates byte frequency tables for atom scoring
-- **parse-bench** — benchmarks rule parsing/compilation speed
+- **parse-bench** — benchmarks rule parsing time and memory; add `-compile` to include scanner compilation
 - **regex-bench** — benchmarks regex engine performance (go-re2, stdlib, coregex)
 
 ## Current Limitations
