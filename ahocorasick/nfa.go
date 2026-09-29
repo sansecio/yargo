@@ -6,7 +6,6 @@ type iNFA struct {
 	startID       stateID
 	maxPatternLen int
 	prefil        *prefilter
-	anchored      bool
 	states        []state
 	denseTable    []stateID
 	branches      [][]innerSparse
@@ -146,15 +145,10 @@ func (n *iNFA) addMatch(id stateID, patternID, patternLength int) {
 func (n *iNFA) addDenseState() stateID {
 	id := stateID(len(n.states))
 
-	fail := n.startID
-	if n.anchored {
-		fail = deadStateID
-	}
-
 	denseIdx := int32(len(n.denseTable))
 	n.denseTable = append(n.denseTable, make([]stateID, 256)...)
 	n.states = append(n.states, state{
-		fail:  fail,
+		fail:  n.startID,
 		dense: denseIdx,
 	})
 	return id
@@ -163,13 +157,8 @@ func (n *iNFA) addDenseState() stateID {
 func (n *iNFA) addSparseState() stateID {
 	id := stateID(len(n.states))
 
-	fail := n.startID
-	if n.anchored {
-		fail = deadStateID
-	}
-
 	n.states = append(n.states, state{
-		fail:  fail,
+		fail:  n.startID,
 		dense: singleState,
 	})
 	return id
@@ -194,7 +183,7 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 		// two-byte prefixes to avoid retaining old tables during growth.
 		var first [256]bool
 		var pairs [256 * 256 / 64]uint64
-		rows := 3 // failed, dead and start states
+		rows := 2 // failed and start states
 		for _, pat := range patterns {
 			if len(pat) == 0 {
 				continue
@@ -218,25 +207,17 @@ func (c *compiler) compile(patterns [][]byte) *iNFA {
 
 	c.addState(0)
 	c.addState(0)
-	c.addState(0)
 
 	c.buildTrie(patterns)
 
 	c.addStartStateLoop()
-	c.addDeadStateLoop()
+	c.fillFailureTransitionsStandard()
 
-	if !c.builder.anchored {
-		c.fillFailureTransitionsStandard()
-	}
-	c.closeStartStateLoop()
-
-	if !c.builder.anchored {
-		c.nfa.prefil = c.prefilter.build()
-		if c.nfa.prefil != nil {
-			// the prefilter was built from folded patterns, so it must
-			// fold the haystack as it scans for candidates
-			c.nfa.prefil.fold = c.builder.fold
-		}
+	c.nfa.prefil = c.prefilter.build()
+	if c.nfa.prefil != nil {
+		// the prefilter was built from folded patterns, so it must
+		// fold the haystack as it scans for candidates
+		c.nfa.prefil.fold = c.builder.fold
 	}
 
 	c.premultiplyDense()
@@ -299,17 +280,6 @@ func (c *compiler) mirrorFoldedEdges() {
 		for _, e := range slices.Clone(c.nfa.branches[s.next]) {
 			if e.b >= 'a' && e.b <= 'z' {
 				c.nfa.setNextState(stateID(id), e.b-0x20, e.s)
-			}
-		}
-	}
-}
-
-func (c *compiler) closeStartStateLoop() {
-	if c.builder.anchored {
-		startId := c.nfa.startID
-		for b := range 256 {
-			if c.nfa.nextState(startId, byte(b)) == startId {
-				c.nfa.setNextState(startId, byte(b), deadStateID)
 			}
 		}
 	}
@@ -476,12 +446,6 @@ func (c *compiler) addStartStateLoop() {
 	}
 }
 
-func (c *compiler) addDeadStateLoop() {
-	for b := range 256 {
-		c.nfa.setNextState(deadStateID, byte(b), deadStateID)
-	}
-}
-
 func (c *compiler) buildTrie(patterns [][]byte) {
 	for pati, pat := range patterns {
 		c.nfa.maxPatternLen = max(c.nfa.maxPatternLen, len(pat))
@@ -537,10 +501,9 @@ func newCompiler(builder iNFABuilder) compiler {
 		builder:   builder,
 		prefilter: p,
 		nfa: iNFA{
-			startID:       2,
+			startID:       1,
 			maxPatternLen: 0,
 			prefil:        nil,
-			anchored:      builder.anchored,
 			matches:       make(map[stateID][]pattern),
 		},
 	}
@@ -549,7 +512,6 @@ func newCompiler(builder iNFABuilder) compiler {
 type iNFABuilder struct {
 	denseDepth int
 	prefilter  bool
-	anchored   bool
 	fold       bool
 }
 
@@ -557,7 +519,6 @@ func newNFABuilder() *iNFABuilder {
 	return &iNFABuilder{
 		denseDepth: 3,
 		prefilter:  true,
-		anchored:   false,
 	}
 }
 

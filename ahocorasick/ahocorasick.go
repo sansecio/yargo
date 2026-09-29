@@ -110,10 +110,7 @@ func (m *Match) Start() int {
 
 type stateID uint32
 
-const (
-	failedStateID stateID = 0
-	deadStateID   stateID = 1
-)
+const failedStateID stateID = 0
 
 func standardFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, sID *stateID, dst *Match) bool {
 	return standardFindAtImp(a, prestate, a.prefil, haystack, at, sID, dst)
@@ -145,11 +142,8 @@ func standardFindAtImp(a *iNFA, prestate *prefilterState, pf *prefilter, haystac
 		}
 		at += 1
 
-		if sid == deadStateID || a.hasMatch(sid) {
+		if a.hasMatch(sid) {
 			*sID = sid
-			if sid == deadStateID {
-				return false
-			}
 			return a.getMatch(sid, 0, at, dst)
 		}
 	}
@@ -158,10 +152,6 @@ func standardFindAtImp(a *iNFA, prestate *prefilterState, pf *prefilter, haystac
 }
 
 func overlappingFindAt(a *iNFA, prestate *prefilterState, haystack []byte, at int, id *stateID, matchIndex *int, dst *Match) bool {
-	if a.anchored && at > 0 && *id == a.startID {
-		return false
-	}
-
 	// the bitset check keeps non-matching states out of the matches map
 	if a.hasMatch(*id) && *matchIndex < len(a.matches[*id]) {
 		ok := a.getMatch(*id, *matchIndex, at, dst)

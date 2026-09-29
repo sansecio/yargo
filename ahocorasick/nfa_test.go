@@ -64,6 +64,19 @@ func TestTransitionLayouts(t *testing.T) {
 	}
 }
 
+func TestSearchResumesAfterMismatch(t *testing.T) {
+	patterns := [][]byte{[]byte("abcz"), []byte("bcd"), []byte("cd")}
+	for _, depth := range []int{0, 3} {
+		for _, fold := range []bool{false, true} {
+			builder := &iNFABuilder{denseDepth: depth, prefilter: true, fold: fold}
+			ac := AhoCorasick{builder.build(patterns)}
+			checkMatches(t, ac, patterns, []byte("xxabcdbcdABCDabcz"), fold)
+			checkMatches(t, ac, patterns, nil, fold)
+			checkMatches(t, AhoCorasick{builder.build(nil)}, nil, []byte("abc"), fold)
+		}
+	}
+}
+
 func TestAutomatonRandomMatches(t *testing.T) {
 	rng := rand.New(rand.NewPCG(42, 7))
 	alphabet := []byte("aAbBcCdD\x00\xff")
