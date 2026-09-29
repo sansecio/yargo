@@ -5,8 +5,8 @@ go 1.26.7
 require (
 	github.com/coregx/coregex v0.12.1
 	github.com/hillu/go-yara/v4 v4.3.4
-	github.com/wasilibs/go-re2 v1.12.0
-	golang.org/x/sys v0.46.0
+	github.com/wasilibs/go-re2 v1.13.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
