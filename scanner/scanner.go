@@ -192,11 +192,25 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 // are processed between context cancellation checks.
 const ctxCheckInterval = 4096
 
+// maxPooledAtoms keeps a page full of atom hits from pinning its slice in atomPool.
+const maxPooledAtoms = 64 << 10
+
+// atomPool reuses the atom hit slices of earlier scans: common atoms hit thousands of times
+// per page, and growing a new slice for every scan was most of a scan's allocation.
+var atomPool = sync.Pool{New: func() any { return new([]atomHit) }}
+
 // collectMatches runs AC matching and atom-based regex verification, returning
 // every hit sorted by slot (and so grouped by rule) and then by position.
 func (r *Rules) collectMatches(ctx context.Context, buf []byte) ([]hit, error) {
 	var hits []hit
-	var atoms []atomHit
+	pooled := atomPool.Get().(*[]atomHit)
+	atoms := (*pooled)[:0]
+	defer func() {
+		if cap(atoms) <= maxPooledAtoms {
+			*pooled = atoms
+			atomPool.Put(pooled)
+		}
+	}()
 
 	if r.matcher != nil {
 		iter := r.matcher.IterOverlappingByte(buf)
