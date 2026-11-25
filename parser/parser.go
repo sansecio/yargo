@@ -25,8 +25,6 @@ type forQuant struct {
 	n     int64
 }
 
-// parseXorModifier parses "xor", "xor(n)" and "xor(min-max)". Keys may be
-// decimal or 0x-prefixed hex and must fit a byte.
 func parseXorModifier(s string) (*ast.XorRange, bool) {
 	if s == "xor" {
 		return &ast.XorRange{Min: 0, Max: 255}, true

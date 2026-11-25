@@ -25,9 +25,6 @@ type CompileOptions struct {
 	// empty subtype value are never filtered.
 	SkipSubtypes []string
 
-	// Externals names the external variables rules may use besides the
-	// built-in filename, filepath, extension, filetype and owner. Rules that
-	// use any other bare identifier are skipped.
 	Externals []string
 
 	// RegexCompiler overrides the function used to compile regex patterns.
@@ -177,7 +174,6 @@ func declaredExternals(extra []string) map[string]bool {
 	return m
 }
 
-// unsupportedReason returns why the rule cannot be honored, or "" when it can.
 func unsupportedReason(r *ast.Rule, rules *Rules) string {
 	if r.Global {
 		return "global rule"
@@ -188,9 +184,6 @@ func unsupportedReason(r *ast.Rule, rules *Rules) string {
 	return conditionReason(r.Condition, rules)
 }
 
-// conditionReason walks a condition and reports the first construct the
-// evaluator cannot resolve, such as an identifier that is neither a declared
-// external variable nor an earlier rule.
 func conditionReason(expr ast.Expr, rules *Rules) string {
 	switch e := expr.(type) {
 	case ast.Ident:
@@ -299,8 +292,6 @@ func hasUnsupportedModifier(r *ast.Rule) bool {
 	return false
 }
 
-// unsupportedWide reports whether s combines wide with a string kind the
-// scanner cannot widen: only plain text strings have a wide form here.
 func unsupportedWide(s *ast.StringDef) bool {
 	if !s.Modifiers.Wide && s.Modifiers.Xor == nil {
 		return false
@@ -316,8 +307,6 @@ type variant struct {
 	wide  bool
 }
 
-// withWideVariants expands text patterns into the encodings the modifiers ask
-// for: ascii by default, UTF-16LE for wide, both for ascii wide.
 func withWideVariants(patterns [][]byte, m ast.StringModifiers) []variant {
 	out := make([]variant, 0, len(patterns)*2)
 	if !m.Wide || m.Ascii {

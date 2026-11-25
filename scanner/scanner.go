@@ -64,8 +64,8 @@ type (
 		patternMap    []patternRef
 		slotRule      []int32 // string slot -> rule index
 		regexPatterns []*regexPattern
-		ruleIndex     map[string]int32 // rule name -> index in rules
-		externals     map[string]bool  // declared external variable names
+		ruleIndex     map[string]int32
+		externals     map[string]bool
 		skipped       []SkippedRule
 	}
 )
@@ -75,7 +75,7 @@ type (
 	patternRef struct {
 		slot     int32
 		fullword bool
-		wide     bool // UTF-16LE encoding of the string, for the fullword check
+		wide     bool
 		verify   bool // confirm the hit against the original buffer (case-folded scan)
 		regexIdx int
 	}
@@ -178,20 +178,13 @@ func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
 	return true
 }
 
-// Externals holds the values of external variables, such as filename and
-// filepath, for one scan. Values may be string, bool or an integer type. A
-// variable that is not set is undefined, which makes any condition using it
-// false.
 type Externals map[string]any
 
-// SkippedRule names a rule that Compile left out and why.
 type SkippedRule struct {
 	Rule   string
 	Reason string
 }
 
-// Skipped lists the rules Compile left out because they use a construct the
-// scanner cannot honor.
 func (r *Rules) Skipped() []SkippedRule {
 	return r.skipped
 }
@@ -202,7 +195,6 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	return r.ScanMemWith(buf, nil, flags, timeout, cb)
 }
 
-// ScanMemWith is ScanMem with the values of external variables for this scan.
 func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
 	if len(r.rules) == 0 {
 		return nil

@@ -3,7 +3,6 @@ package ast
 
 // RuleSet represents a collection of YARA rules.
 type RuleSet struct {
-	// Imports lists the modules named by import statements, in order.
 	Imports []string
 	Rules   []*Rule
 	// Warnings lists constructs that parsed but cannot be honored, such as
@@ -15,8 +14,8 @@ type RuleSet struct {
 type Rule struct {
 	Name      string
 	Tags      []string
-	Private   bool // matches are not reported
-	Global    bool // condition applies to every rule in the set
+	Private   bool
+	Global    bool
 	Meta      []*MetaEntry
 	Strings   []*StringDef
 	Condition Expr // parsed condition expression
@@ -50,7 +49,6 @@ type StringModifiers struct {
 	Unsupported []string
 }
 
-// XorRange is the inclusive key range of an xor modifier; a bare xor is 0-255.
 type XorRange struct {
 	Min, Max byte
 }
@@ -198,14 +196,12 @@ type AnyOf struct {
 
 func (AnyOf) exprNode() {}
 
-// FloatLit represents a floating point literal.
 type FloatLit struct {
 	Value float64
 }
 
 func (FloatLit) exprNode() {}
 
-// UnaryExpr represents integer negation ("-") or bitwise not ("~").
 type UnaryExpr struct {
 	Op    string
 	Inner Expr
@@ -213,15 +209,12 @@ type UnaryExpr struct {
 
 func (UnaryExpr) exprNode() {}
 
-// CountOf represents #a, the number of matches of a string.
 type CountOf struct {
 	Name string
 }
 
 func (CountOf) exprNode() {}
 
-// OffsetOf represents @a or @a[i], the offset of the i-th match (1-based,
-// the first match when Index is nil).
 type OffsetOf struct {
 	Name  string
 	Index Expr
@@ -229,7 +222,6 @@ type OffsetOf struct {
 
 func (OffsetOf) exprNode() {}
 
-// LenOf represents !a or !a[i], the length of the i-th match.
 type LenOf struct {
 	Name  string
 	Index Expr
@@ -237,7 +229,6 @@ type LenOf struct {
 
 func (LenOf) exprNode() {}
 
-// InExpr represents "$a in (lo..hi)": a match with its offset in the range.
 type InExpr struct {
 	Ref    StringRef
 	Lo, Hi Expr
@@ -245,10 +236,6 @@ type InExpr struct {
 
 func (InExpr) exprNode() {}
 
-// ForExpr represents a for loop. With Var set it counts Var over Lo..Hi
-// inclusive; otherwise it runs Body once per string named by Patterns, with
-// the anonymous string $ standing for the current one. Quant is "any", "all",
-// "none" or "count" (at least N).
 type ForExpr struct {
 	Quant    string
 	N        int64
@@ -260,7 +247,6 @@ type ForExpr struct {
 
 func (ForExpr) exprNode() {}
 
-// Index represents base[index], such as pe.sections[0] or pe.version_info["Key"].
 type Index struct {
 	Base  Expr
 	Index Expr
@@ -268,8 +254,6 @@ type Index struct {
 
 func (Index) exprNode() {}
 
-// Field represents base.name applied to an indexed module value, such as
-// pe.sections[0].name.
 type Field struct {
 	Base Expr
 	Name string
@@ -277,29 +261,24 @@ type Field struct {
 
 func (Field) exprNode() {}
 
-// StrLit represents a string literal in a condition.
 type StrLit struct {
 	Value string
 }
 
 func (StrLit) exprNode() {}
 
-// BoolLit represents true or false.
 type BoolLit struct {
 	Value bool
 }
 
 func (BoolLit) exprNode() {}
 
-// Ident represents a bare identifier: an external variable such as filename,
-// a reference to another rule, or a loop variable.
 type Ident struct {
 	Name string
 }
 
 func (Ident) exprNode() {}
 
-// RegexLit represents the regular expression operand of matches.
 type RegexLit struct {
 	Pattern   string
 	Modifiers RegexModifiers
@@ -307,10 +286,6 @@ type RegexLit struct {
 
 func (RegexLit) exprNode() {}
 
-// NOf represents a quantifier over a set of strings: "N of", "none of", or
-// "any of" and "all of" with more than one pattern. Quant is "count" (at
-// least N), "none", "any" or "all". Patterns hold "them" or $names with an
-// optional trailing wildcard.
 type NOf struct {
 	Quant    string
 	N        int64

@@ -578,9 +578,6 @@ func (l *yaraLexer) lexConditionOp() int {
 	}
 }
 
-// readDottedIdent reads an identifier that may name a module member, such as
-// math.entropy. A dot joins parts only when a letter or underscore follows, so
-// a range like 0..pe.number_of_sections is not swallowed.
 func (l *yaraLexer) readDottedIdent() string {
 	start := l.pos
 	l.readIdent()
@@ -600,8 +597,6 @@ func (l *yaraLexer) lexDot() int {
 	return '.'
 }
 
-// lexCondStringOp reads the name after #, @ or ! and yields it as a string
-// identifier such as $a; a bare # or @ names the anonymous string $.
 func (l *yaraLexer) lexCondStringOp(lval *yySymType, tok int) int {
 	l.pos++
 	start := l.pos

@@ -8,8 +8,6 @@ import (
 	"math"
 )
 
-// window returns buf[offset:offset+size] when both arguments are integers and
-// the range lies inside buf.
 func window(buf []byte, offset, size any) ([]byte, bool) {
 	o, ok1 := offset.(int64)
 	s, ok2 := size.(int64)
@@ -19,7 +17,6 @@ func window(buf []byte, offset, size any) ([]byte, bool) {
 	return buf[o : o+s], true
 }
 
-// supportedFunctions lists the module functions evalModuleFunc implements.
 var supportedFunctions = map[string]int{
 	"math.entropy": 2, "math.mean": 2, "math.deviation": 3, "math.count": 3,
 	"hash.md5": 2, "hash.sha1": 2, "hash.sha256": 2,

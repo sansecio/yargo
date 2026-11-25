@@ -14,7 +14,7 @@ import (
 const (
 	maxImportDescriptors = 4096
 	maxImportThunks      = 1 << 14
-	maxExportNames       = 1 << 13
+	maxExportNames       = 1 << 14
 	maxTotalImports      = 1 << 14
 	maxNameBytes         = 1 << 20
 	maxCString           = 512
@@ -32,7 +32,6 @@ type peExport struct {
 	ordinal int64
 }
 
-// peInfo is the parsed view of a PE file that the pe module reads from.
 type peInfo struct {
 	file       *pe.File
 	buf        []byte
@@ -63,8 +62,6 @@ func (p *peInfo) full() bool {
 	return len(p.imports) >= maxTotalImports || p.nameBytes >= maxNameBytes
 }
 
-// scanState holds per-scan data shared by every rule's evaluation, parsed on
-// first use.
 type scanState struct {
 	done     <-chan struct{}
 	buf      []byte

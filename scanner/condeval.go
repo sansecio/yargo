@@ -18,13 +18,13 @@ type evalContext struct {
 	buf         []byte   // the buffer being scanned
 	stringNames []string // all string names defined in the rule
 	scan        *scanState
-	deadline    context.Context  // scan context; cancelled at the scan timeout
-	vars        map[string]int64 // loop variables in scope
-	cur         int              // string the anonymous $ stands for inside a for-of loop
-	inSet       bool             // evaluating the body of a for-of loop
+	deadline    context.Context
+	vars        map[string]int64
+	cur         int
+	inSet       bool
 	externals   Externals
-	ruleIndex   map[string]int32 // rules defined before this one
-	results     []bool           // outcome of every rule evaluated so far
+	ruleIndex   map[string]int32
+	results     []bool
 }
 
 // hitsFor returns the hits for the given string index. They are contiguous
@@ -93,19 +93,15 @@ func mayMatchWithoutHits(expr ast.Expr) bool {
 }
 
 // evalExpr evaluates a condition expression and returns true if it matches.
-// An undefined result (a missing external, an unparsable module) is false.
 func evalExpr(expr ast.Expr, ctx *evalContext) bool {
 	return truthy(evalAny(expr, ctx))
 }
 
-// evalExprInt evaluates an expression that should return an integer.
 func evalExprInt(expr ast.Expr, ctx *evalContext) int64 {
 	n, _ := evalAny(expr, ctx).(int64)
 	return n
 }
 
-// truthy converts an evaluation result to a condition outcome. A nil result
-// means undefined and is false.
 func truthy(v any) bool {
 	switch x := v.(type) {
 	case bool:
@@ -119,9 +115,6 @@ func truthy(v any) bool {
 	}
 }
 
-// evalAny evaluates an expression to a bool, int64, string, or nil for
-// undefined. Undefined propagates through comparisons, not, and, or, the way
-// YARA propagates it.
 func evalAny(expr ast.Expr, ctx *evalContext) any {
 	switch e := expr.(type) {
 	case ast.StringRef:
@@ -225,8 +218,6 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	}
 }
 
-// evalFuncCall evaluates a function call: the integer readers, and the math
-// and hash module functions. An argument outside the buffer is undefined.
 func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 	if len(fn.Args) == 0 && !strings.HasPrefix(fn.Name, "pe.") {
 		return nil
@@ -254,8 +245,6 @@ func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 	return evalModuleFunc(fn.Name, args, ctx.buf)
 }
 
-// integerReaders maps the YARA integer reader functions to their width,
-// signedness and byte order.
 var integerReaders = map[string]struct {
 	size   int
 	signed bool
@@ -292,7 +281,6 @@ func readInteger(name string, posArg any, buf []byte) (any, bool) {
 	return int64(u<<shift) >> shift, true
 }
 
-// evalBinaryExpr evaluates a binary expression.
 func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 	switch e.Op {
 	case "and":
@@ -527,9 +515,6 @@ func (ctx *evalContext) expired() bool {
 	return ctx.deadline != nil && ctx.deadline.Err() != nil
 }
 
-// evalFor runs a for loop. Quantifier semantics follow YARA: "any" needs one
-// true body, "all" needs every body true, "none" needs no true body and
-// "count" needs at least N.
 func evalFor(e ast.ForExpr, ctx *evalContext) any {
 	satisfied := 0
 	total := 0
@@ -601,7 +586,6 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 	}
 }
 
-// setIndices lists the distinct strings named by the patterns, in rule order.
 func (ctx *evalContext) setIndices(patterns []string) []int {
 	var seen []int
 	for _, p := range patterns {
@@ -709,8 +693,6 @@ func evalMatches(e ast.BinaryExpr, ctx *evalContext) any {
 	return re.MatchString(s)
 }
 
-// lookup resolves a bare identifier: a loop variable, an external variable, or
-// a rule defined earlier in the set. Anything else is undefined.
 func (ctx *evalContext) lookupPE(name string) any {
 	if v, ok := peConstants[name]; ok {
 		return v
@@ -769,7 +751,6 @@ func normalizeExternal(v any) any {
 	}
 }
 
-// refIndex resolves a string reference to its index in the rule.
 func (ctx *evalContext) refIndex(name string) int {
 	if ctx.inSet && name == "$" {
 		return ctx.cur
@@ -806,8 +787,6 @@ func evalAllOf(e ast.AllOf, ctx *evalContext) bool {
 	return true
 }
 
-// evalNOf evaluates quantifiers over a set of string patterns. A string named
-// by several patterns counts once.
 func evalNOf(e ast.NOf, ctx *evalContext) bool {
 	seen := ctx.setIndices(e.Patterns)
 	matched := 0
