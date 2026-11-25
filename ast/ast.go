@@ -3,7 +3,9 @@ package ast
 
 // RuleSet represents a collection of YARA rules.
 type RuleSet struct {
-	Rules []*Rule
+	// Imports lists the modules named by import statements, in order.
+	Imports []string
+	Rules   []*Rule
 	// Warnings lists constructs that parsed but cannot be honored, such as
 	// unsupported string modifiers. The affected rules never match.
 	Warnings []string
@@ -12,6 +14,9 @@ type RuleSet struct {
 // Rule represents a single YARA rule.
 type Rule struct {
 	Name      string
+	Tags      []string
+	Private   bool // matches are not reported
+	Global    bool // condition applies to every rule in the set
 	Meta      []*MetaEntry
 	Strings   []*StringDef
 	Condition Expr // parsed condition expression
@@ -33,6 +38,7 @@ type StringDef struct {
 // StringModifiers represents the modifiers applied to a string.
 type StringModifiers struct {
 	Ascii    bool
+	Wide     bool
 	Base64   bool
 	Fullword bool
 	Nocase   bool

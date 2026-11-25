@@ -140,10 +140,10 @@ func TestParseModifiers(t *testing.T) {
 		{`"x" ascii`, ast.StringModifiers{Ascii: true}},
 		{`"x" nocase`, ast.StringModifiers{Nocase: true}},
 		{`"x" private`, ast.StringModifiers{Private: true}},
-		{`"x" wide`, ast.StringModifiers{Unsupported: []string{"wide"}}},
+		{`"x" wide`, ast.StringModifiers{Wide: true}},
 		{`"x" xor`, ast.StringModifiers{Unsupported: []string{"xor"}}},
 		{`"x" base64wide`, ast.StringModifiers{Unsupported: []string{"base64wide"}}},
-		{`"x" wide xor nocase`, ast.StringModifiers{Nocase: true, Unsupported: []string{"wide", "xor"}}},
+		{`"x" wide xor nocase`, ast.StringModifiers{Wide: true, Nocase: true, Unsupported: []string{"xor"}}},
 		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Unsupported: []string{"xor(0x01-0xff)"}}},
 		{`"x" xor ( 0x01 )`, ast.StringModifiers{Unsupported: []string{"xor( 0x01 )"}}},
 		{`"x" base64("!@#$%^&*(){}")`, ast.StringModifiers{Unsupported: []string{`base64("!@#$%^&*(){}")`}}},
@@ -172,11 +172,22 @@ func TestParseModifiers(t *testing.T) {
 	}
 }
 
+func TestParseWideModifier(t *testing.T) {
+	rs := mustParse(t, `rule t { strings: $a = "x" wide ascii $b = "y" condition: any of them }`)
+	m := rs.Rules[0].Strings[0].Modifiers
+	if !m.Wide || !m.Ascii || len(m.Unsupported) != 0 {
+		t.Errorf("expected wide and ascii without unsupported, got %+v", m)
+	}
+	if len(rs.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", rs.Warnings)
+	}
+}
+
 func TestParseModifierWarnings(t *testing.T) {
 	rs := mustParse(t, `
 rule first {
 	strings:
-		$a = "one" wide nocase
+		$a = "one" base64wide nocase
 		$ = "two" xor(0x10-0x20)
 	condition:
 		any of them
@@ -190,7 +201,7 @@ rule second {
 }`)
 
 	want := []string{
-		`rule "first" string $a: unsupported modifier "wide", rule will not match`,
+		`rule "first" string $a: unsupported modifier "base64wide", rule will not match`,
 		`rule "first" string $: unsupported modifier "xor(0x10-0x20)", rule will not match`,
 	}
 	if !reflect.DeepEqual(rs.Warnings, want) {

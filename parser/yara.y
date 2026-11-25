@@ -22,9 +22,10 @@ import (
 	hexToken  ast.HexToken
 	expr      ast.Expr
 	exprs     []ast.Expr
+	strs      []string
 }
 
-%token RULE META STRINGS CONDITION
+%token RULE META STRINGS CONDITION IMPORT PRIVATE GLOBAL
 %token <str> IDENT STRING_LIT STRING_IDENT REGEX_LIT MODIFIER
 %token <str> COND_IDENT COND_STRING_ID STRING_PATTERN
 %token <str> HEX_JUMP HEX_ALT
@@ -40,7 +41,8 @@ import (
 %nonassoc AT
 
 %type <rules> rule_list
-%type <rule> rule
+%type <rule> rule rule_head
+%type <strs> tags tag_list
 %type <meta> meta_section meta_entries
 %type <metaEntry> meta_entry
 %type <stringDefs> strings_section string_defs
@@ -57,7 +59,8 @@ import (
 file:
 	rule_list
 	{
-		yylex.(*yaraLexer).ruleSet = &ast.RuleSet{Rules: $1}
+		l := yylex.(*yaraLexer)
+		l.ruleSet = &ast.RuleSet{Imports: l.imports, Rules: $1}
 	}
 	;
 
@@ -70,40 +73,79 @@ rule_list:
 	{
 		$$ = append($1, $2)
 	}
+	| rule_list IMPORT STRING_LIT
+	{
+		$$ = $1
+		l := yylex.(*yaraLexer)
+		l.imports = append(l.imports, unquoteString($3))
+	}
+	;
+
+rule_head:
+	RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $2, Tags: $3}
+	}
+	| PRIVATE RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $3, Tags: $4, Private: true}
+	}
+	| GLOBAL RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $3, Tags: $4, Global: true}
+	}
+	| PRIVATE GLOBAL RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $4, Tags: $5, Private: true, Global: true}
+	}
+	| GLOBAL PRIVATE RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $4, Tags: $5, Private: true, Global: true}
+	}
+	;
+
+tags:
+	/* empty */
+	{
+		$$ = nil
+	}
+	| ':' tag_list
+	{
+		$$ = $2
+	}
+	;
+
+tag_list:
+	IDENT
+	{
+		$$ = []string{$1}
+	}
+	| tag_list IDENT
+	{
+		$$ = append($1, $2)
+	}
 	;
 
 rule:
-	RULE IDENT '{' meta_section strings_section condition_section '}'
+	rule_head '{' meta_section strings_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Meta:      $4,
-			Strings:   $5,
-			Condition: $6,
-		}
+		$$ = $1
+		$$.Meta, $$.Strings, $$.Condition = $3, $4, $5
 	}
-	| RULE IDENT '{' strings_section condition_section '}'
+	| rule_head '{' strings_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Strings:   $4,
-			Condition: $5,
-		}
+		$$ = $1
+		$$.Strings, $$.Condition = $3, $4
 	}
-	| RULE IDENT '{' meta_section condition_section '}'
+	| rule_head '{' meta_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Meta:      $4,
-			Condition: $5,
-		}
+		$$ = $1
+		$$.Meta, $$.Condition = $3, $4
 	}
-	| RULE IDENT '{' condition_section '}'
+	| rule_head '{' condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Condition: $4,
-		}
+		$$ = $1
+		$$.Condition = $3
 	}
 	;
 
@@ -192,6 +234,8 @@ modifiers:
 		switch $2 {
 		case "ascii":
 			$$.Ascii = true
+		case "wide":
+			$$.Wide = true
 		case "base64":
 			$$.Base64 = true
 		case "fullword":

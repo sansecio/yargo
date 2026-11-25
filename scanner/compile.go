@@ -67,7 +67,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	for _, r := range rs.Rules {
-		if r.Condition == nil || hasUnsupportedModifier(r) {
+		if r.Condition == nil || r.Global || hasUnsupportedModifier(r) {
 			continue
 		}
 
@@ -81,6 +81,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			name:      r.Name,
 			metas:     make([]Meta, len(r.Meta)),
 			condition: r.Condition,
+			private:   r.Private,
 			slotBase:  int32(len(rules.slotRule)),
 		}
 		for i, m := range r.Meta {
@@ -108,14 +109,15 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				}
 				continue
 			}
-			for _, p := range patterns {
+			for _, p := range withWideVariants(patterns, s.Modifiers) {
 				rules.patternMap = append(rules.patternMap, patternRef{
 					slot:     slot,
 					fullword: s.Modifiers.Fullword,
-					verify:   !s.Modifiers.Nocase && hasASCIILetter(p),
+					wide:     p.wide,
+					verify:   !s.Modifiers.Nocase && hasASCIILetter(p.bytes),
 					regexIdx: -1,
 				})
-				allPatterns = append(allPatterns, p)
+				allPatterns = append(allPatterns, p.bytes)
 				if s.Modifiers.Nocase {
 					hasNocase = true
 				}
@@ -155,11 +157,50 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 // positives, and matching without a modifier like xor would be plain wrong.
 func hasUnsupportedModifier(r *ast.Rule) bool {
 	for _, s := range r.Strings {
-		if len(s.Modifiers.Unsupported) > 0 {
+		if len(s.Modifiers.Unsupported) > 0 || unsupportedWide(s) {
 			return true
 		}
 	}
 	return false
+}
+
+// unsupportedWide reports whether s combines wide with a string kind the
+// scanner cannot widen: only plain text strings have a wide form here.
+func unsupportedWide(s *ast.StringDef) bool {
+	if !s.Modifiers.Wide {
+		return false
+	}
+	if _, ok := s.Value.(ast.TextString); !ok {
+		return true
+	}
+	return s.Modifiers.Base64
+}
+
+type variant struct {
+	bytes []byte
+	wide  bool
+}
+
+// withWideVariants expands text patterns into the encodings the modifiers ask
+// for: ascii by default, UTF-16LE for wide, both for ascii wide.
+func withWideVariants(patterns [][]byte, m ast.StringModifiers) []variant {
+	out := make([]variant, 0, len(patterns)*2)
+	if !m.Wide || m.Ascii {
+		for _, p := range patterns {
+			out = append(out, variant{bytes: p})
+		}
+	}
+	if !m.Wide {
+		return out
+	}
+	for _, p := range patterns {
+		w := make([]byte, 0, len(p)*2)
+		for _, b := range p {
+			w = append(w, b, 0)
+		}
+		out = append(out, variant{bytes: w, wide: true})
+	}
+	return out
 }
 
 // hasASCIILetter reports whether folding can make p match bytes it otherwise

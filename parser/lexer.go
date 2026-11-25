@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/sansecio/yargo/ast"
 )
@@ -21,6 +22,7 @@ type yaraLexer struct {
 	pos     int
 	modes   []int
 	ruleSet *ast.RuleSet
+	imports []string
 	err     string
 }
 
@@ -76,8 +78,12 @@ func (l *yaraLexer) Lex(lval *yySymType) int {
 // "syntax error" after the lexer has already recorded a descriptive one.
 func (l *yaraLexer) Error(s string) {
 	if l.err == "" {
-		l.err = s
+		l.err = fmt.Sprintf("%s (line %d)", s, l.line())
 	}
+}
+
+func (l *yaraLexer) line() int {
+	return 1 + strings.Count(l.input[:min(l.pos, len(l.input))], "\n")
 }
 
 func (l *yaraLexer) errorf(format string, args ...any) {
@@ -190,12 +196,23 @@ func (l *yaraLexer) lexRoot(lval *yySymType) int {
 	ch := l.peek()
 	if isAlpha(ch) || ch == '_' {
 		word := l.readIdent()
-		if word == "rule" {
+		switch word {
+		case "rule":
 			l.pushMode(modeRuleBody)
 			return RULE
+		case "import":
+			return IMPORT
+		case "private":
+			return PRIVATE
+		case "global":
+			return GLOBAL
 		}
 		lval.str = word
 		return IDENT
+	}
+	if ch == '"' {
+		lval.str = l.readQuotedString()
+		return STRING_LIT
 	}
 	l.pos++
 	l.errorf("unexpected character %q at position %d", ch, l.pos-1)

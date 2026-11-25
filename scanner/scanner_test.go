@@ -392,7 +392,7 @@ func TestCompileSkipsUnsupportedModifierRules(t *testing.T) {
 	rs, err := parser.New().Parse(`
 rule widerule {
 	strings:
-		$a = "needle" wide
+		$a = "needle" base64wide
 	condition:
 		any of them
 }

@@ -72,6 +72,7 @@ type (
 	patternRef struct {
 		slot     int32
 		fullword bool
+		wide     bool // UTF-16LE encoding of the string, for the fullword check
 		verify   bool // confirm the hit against the original buffer (case-folded scan)
 		regexIdx int
 	}
@@ -93,6 +94,7 @@ type (
 		condition      ast.Expr
 		stringNames    []string
 		stringPrivates []bool
+		private        bool
 		slotBase       int32 // slot of this rule's first string
 	}
 
@@ -157,7 +159,13 @@ func isWordChar(b byte) bool {
 		b == '_'
 }
 
-func checkWordBoundary(buf []byte, start, end int) bool {
+func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
+	if wide {
+		if start >= 2 && buf[start-1] == 0 && isWordChar(buf[start-2]) {
+			return false
+		}
+		return !(end+1 < len(buf) && buf[end+1] == 0 && isWordChar(buf[end]))
+	}
 	if start > 0 && isWordChar(buf[start-1]) {
 		return false
 	}
@@ -234,7 +242,7 @@ func (r *Rules) collectMatches(ctx context.Context, buf []byte) ([]hit, error) {
 				continue
 			}
 
-			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
+			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End(), ref.wide) {
 				continue
 			}
 
@@ -352,7 +360,7 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 			matchStart := start + loc[0]
 			matchEnd := start + loc[1]
 			lastEnd = matchEnd
-			if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd) {
+			if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd, false) {
 				continue
 			}
 			hits = append(hits, hit{pos: matchStart, slot: rp.slot, n: int32(matchEnd - matchStart)})
@@ -401,7 +409,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, cb Sc
 			buf:         buf,
 			stringNames: cr.stringNames,
 		}
-		if !evalExpr(cr.condition, evalCtx) {
+		if !evalExpr(cr.condition, evalCtx) || cr.private {
 			continue
 		}
 
