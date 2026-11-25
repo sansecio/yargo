@@ -58,10 +58,21 @@ func parseBase64Modifier(s string) (wide bool, alphabet string, ok bool) {
 		return false, "", false
 	}
 	alphabet = unquoteString(args)
-	if len(alphabet) != 64 || strings.ContainsAny(alphabet, "\r\n") {
+	if len(alphabet) != 64 || strings.ContainsAny(alphabet, "\r\n=") || hasDuplicateByte(alphabet) {
 		return false, "", false
 	}
 	return name == "base64wide", alphabet, true
+}
+
+func hasDuplicateByte(s string) bool {
+	var seen [256]bool
+	for i := range len(s) {
+		if seen[s[i]] {
+			return true
+		}
+		seen[s[i]] = true
+	}
+	return false
 }
 
 func parseXorKey(s string) (byte, bool) {

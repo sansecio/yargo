@@ -62,3 +62,15 @@ func TestBase64WithXorIsSkipped(t *testing.T) {
 		t.Errorf("rules=%d skipped=%+v", rules.NumRules(), rules.Skipped())
 	}
 }
+
+func TestBase64AlphabetThatCannotEncodeIsSkipped(t *testing.T) {
+	for _, alphabet := range []string{
+		"A" + testAlphabet[1:63] + "A",
+		testAlphabet[:63] + "=",
+	} {
+		rules := compileSource(t, `rule r { strings: $a = "needle in a haystack" base64("`+alphabet+`") condition: $a }`)
+		if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
+			t.Errorf("alphabet %q: rules=%d skipped=%+v", alphabet, rules.NumRules(), rules.Skipped())
+		}
+	}
+}

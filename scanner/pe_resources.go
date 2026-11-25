@@ -158,14 +158,14 @@ func (w *resourceWalk) collect(rva, size uint32, typeStr, nameStr, langStr optSt
 	r.typ, r.typeStr = optValue(typeStr, w.typ)
 	r.id, r.nameStr = optValue(nameStr, w.id)
 	r.language, r.languageStr = optValue(langStr, w.language)
-	if w.typ == resourceTypeVersion {
+	if w.typ == resourceTypeVersion && !p.stopped() {
 		p.parseVersionInfo(rva)
 	}
 	p.resources = append(p.resources, r)
 }
 
-func (p *peInfo) wideFits(off int) bool {
-	for ; off >= 0 && off <= len(p.buf)-2; off += 2 {
+func (p *peInfo) wideFits(off, end int) bool {
+	for end = min(end, len(p.buf)); off >= 0 && off <= end-2; off += 2 {
 		if p.buf[off] == 0 && p.buf[off+1] == 0 {
 			return true
 		}
@@ -173,9 +173,10 @@ func (p *peInfo) wideFits(off int) bool {
 	return false
 }
 
-func (p *peInfo) wideLen(off int) int {
+func (p *peInfo) wideLen(off, end int) int {
 	n := 0
-	for off+2*n+1 < len(p.buf) && (p.buf[off+2*n] != 0 || p.buf[off+2*n+1] != 0) {
+	end = min(end, len(p.buf))
+	for off+2*n+1 < end && (p.buf[off+2*n] != 0 || p.buf[off+2*n+1] != 0) {
 		n++
 	}
 	return n
@@ -215,14 +216,14 @@ func (p *peInfo) parseVersionInfo(rva uint32) {
 		return
 	}
 	off += align4(6 + 86)
-	for p.fits(off+6, 24) && p.wideEquals(off+6, "VarFileInfo") {
+	for p.fits(off+6, 24) && p.wideEquals(off+6, "VarFileInfo") && !p.stopped() {
 		length, _ := p.u16(off)
 		if length == 0 {
 			break
 		}
 		off += align4(int(length))
 	}
-	for p.fits(off+6, 30) && p.wideEquals(off+6, "StringFileInfo") {
+	for p.fits(off+6, 30) && p.wideEquals(off+6, "StringFileInfo") && !p.stopped() {
 		length, _ := p.u16(off)
 		if length == 0 {
 			break
@@ -236,10 +237,10 @@ func (p *peInfo) parseVersionInfo(rva uint32) {
 func (p *peInfo) parseStringTables(table, end int) {
 	for {
 		tableLen, ok := p.node(table)
-		if !ok || !p.wideFits(table+6) || tableLen == 0 || table >= end {
+		if !ok || !p.wideFits(table+6, table+tableLen) || tableLen == 0 || table >= end || p.stopped() {
 			return
 		}
-		str := table + align4(6+2*(p.wideLen(table+6)+1))
+		str := table + align4(6+2*(p.wideLen(table+6, table+tableLen)+1))
 		table += align4(tableLen)
 		if !p.parseStrings(str, table) {
 			return
@@ -250,14 +251,14 @@ func (p *peInfo) parseStringTables(table, end int) {
 func (p *peInfo) parseStrings(str, end int) bool {
 	for {
 		strLen, ok := p.node(str)
-		if !ok || !p.wideFits(str+6) || strLen == 0 || str >= end {
+		if !ok || !p.wideFits(str+6, str+strLen) || strLen == 0 || str >= end {
 			return true
 		}
 		if len(p.versionList) >= maxVersionInfos || p.stopped() {
 			return false
 		}
-		valueOff := str + align4(6+2*(p.wideLen(str+6)+1))
-		if p.wideFits(valueOff) {
+		valueOff := str + align4(6+2*(p.wideLen(str+6, str+strLen)+1))
+		if p.wideFits(valueOff, str+strLen) {
 			key := p.narrow(str+6, maxVersionKeyChars)
 			value := p.narrow(valueOff, maxVersionValChars)
 			if valueLen, _ := p.u16(str + 2); valueLen == 0 {
