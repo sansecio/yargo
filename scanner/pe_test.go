@@ -196,7 +196,7 @@ func TestPEModuleOnNonPEIsUndefined(t *testing.T) {
 }
 
 func TestPEModuleSkipsUnsupportedMembers(t *testing.T) {
-	rules := compileSource(t, `rule r { condition: pe.version_info["x"] contains "y" }`)
+	rules := compileSource(t, `rule r { condition: pe.is_signed }`)
 	if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
 		t.Errorf("expected skipped rule, got %d rules, %+v", rules.NumRules(), rules.Skipped())
 	}

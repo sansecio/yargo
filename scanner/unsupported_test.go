@@ -9,12 +9,14 @@ import (
 
 func TestUnsupportedModuleFieldsRejectedAtCompile(t *testing.T) {
 	for _, cond := range []string{
-		`pe.version_info["x"] == "y"`,
-		`not pe.version_info["x"] == "y"`,
+		`pe.is_signed`,
+		`not pe.is_signed`,
 		`not pe.sections[0].bogus == "x"`,
-		`not pe.signatures[0].serial == "x"`,
-		`not pe.resources[0].offset == 1`,
-		`not pe.overlay.size == 1`,
+		`not pe.signatures[0].bogus == "x"`,
+		`not pe.resources[0].bogus == 1`,
+		`not pe.version_info_list[0].bogus == 1`,
+		`not pe.overlay.bogus == 1`,
+		`not pe.rich_signature.clear_data == "x"`,
 	} {
 		rules := compileSource(t, "rule r { condition: "+cond+" }")
 		if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
@@ -43,8 +45,8 @@ func TestSkippedRegexStringSkipsTheWholeRule(t *testing.T) {
 func TestUnevaluatedNodesAreUndefinedNotFalse(t *testing.T) {
 	ctx := &evalContext{}
 	for _, e := range []ast.Expr{
-		ast.Index{Base: ast.Ident{Name: "pe.version_info"}, Index: ast.StrLit{Value: "k"}},
-		ast.Field{Base: ast.Ident{Name: "pe.overlay"}, Name: "size"},
+		ast.Index{Base: ast.Ident{Name: "pe.rich_signature"}, Index: ast.StrLit{Value: "k"}},
+		ast.Field{Base: ast.Ident{Name: "pe.rich_signature"}, Name: "size"},
 	} {
 		if v := evalAny(e, ctx); v != nil {
 			t.Errorf("%T evaluated to %v, want undefined", e, v)

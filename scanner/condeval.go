@@ -188,6 +188,9 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	case ast.Field:
 		return evalPEField(e, ctx)
 
+	case ast.Index:
+		return evalPEIndex(e, ctx)
+
 	case ast.FuncCall:
 		return evalFuncCall(e, ctx)
 
@@ -702,6 +705,9 @@ func (ctx *evalContext) lookupPE(name string) any {
 	}
 	info := ctx.scan.peInfo()
 	if info == nil {
+		if name == "pe.is_pe" {
+			return int64(0)
+		}
 		return nil
 	}
 	return info.scalar(name)
@@ -712,12 +718,37 @@ func evalPEField(e ast.Field, ctx *evalContext) any {
 	if !ok || ctx.scan == nil {
 		return nil
 	}
+	array, ok := idx.Base.(ast.Ident)
+	if !ok {
+		return nil
+	}
 	i, ok := evalAny(idx.Index, ctx).(int64)
 	info := ctx.scan.peInfo()
 	if !ok || info == nil {
 		return nil
 	}
-	return info.sectionField(i, e.Name)
+	switch array.Name {
+	case "pe.sections":
+		return info.sectionField(i, e.Name)
+	case "pe.resources":
+		return info.resourceField(i, e.Name)
+	case "pe.version_info_list":
+		return info.versionInfoListField(i, e.Name)
+	}
+	return nil
+}
+
+func evalPEIndex(e ast.Index, ctx *evalContext) any {
+	base, ok := e.Base.(ast.Ident)
+	if !ok || base.Name != "pe.version_info" || ctx.scan == nil {
+		return nil
+	}
+	key, ok := evalAny(e.Index, ctx).(string)
+	info := ctx.scan.peInfo()
+	if !ok || info == nil {
+		return nil
+	}
+	return info.versionInfoField(key)
 }
 
 func (ctx *evalContext) lookup(name string) any {

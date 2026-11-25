@@ -264,6 +264,9 @@ func conditionReason(expr ast.Expr, rules *Rules) string {
 		}
 		return conditionReason(e.Base.(ast.Index).Index, rules)
 	case ast.Index:
+		if base, ok := e.Base.(ast.Ident); ok && base.Name == "pe.version_info" {
+			return conditionReason(e.Index, rules)
+		}
 		if reason := conditionReason(e.Base, rules); reason != "" {
 			return reason
 		}

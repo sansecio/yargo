@@ -18,6 +18,7 @@ const (
 	maxTotalImports      = 1 << 14
 	maxNameBytes         = 1 << 20
 	maxCString           = 512
+	maxPESections        = 96
 )
 
 type thunkKey struct {
@@ -52,6 +53,15 @@ type peInfo struct {
 	nameBytes  int
 	walked     map[thunkKey]bool
 	done       <-chan struct{}
+
+	dirs              []pe.DataDirectory
+	overlayOffset     int64
+	overlaySize       int64
+	resourcesParsed   bool
+	resources         []peResource
+	resourceTimestamp int64
+	versionInfo       map[string]string
+	versionList       []versionEntry
 }
 
 func (p *peInfo) stopped() bool {
@@ -110,11 +120,25 @@ func parsePE(buf []byte, done <-chan struct{}) *peInfo {
 	if off, ok := info.rvaToOffset(uint32(rva)); ok {
 		info.entry = int64(off)
 	}
+	info.dirs = dirs
+	info.parseOverlay()
 	if len(dirs) > 1 {
 		info.parseExports(dirs[0])
 		info.parseImports(dirs[1])
 	}
 	return info
+}
+
+func (p *peInfo) parseOverlay() {
+	var highestOffset, highestSize uint64
+	for _, s := range p.file.Sections[:min(len(p.file.Sections), maxPESections)] {
+		if end := uint64(s.Offset) + uint64(s.Size); end > highestOffset+highestSize {
+			highestOffset, highestSize = uint64(s.Offset), uint64(s.Size)
+		}
+	}
+	if end := highestOffset + highestSize; end != 0 && uint64(len(p.buf)) > end {
+		p.overlayOffset, p.overlaySize = int64(end), int64(uint64(len(p.buf))-end)
+	}
 }
 
 func (p *peInfo) rvaToOffset(rva uint32) (int, bool) {
@@ -325,12 +349,34 @@ var peConstants = map[string]int64{
 	"pe.MACHINE_ARM": 0x1c0, "pe.MACHINE_ARM64": 0xaa64,
 	"pe.SUBSYSTEM_NATIVE": 1, "pe.SUBSYSTEM_WINDOWS_GUI": 2, "pe.SUBSYSTEM_WINDOWS_CUI": 3,
 	"pe.SUBSYSTEM_EFI_APPLICATION": 10,
+	"pe.RESOURCE_TYPE_CURSOR":      1, "pe.RESOURCE_TYPE_BITMAP": 2, "pe.RESOURCE_TYPE_ICON": 3,
+	"pe.RESOURCE_TYPE_MENU": 4, "pe.RESOURCE_TYPE_DIALOG": 5, "pe.RESOURCE_TYPE_STRING": 6,
+	"pe.RESOURCE_TYPE_FONTDIR": 7, "pe.RESOURCE_TYPE_FONT": 8, "pe.RESOURCE_TYPE_ACCELERATOR": 9,
+	"pe.RESOURCE_TYPE_RCDATA": 10, "pe.RESOURCE_TYPE_MESSAGETABLE": 11, "pe.RESOURCE_TYPE_GROUP_CURSOR": 12,
+	"pe.RESOURCE_TYPE_GROUP_ICON": 14, "pe.RESOURCE_TYPE_VERSION": 16, "pe.RESOURCE_TYPE_DLGINCLUDE": 17,
+	"pe.RESOURCE_TYPE_PLUGPLAY": 19, "pe.RESOURCE_TYPE_VXD": 20, "pe.RESOURCE_TYPE_ANICURSOR": 21,
+	"pe.RESOURCE_TYPE_ANIICON": 22, "pe.RESOURCE_TYPE_HTML": 23, "pe.RESOURCE_TYPE_MANIFEST": 24,
 }
 
 var peScalars = map[string]bool{
 	"pe.machine": true, "pe.timestamp": true, "pe.characteristics": true, "pe.subsystem": true,
 	"pe.entry_point": true, "pe.image_base": true, "pe.dll_characteristics": true,
 	"pe.number_of_sections": true, "pe.number_of_exports": true,
+	"pe.number_of_resources": true, "pe.resource_timestamp": true, "pe.number_of_version_infos": true,
+	"pe.overlay.offset": true, "pe.overlay.size": true, "pe.is_pe": true,
+}
+
+var peResourceFields = map[string]bool{
+	"rva": true, "offset": true, "length": true, "type": true, "id": true, "language": true,
+	"type_string": true, "name_string": true, "language_string": true,
+}
+
+var peVersionListFields = map[string]bool{"key": true, "value": true}
+
+var peArrayFields = map[string]map[string]bool{
+	"pe.sections":          peSectionFields,
+	"pe.resources":         peResourceFields,
+	"pe.version_info_list": peVersionListFields,
 }
 
 var peFunctions = map[string]int{
@@ -361,7 +407,7 @@ func supportedPEMember(expr ast.Expr) bool {
 			return false
 		}
 		id, ok := idx.Base.(ast.Ident)
-		return ok && id.Name == "pe.sections" && peSectionFields[e.Name]
+		return ok && peArrayFields[id.Name][e.Name]
 	}
 	return false
 }
@@ -389,6 +435,21 @@ func (p *peInfo) scalar(name string) any {
 		return int64(len(p.file.Sections))
 	case "pe.number_of_exports":
 		return p.numExports
+	case "pe.overlay.offset":
+		return p.overlayOffset
+	case "pe.overlay.size":
+		return p.overlaySize
+	case "pe.is_pe":
+		return int64(1)
+	case "pe.number_of_resources":
+		p.ensureResources()
+		return int64(len(p.resources))
+	case "pe.resource_timestamp":
+		p.ensureResources()
+		return p.resourceTimestamp
+	case "pe.number_of_version_infos":
+		p.ensureResources()
+		return int64(len(p.versionList))
 	}
 	return nil
 }
