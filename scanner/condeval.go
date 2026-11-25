@@ -221,7 +221,7 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 		return evalNOf(e, ctx)
 
 	default:
-		return false
+		return nil
 	}
 }
 

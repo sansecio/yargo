@@ -243,7 +243,10 @@ func conditionReason(expr ast.Expr, rules *Rules) string {
 		}
 		return conditionReason(e.Base.(ast.Index).Index, rules)
 	case ast.Index:
-		return "unsupported module index"
+		if reason := conditionReason(e.Base, rules); reason != "" {
+			return reason
+		}
+		return "unsupported module field index"
 	case ast.FuncCall:
 		if strings.HasPrefix(e.Name, "pe.") {
 			if !supportedPEFunction(e.Name, len(e.Args)) {
