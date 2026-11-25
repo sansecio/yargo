@@ -21,9 +21,6 @@ type CompileOptions struct {
 	// a full buffer scan, instead of returning an error.
 	SkipInvalidRegex bool
 
-	// FullBufferRegex accepts regexes without a usable literal atom, and
-	// case-insensitive ones, by running them over the whole buffer. Each
-	// such regex costs one pass over every scanned buffer.
 	FullBufferRegex bool
 
 	// SkipSubtypes filters out rules whose meta "subtype" field matches
@@ -623,10 +620,6 @@ func widenBytes(b []byte) []byte {
 	return w
 }
 
-// base64Patterns returns the encodings of data at the three possible
-// alignments within a base64 group, without the leading and trailing
-// characters that depend on neighboring bytes (the scheme of YARA's
-// libyara/base64.c, BSD-3-Clause).
 func base64Patterns(data []byte, enc *base64.Encoding) [][]byte {
 	patterns := make([][]byte, 0, 3)
 	for lead := range 3 {

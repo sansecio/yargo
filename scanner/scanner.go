@@ -59,11 +59,11 @@ type (
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
 		rules             []*compiledRule
-		zeroHitRules      []int32 // sorted indexes of rules that may match without hits
+		zeroHitRules      []int32
 		matcher           *ahocorasick.AhoCorasick
 		patterns          [][]byte
 		patternMap        []patternRef
-		slotRule          []int32 // string slot -> rule index
+		slotRule          []int32
 		regexPatterns     []*regexPattern
 		fullBufferRegexes []int
 		globalRules       []int32
@@ -396,7 +396,6 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 	return hits, nil
 }
 
-// maxFullBufferMatches bounds the matches recorded for one full-buffer regex.
 const maxFullBufferMatches = 1 << 16
 
 type allIndexer interface {
@@ -465,8 +464,6 @@ func (r *Rules) evalRule(ctx context.Context, buf []byte, cr *compiledRule, rule
 	})
 }
 
-// globalsHold evaluates the global rules first. One unsatisfied global rule
-// stops every other rule of the rule set from matching.
 func (r *Rules) globalsHold(ctx context.Context, buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
 	for _, idx := range r.globalRules {
 		cr := r.rules[idx]
