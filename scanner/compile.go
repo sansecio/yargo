@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp/syntax"
 	"strings"
 
@@ -211,14 +212,56 @@ func conditionReason(expr ast.Expr, rules *Rules) string {
 		return conditionReason(e.Inner, rules)
 	case ast.AtExpr:
 		return conditionReason(e.Pos, rules)
+	case ast.UnaryExpr:
+		return conditionReason(e.Inner, rules)
+	case ast.OffsetOf:
+		return optionalReason(e.Index, rules)
+	case ast.LenOf:
+		return optionalReason(e.Index, rules)
+	case ast.InExpr:
+		return firstReason(rules, e.Lo, e.Hi)
+	case ast.ForExpr:
+		if e.Var == "" {
+			return conditionReason(e.Body, rules)
+		}
+		scoped := *rules
+		scoped.externals = maps.Clone(rules.externals)
+		scoped.externals[e.Var] = true
+		if reason := firstReason(rules, e.Lo, e.Hi); reason != "" {
+			return reason
+		}
+		return conditionReason(e.Body, &scoped)
 	case ast.FuncCall:
-		for _, a := range e.Args {
-			if reason := conditionReason(a, rules); reason != "" {
-				return reason
-			}
+		if !knownFunction(e.Name) {
+			return "unsupported function " + e.Name
+		}
+		return firstReason(rules, e.Args...)
+	}
+	return ""
+}
+
+func optionalReason(expr ast.Expr, rules *Rules) string {
+	if expr == nil {
+		return ""
+	}
+	return conditionReason(expr, rules)
+}
+
+func firstReason(rules *Rules, exprs ...ast.Expr) string {
+	for _, e := range exprs {
+		if reason := conditionReason(e, rules); reason != "" {
+			return reason
 		}
 	}
 	return ""
+}
+
+func knownFunction(name string) bool {
+	if _, ok := integerReaders[name]; ok {
+		return true
+	}
+	_, ok := supportedFunctions[name]
+	return ok
 }
 
 // hasUnsupportedModifier reports whether any of the rule's strings carries a
@@ -237,7 +280,7 @@ func hasUnsupportedModifier(r *ast.Rule) bool {
 // unsupportedWide reports whether s combines wide with a string kind the
 // scanner cannot widen: only plain text strings have a wide form here.
 func unsupportedWide(s *ast.StringDef) bool {
-	if !s.Modifiers.Wide {
+	if !s.Modifiers.Wide && s.Modifiers.Xor == nil {
 		return false
 	}
 	if _, ok := s.Value.(ast.TextString); !ok {
@@ -260,17 +303,30 @@ func withWideVariants(patterns [][]byte, m ast.StringModifiers) []variant {
 			out = append(out, variant{bytes: p})
 		}
 	}
-	if !m.Wide {
+	if m.Wide {
+		for _, p := range patterns {
+			w := make([]byte, 0, len(p)*2)
+			for _, b := range p {
+				w = append(w, b, 0)
+			}
+			out = append(out, variant{bytes: w, wide: true})
+		}
+	}
+	if m.Xor == nil {
 		return out
 	}
-	for _, p := range patterns {
-		w := make([]byte, 0, len(p)*2)
-		for _, b := range p {
-			w = append(w, b, 0)
+	keys := int(m.Xor.Max) - int(m.Xor.Min) + 1
+	xored := make([]variant, 0, len(out)*keys)
+	for _, v := range out {
+		for key := int(m.Xor.Min); key <= int(m.Xor.Max); key++ {
+			b := make([]byte, len(v.bytes))
+			for i, c := range v.bytes {
+				b[i] = c ^ byte(key)
+			}
+			xored = append(xored, variant{bytes: b, wide: v.wide})
 		}
-		out = append(out, variant{bytes: w, wide: true})
 	}
-	return out
+	return xored
 }
 
 // hasASCIILetter reports whether folding can make p match bytes it otherwise

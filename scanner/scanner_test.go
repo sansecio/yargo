@@ -400,7 +400,7 @@ rule widerule {
 rule xorrule {
 	strings:
 		$a = "needle"
-		$b = "other" xor(0x01-0xff)
+		$b = "other" xor(0x300)
 	condition:
 		any of them
 }

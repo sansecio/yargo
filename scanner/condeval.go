@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"cmp"
-	"encoding/binary"
 	"regexp"
 	"slices"
 	"strings"
@@ -18,6 +17,8 @@ type evalContext struct {
 	buf         []byte           // the buffer being scanned
 	stringNames []string         // all string names defined in the rule
 	vars        map[string]int64 // loop variables in scope
+	cur         int              // string the anonymous $ stands for inside a for-of loop
+	inSet       bool             // evaluating the body of a for-of loop
 	externals   Externals
 	ruleIndex   map[string]int32 // rules defined before this one
 	results     []bool           // outcome of every rule evaluated so far
@@ -146,6 +147,39 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	case ast.StrLit:
 		return e.Value
 
+	case ast.FloatLit:
+		return e.Value
+
+	case ast.InExpr:
+		return evalIn(e, ctx)
+
+	case ast.CountOf:
+		idx := ctx.refIndex(e.Name)
+		if idx < 0 {
+			return nil
+		}
+		return int64(len(ctx.hitsFor(idx)))
+
+	case ast.OffsetOf:
+		h, ok := ctx.nthHit(e.Name, e.Index)
+		if !ok {
+			return nil
+		}
+		return int64(h.pos)
+
+	case ast.LenOf:
+		h, ok := ctx.nthHit(e.Name, e.Index)
+		if !ok {
+			return nil
+		}
+		return int64(h.n)
+
+	case ast.UnaryExpr:
+		return evalUnary(e, ctx)
+
+	case ast.ForExpr:
+		return evalFor(e, ctx)
+
 	case ast.BoolLit:
 		return e.Value
 
@@ -185,47 +219,61 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	}
 }
 
-// evalFuncCall evaluates a function call and returns its integer result.
+// evalFuncCall evaluates a function call: the integer readers, and the math
+// and hash module functions. An argument outside the buffer is undefined.
 func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 	if len(fn.Args) == 0 {
-		return int64(0)
+		return nil
 	}
-	pos := evalExprInt(fn.Args[0], ctx)
-	if pos < 0 || int(pos) >= len(ctx.buf) {
-		return int64(0)
+	args := make([]any, len(fn.Args))
+	for i, a := range fn.Args {
+		args[i] = evalAny(a, ctx)
+		if args[i] == nil {
+			return nil
+		}
 	}
-
-	switch fn.Name {
-	case "uint32be":
-		if int(pos)+4 > len(ctx.buf) {
-			return int64(0)
-		}
-		return int64(binary.BigEndian.Uint32(ctx.buf[pos:]))
-
-	case "uint16be":
-		if int(pos)+2 > len(ctx.buf) {
-			return int64(0)
-		}
-		return int64(binary.BigEndian.Uint16(ctx.buf[pos:]))
-
-	case "uint32":
-		if int(pos)+4 > len(ctx.buf) {
-			return int64(0)
-		}
-		return int64(binary.LittleEndian.Uint32(ctx.buf[pos:]))
-
-	case "uint16":
-		if int(pos)+2 > len(ctx.buf) {
-			return int64(0)
-		}
-		return int64(binary.LittleEndian.Uint16(ctx.buf[pos:]))
-
-	case "uint8":
-		return int64(ctx.buf[pos])
-
-	default:
-		return int64(0)
+	if v, ok := readInteger(fn.Name, args[0], ctx.buf); ok {
+		return v
 	}
+	return evalModuleFunc(fn.Name, args, ctx.buf)
+}
+
+// integerReaders maps the YARA integer reader functions to their width,
+// signedness and byte order.
+var integerReaders = map[string]struct {
+	size   int
+	signed bool
+	big    bool
+}{
+	"uint8": {1, false, false}, "uint16": {2, false, false}, "uint32": {4, false, false},
+	"int8": {1, true, false}, "int16": {2, true, false}, "int32": {4, true, false},
+	"uint8be": {1, false, true}, "uint16be": {2, false, true}, "uint32be": {4, false, true},
+	"int8be": {1, true, true}, "int16be": {2, true, true}, "int32be": {4, true, true},
+}
+
+func readInteger(name string, posArg any, buf []byte) (any, bool) {
+	r, ok := integerReaders[name]
+	if !ok {
+		return nil, false
+	}
+	pos, ok := posArg.(int64)
+	if !ok || pos < 0 || pos+int64(r.size) > int64(len(buf)) {
+		return int64(0), true
+	}
+	b := buf[pos : pos+int64(r.size)]
+	var u uint64
+	for i := range b {
+		if r.big {
+			u = u<<8 | uint64(b[i])
+		} else {
+			u |= uint64(b[i]) << (8 * i)
+		}
+	}
+	if !r.signed {
+		return int64(u), true
+	}
+	shift := 64 - 8*r.size
+	return int64(u<<shift) >> shift, true
 }
 
 // evalBinaryExpr evaluates a binary expression.
@@ -256,6 +304,9 @@ func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 	if l == nil || r == nil {
 		return nil
 	}
+	if isArithmeticOp(e.Op) {
+		return arithmetic(e.Op, l, r)
+	}
 	if ls, ok := l.(string); ok {
 		rs, ok := r.(string)
 		if !ok {
@@ -263,12 +314,272 @@ func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 		}
 		return compareStrings(e.Op, ls, rs)
 	}
-	ln, lok := toInt(l)
-	rn, rok := toInt(r)
+	ln, lok := toNumber(l)
+	rn, rok := toNumber(r)
 	if !lok || !rok {
 		return nil
 	}
-	return compareInts(e.Op, ln, rn)
+	if ln.float || rn.float {
+		return compareFloats(e.Op, ln.asFloat(), rn.asFloat())
+	}
+	return compareInts(e.Op, ln.i, rn.i)
+}
+
+func isArithmeticOp(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>":
+		return true
+	default:
+		return false
+	}
+}
+
+type number struct {
+	i     int64
+	f     float64
+	float bool
+}
+
+func (n number) asFloat() float64 {
+	if n.float {
+		return n.f
+	}
+	return float64(n.i)
+}
+
+func toNumber(v any) (number, bool) {
+	switch x := v.(type) {
+	case int64:
+		return number{i: x}, true
+	case float64:
+		return number{f: x, float: true}, true
+	case bool:
+		if x {
+			return number{i: 1}, true
+		}
+		return number{}, true
+	default:
+		return number{}, false
+	}
+}
+
+func arithmetic(op string, l, r any) any {
+	ln, lok := toNumber(l)
+	rn, rok := toNumber(r)
+	if !lok || !rok {
+		return nil
+	}
+	if ln.float || rn.float {
+		return floatArithmetic(op, ln.asFloat(), rn.asFloat())
+	}
+	a, b := ln.i, rn.i
+	switch op {
+	case "+":
+		return a + b
+	case "-":
+		return a - b
+	case "*":
+		return a * b
+	case "/":
+		if b == 0 {
+			return nil
+		}
+		return a / b
+	case "%":
+		if b == 0 {
+			return nil
+		}
+		return a % b
+	case "&":
+		return a & b
+	case "|":
+		return a | b
+	case "^":
+		return a ^ b
+	case "<<":
+		if b < 0 || b > 63 {
+			return int64(0)
+		}
+		return a << uint(b)
+	case ">>":
+		if b < 0 || b > 63 {
+			return int64(0)
+		}
+		return a >> uint(b)
+	default:
+		return nil
+	}
+}
+
+func floatArithmetic(op string, a, b float64) any {
+	switch op {
+	case "+":
+		return a + b
+	case "-":
+		return a - b
+	case "*":
+		return a * b
+	case "/":
+		if b == 0 {
+			return nil
+		}
+		return a / b
+	default:
+		return nil
+	}
+}
+
+func compareFloats(op string, l, r float64) any {
+	switch op {
+	case "==":
+		return l == r
+	case "!=":
+		return l != r
+	case "<":
+		return l < r
+	case ">":
+		return l > r
+	case "<=":
+		return l <= r
+	case ">=":
+		return l >= r
+	default:
+		return false
+	}
+}
+
+func evalUnary(e ast.UnaryExpr, ctx *evalContext) any {
+	n, ok := toNumber(evalAny(e.Inner, ctx))
+	if !ok {
+		return nil
+	}
+	switch {
+	case e.Op == "-" && n.float:
+		return -n.f
+	case e.Op == "-":
+		return -n.i
+	case e.Op == "~" && !n.float:
+		return ^n.i
+	default:
+		return nil
+	}
+}
+
+func (ctx *evalContext) nthHit(name string, index ast.Expr) (hit, bool) {
+	idx := ctx.refIndex(name)
+	if idx < 0 {
+		return hit{}, false
+	}
+	n := int64(1)
+	if index != nil {
+		var ok bool
+		if n, ok = evalAny(index, ctx).(int64); !ok {
+			return hit{}, false
+		}
+	}
+	hits := ctx.hitsFor(idx)
+	if n < 1 || n > int64(len(hits)) {
+		return hit{}, false
+	}
+	return hits[n-1], true
+}
+
+func evalIn(e ast.InExpr, ctx *evalContext) any {
+	idx := ctx.refIndex(e.Ref.Name)
+	if idx < 0 {
+		return false
+	}
+	lo, lok := evalAny(e.Lo, ctx).(int64)
+	hi, hok := evalAny(e.Hi, ctx).(int64)
+	if !lok || !hok {
+		return nil
+	}
+	for _, h := range ctx.hitsFor(idx) {
+		if int64(h.pos) >= lo && int64(h.pos) <= hi {
+			return true
+		}
+	}
+	return false
+}
+
+// evalFor runs a for loop. Quantifier semantics follow YARA: "any" needs one
+// true body, "all" needs every body true, "none" needs no true body and
+// "count" needs at least N.
+func evalFor(e ast.ForExpr, ctx *evalContext) any {
+	satisfied := 0
+	total := 0
+	tally := func() bool {
+		total++
+		if evalExpr(e.Body, ctx) {
+			satisfied++
+		}
+		switch e.Quant {
+		case "any":
+			return satisfied == 0
+		case "count":
+			return satisfied < int(e.N)
+		case "all":
+			return satisfied == total
+		default:
+			return satisfied == 0
+		}
+	}
+	if e.Var != "" {
+		lo, lok := evalAny(e.Lo, ctx).(int64)
+		hi, hok := evalAny(e.Hi, ctx).(int64)
+		if !lok || !hok {
+			return nil
+		}
+		prev, had := ctx.vars[e.Var]
+		if ctx.vars == nil {
+			ctx.vars = make(map[string]int64, 1)
+		}
+		for i := lo; i <= hi; i++ {
+			ctx.vars[e.Var] = i
+			if !tally() {
+				break
+			}
+		}
+		if had {
+			ctx.vars[e.Var] = prev
+		} else {
+			delete(ctx.vars, e.Var)
+		}
+	} else {
+		prevCur, prevIn := ctx.cur, ctx.inSet
+		ctx.inSet = true
+		for _, idx := range ctx.setIndices(e.Patterns) {
+			ctx.cur = idx
+			if !tally() {
+				break
+			}
+		}
+		ctx.cur, ctx.inSet = prevCur, prevIn
+	}
+	switch e.Quant {
+	case "any":
+		return satisfied > 0
+	case "all":
+		return satisfied == total
+	case "none":
+		return satisfied == 0
+	default:
+		return satisfied >= int(e.N)
+	}
+}
+
+// setIndices lists the distinct strings named by the patterns, in rule order.
+func (ctx *evalContext) setIndices(patterns []string) []int {
+	var seen []int
+	for _, p := range patterns {
+		for _, idx := range matchingStringIndices(p, ctx.stringNames) {
+			if !slices.Contains(seen, idx) {
+				seen = append(seen, idx)
+			}
+		}
+	}
+	slices.Sort(seen)
+	return seen
 }
 
 func toInt(v any) (int64, bool) {
@@ -397,6 +708,9 @@ func normalizeExternal(v any) any {
 
 // refIndex resolves a string reference to its index in the rule.
 func (ctx *evalContext) refIndex(name string) int {
+	if ctx.inSet && name == "$" {
+		return ctx.cur
+	}
 	return ctx.stringIndex(name)
 }
 
@@ -432,17 +746,11 @@ func evalAllOf(e ast.AllOf, ctx *evalContext) bool {
 // evalNOf evaluates quantifiers over a set of string patterns. A string named
 // by several patterns counts once.
 func evalNOf(e ast.NOf, ctx *evalContext) bool {
-	var seen []int
+	seen := ctx.setIndices(e.Patterns)
 	matched := 0
-	for _, p := range e.Patterns {
-		for _, idx := range matchingStringIndices(p, ctx.stringNames) {
-			if slices.Contains(seen, idx) {
-				continue
-			}
-			seen = append(seen, idx)
-			if ctx.matched(idx) {
-				matched++
-			}
+	for _, idx := range seen {
+		if ctx.matched(idx) {
+			matched++
 		}
 	}
 	switch e.Quant {

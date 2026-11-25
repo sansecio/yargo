@@ -39,6 +39,7 @@ type StringDef struct {
 type StringModifiers struct {
 	Ascii    bool
 	Wide     bool
+	Xor      *XorRange
 	Base64   bool
 	Fullword bool
 	Nocase   bool
@@ -47,6 +48,11 @@ type StringModifiers struct {
 	// or base64 with a custom alphabet). Compilation skips rules that use
 	// them, since matching without the modifier would be wrong.
 	Unsupported []string
+}
+
+// XorRange is the inclusive key range of an xor modifier; a bare xor is 0-255.
+type XorRange struct {
+	Min, Max byte
 }
 
 // StringValue is an interface for the different string types.
@@ -191,6 +197,68 @@ type AnyOf struct {
 }
 
 func (AnyOf) exprNode() {}
+
+// FloatLit represents a floating point literal.
+type FloatLit struct {
+	Value float64
+}
+
+func (FloatLit) exprNode() {}
+
+// UnaryExpr represents integer negation ("-") or bitwise not ("~").
+type UnaryExpr struct {
+	Op    string
+	Inner Expr
+}
+
+func (UnaryExpr) exprNode() {}
+
+// CountOf represents #a, the number of matches of a string.
+type CountOf struct {
+	Name string
+}
+
+func (CountOf) exprNode() {}
+
+// OffsetOf represents @a or @a[i], the offset of the i-th match (1-based,
+// the first match when Index is nil).
+type OffsetOf struct {
+	Name  string
+	Index Expr
+}
+
+func (OffsetOf) exprNode() {}
+
+// LenOf represents !a or !a[i], the length of the i-th match.
+type LenOf struct {
+	Name  string
+	Index Expr
+}
+
+func (LenOf) exprNode() {}
+
+// InExpr represents "$a in (lo..hi)": a match with its offset in the range.
+type InExpr struct {
+	Ref    StringRef
+	Lo, Hi Expr
+}
+
+func (InExpr) exprNode() {}
+
+// ForExpr represents a for loop. With Var set it counts Var over Lo..Hi
+// inclusive; otherwise it runs Body once per string named by Patterns, with
+// the anonymous string $ standing for the current one. Quant is "any", "all",
+// "none" or "count" (at least N).
+type ForExpr struct {
+	Quant    string
+	N        int64
+	Var      string
+	Lo, Hi   Expr
+	Patterns []string
+	Body     Expr
+}
+
+func (ForExpr) exprNode() {}
 
 // StrLit represents a string literal in a condition.
 type StrLit struct {

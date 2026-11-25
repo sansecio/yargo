@@ -141,11 +141,11 @@ func TestParseModifiers(t *testing.T) {
 		{`"x" nocase`, ast.StringModifiers{Nocase: true}},
 		{`"x" private`, ast.StringModifiers{Private: true}},
 		{`"x" wide`, ast.StringModifiers{Wide: true}},
-		{`"x" xor`, ast.StringModifiers{Unsupported: []string{"xor"}}},
+		{`"x" xor`, ast.StringModifiers{Xor: &ast.XorRange{Min: 0, Max: 255}}},
 		{`"x" base64wide`, ast.StringModifiers{Unsupported: []string{"base64wide"}}},
-		{`"x" wide xor nocase`, ast.StringModifiers{Wide: true, Nocase: true, Unsupported: []string{"xor"}}},
-		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Unsupported: []string{"xor(0x01-0xff)"}}},
-		{`"x" xor ( 0x01 )`, ast.StringModifiers{Unsupported: []string{"xor( 0x01 )"}}},
+		{`"x" wide xor nocase`, ast.StringModifiers{Wide: true, Nocase: true, Xor: &ast.XorRange{Min: 0, Max: 255}}},
+		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 255}}},
+		{`"x" xor ( 0x01 )`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 1}}},
 		{`"x" base64("!@#$%^&*(){}")`, ast.StringModifiers{Unsupported: []string{`base64("!@#$%^&*(){}")`}}},
 		{`"x" base64wide("abc") fullword`, ast.StringModifiers{Fullword: true, Unsupported: []string{`base64wide("abc")`}}},
 		{`"x" frobnicate`, ast.StringModifiers{Unsupported: []string{"frobnicate"}}},
@@ -188,7 +188,7 @@ func TestParseModifierWarnings(t *testing.T) {
 rule first {
 	strings:
 		$a = "one" base64wide nocase
-		$ = "two" xor(0x10-0x20)
+		$ = "two" xor(0x300)
 	condition:
 		any of them
 }
@@ -202,7 +202,7 @@ rule second {
 
 	want := []string{
 		`rule "first" string $a: unsupported modifier "base64wide", rule will not match`,
-		`rule "first" string $: unsupported modifier "xor(0x10-0x20)", rule will not match`,
+		`rule "first" string $: unsupported modifier "xor(0x300)", rule will not match`,
 	}
 	if !reflect.DeepEqual(rs.Warnings, want) {
 		t.Errorf("expected warnings %q, got %q", want, rs.Warnings)
@@ -612,7 +612,7 @@ func TestParseInvalidInputs(t *testing.T) {
 }
 
 func TestParseErrorMessagePreserved(t *testing.T) {
-	_, err := New().Parse(`rule t { condition: @ }`)
+	_, err := New().Parse(`rule t { condition: ? }`)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}

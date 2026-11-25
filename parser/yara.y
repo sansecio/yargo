@@ -23,6 +23,8 @@ import (
 	expr      ast.Expr
 	exprs     []ast.Expr
 	strs      []string
+	flt       float64
+	quant     forQuant
 }
 
 %token RULE META STRINGS CONDITION IMPORT PRIVATE GLOBAL
@@ -30,6 +32,9 @@ import (
 %token <str> COND_IDENT COND_STRING_ID STRING_PATTERN
 %token <str> HEX_JUMP HEX_ALT
 %token <num> INT_LIT
+%token <flt> FLOAT_LIT
+%token <str> STR_COUNT STR_OFFSET STR_LEN
+%token FOR IN RANGE SHL SHR
 %token <byt> HEX_BYTE
 %token HEX_WILDCARD
 %token AND OR NOT AT ANY ALL NONE OF THEM EQ NE LT GT LE GE FILESIZE
@@ -38,8 +43,15 @@ import (
 %left OR
 %left AND
 %right NOT
+%left '|'
+%left '^'
+%left '&'
 %nonassoc EQ NE LT GT LE GE CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES
-%nonassoc AT
+%nonassoc AT IN
+%left SHL SHR
+%left '+' '-'
+%left '*' '\\' '%'
+%right UMINUS '~'
 
 %type <rules> rule_list
 %type <rule> rule rule_head
@@ -55,6 +67,7 @@ import (
 %type <expr> expr primary_expr condition_section
 %type <exprs> func_args
 %type <strs> string_set set_items
+%type <quant> for_quant
 
 %%
 
@@ -259,10 +272,14 @@ modifiers:
 		case "private":
 			$$.Private = true
 		default:
-			// known-but-unimplemented (wide, xor, ...), argument forms of
+			// known-but-unimplemented (base64wide, ...), argument forms of
 			// supported modifiers, or future modifiers; recorded so the
 			// rule is skipped at compile time and reported as a warning
-			$$.Unsupported = append($$.Unsupported, $2)
+			if x, ok := parseXorModifier($2); ok {
+				$$.Xor = x
+			} else {
+				$$.Unsupported = append($$.Unsupported, $2)
+			}
 		}
 	}
 	;
@@ -353,6 +370,54 @@ expr:
 	{
 		$$ = comparisonExpr(yylex, ">=", $1, $3)
 	}
+	| expr '+' expr
+	{
+		$$ = ast.BinaryExpr{Op: "+", Left: $1, Right: $3}
+	}
+	| expr '-' expr
+	{
+		$$ = ast.BinaryExpr{Op: "-", Left: $1, Right: $3}
+	}
+	| expr '*' expr
+	{
+		$$ = ast.BinaryExpr{Op: "*", Left: $1, Right: $3}
+	}
+	| expr '\\' expr
+	{
+		$$ = ast.BinaryExpr{Op: "/", Left: $1, Right: $3}
+	}
+	| expr '%' expr
+	{
+		$$ = ast.BinaryExpr{Op: "%", Left: $1, Right: $3}
+	}
+	| expr '&' expr
+	{
+		$$ = ast.BinaryExpr{Op: "&", Left: $1, Right: $3}
+	}
+	| expr '|' expr
+	{
+		$$ = ast.BinaryExpr{Op: "|", Left: $1, Right: $3}
+	}
+	| expr '^' expr
+	{
+		$$ = ast.BinaryExpr{Op: "^", Left: $1, Right: $3}
+	}
+	| expr SHL expr
+	{
+		$$ = ast.BinaryExpr{Op: "<<", Left: $1, Right: $3}
+	}
+	| expr SHR expr
+	{
+		$$ = ast.BinaryExpr{Op: ">>", Left: $1, Right: $3}
+	}
+	| '-' expr %prec UMINUS
+	{
+		$$ = ast.UnaryExpr{Op: "-", Inner: $2}
+	}
+	| '~' expr
+	{
+		$$ = ast.UnaryExpr{Op: "~", Inner: $2}
+	}
 	| expr CONTAINS expr
 	{
 		$$ = ast.BinaryExpr{Op: "contains", Left: $1, Right: $3}
@@ -417,9 +482,45 @@ primary_expr:
 	{
 		$$ = ast.NOf{Quant: "count", N: $1, Patterns: $3}
 	}
-	| COND_STRING_ID AT primary_expr
+	| COND_STRING_ID AT expr %prec AT
 	{
 		$$ = ast.AtExpr{Ref: ast.StringRef{Name: $1}, Pos: $3}
+	}
+	| COND_STRING_ID IN '(' expr RANGE expr ')'
+	{
+		$$ = ast.InExpr{Ref: ast.StringRef{Name: $1}, Lo: $4, Hi: $6}
+	}
+	| STR_COUNT
+	{
+		$$ = ast.CountOf{Name: $1}
+	}
+	| STR_OFFSET
+	{
+		$$ = ast.OffsetOf{Name: $1}
+	}
+	| STR_OFFSET '[' expr ']'
+	{
+		$$ = ast.OffsetOf{Name: $1, Index: $3}
+	}
+	| STR_LEN
+	{
+		$$ = ast.LenOf{Name: $1}
+	}
+	| STR_LEN '[' expr ']'
+	{
+		$$ = ast.LenOf{Name: $1, Index: $3}
+	}
+	| FLOAT_LIT
+	{
+		$$ = ast.FloatLit{Value: $1}
+	}
+	| FOR for_quant COND_IDENT IN '(' expr RANGE expr ')' ':' '(' expr ')'
+	{
+		$$ = ast.ForExpr{Quant: $2.quant, N: $2.n, Var: $3, Lo: $6, Hi: $8, Body: ast.ParenExpr{Inner: $12}}
+	}
+	| FOR for_quant OF string_set ':' '(' expr ')'
+	{
+		$$ = ast.ForExpr{Quant: $2.quant, N: $2.n, Patterns: $4, Body: ast.ParenExpr{Inner: $7}}
 	}
 	| COND_IDENT '(' func_args ')'
 	{
@@ -452,6 +553,25 @@ primary_expr:
 	| FILESIZE
 	{
 		$$ = ast.Filesize{}
+	}
+	;
+
+for_quant:
+	ANY
+	{
+		$$ = forQuant{quant: "any"}
+	}
+	| ALL
+	{
+		$$ = forQuant{quant: "all"}
+	}
+	| NONE
+	{
+		$$ = forQuant{quant: "none"}
+	}
+	| INT_LIT
+	{
+		$$ = forQuant{quant: "count", n: $1}
 	}
 	;
 

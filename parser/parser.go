@@ -20,6 +20,41 @@ func New() *Parser {
 	return &Parser{}
 }
 
+type forQuant struct {
+	quant string
+	n     int64
+}
+
+// parseXorModifier parses "xor", "xor(n)" and "xor(min-max)". Keys may be
+// decimal or 0x-prefixed hex and must fit a byte.
+func parseXorModifier(s string) (*ast.XorRange, bool) {
+	if s == "xor" {
+		return &ast.XorRange{Min: 0, Max: 255}, true
+	}
+	args, ok := strings.CutPrefix(s, "xor(")
+	if !ok || !strings.HasSuffix(args, ")") {
+		return nil, false
+	}
+	args = strings.TrimSuffix(args, ")")
+	lo, hi, isRange := strings.Cut(args, "-")
+	min, ok := parseXorKey(lo)
+	if !ok {
+		return nil, false
+	}
+	max := min
+	if isRange {
+		if max, ok = parseXorKey(hi); !ok || max < min {
+			return nil, false
+		}
+	}
+	return &ast.XorRange{Min: min, Max: max}, true
+}
+
+func parseXorKey(s string) (byte, bool) {
+	v, err := strconv.ParseUint(strings.TrimSpace(s), 0, 8)
+	return byte(v), err == nil
+}
+
 func comparisonExpr(lexer interface{ Error(string) }, op string, left, right ast.Expr) ast.Expr {
 	if !isIntegerExpr(left) || !isIntegerExpr(right) {
 		lexer.Error("comparison requires integer operands")
@@ -29,10 +64,22 @@ func comparisonExpr(lexer interface{ Error(string) }, op string, left, right ast
 
 func isIntegerExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
-	case ast.IntLit, ast.Filesize, ast.FuncCall, ast.Ident, ast.StrLit:
+	case ast.IntLit, ast.FloatLit, ast.Filesize, ast.FuncCall, ast.Ident, ast.StrLit,
+		ast.CountOf, ast.OffsetOf, ast.LenOf, ast.UnaryExpr:
 		return true
+	case ast.BinaryExpr:
+		return isArithmeticOp(e.Op)
 	case ast.ParenExpr:
 		return isIntegerExpr(e.Inner)
+	default:
+		return false
+	}
+}
+
+func isArithmeticOp(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>":
+		return true
 	default:
 		return false
 	}

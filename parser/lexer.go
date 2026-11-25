@@ -445,7 +445,12 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	case ',':
 		l.pos++
 		return ','
-	case '!', '<', '>', '=':
+	case '!':
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] != '=' {
+			return l.lexCondStringOp(lval, STR_LEN)
+		}
+		return l.lexConditionOp()
+	case '<', '>', '=':
 		return l.lexConditionOp()
 	case '$':
 		return l.lexCondStringRef(lval)
@@ -455,6 +460,15 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	case '/':
 		lval.str = l.readRegex()
 		return REGEX_LIT
+	case '+', '*', '\\', '%', '&', '|', '^', '~', '[', ']', '-':
+		l.pos++
+		return int(ch)
+	case '#':
+		return l.lexCondStringOp(lval, STR_COUNT)
+	case '@':
+		return l.lexCondStringOp(lval, STR_OFFSET)
+	case '.':
+		return l.lexDot()
 	}
 
 	if ch == '0' && l.pos+1 < len(l.input) && (l.input[l.pos+1] == 'x' || l.input[l.pos+1] == 'X') {
@@ -466,7 +480,7 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	}
 
 	if isAlpha(ch) || ch == '_' {
-		word := l.readIdent()
+		word := l.readDottedIdent()
 		switch word {
 		case "and":
 			return AND
@@ -482,6 +496,10 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 			return ALL
 		case "none":
 			return NONE
+		case "for":
+			return FOR
+		case "in":
+			return IN
 		case "of":
 			return OF
 		case "them":
@@ -522,6 +540,12 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 func (l *yaraLexer) lexConditionOp() int {
 	if l.pos+1 < len(l.input) {
 		switch l.input[l.pos : l.pos+2] {
+		case "<<":
+			l.pos += 2
+			return SHL
+		case ">>":
+			l.pos += 2
+			return SHR
 		case "!=":
 			l.pos += 2
 			return NE
@@ -552,6 +576,40 @@ func (l *yaraLexer) lexConditionOp() int {
 		l.errorf("unexpected character %q in condition", l.input[l.pos-1])
 		return 0
 	}
+}
+
+// readDottedIdent reads an identifier that may name a module member, such as
+// math.entropy. A dot joins parts only when a letter or underscore follows, so
+// a range like 0..pe.number_of_sections is not swallowed.
+func (l *yaraLexer) readDottedIdent() string {
+	start := l.pos
+	l.readIdent()
+	for l.pos+1 < len(l.input) && l.input[l.pos] == '.' && (isAlpha(l.input[l.pos+1]) || l.input[l.pos+1] == '_') {
+		l.pos++
+		l.readIdent()
+	}
+	return l.input[start:l.pos]
+}
+
+func (l *yaraLexer) lexDot() int {
+	if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
+		l.pos += 2
+		return RANGE
+	}
+	l.pos++
+	return '.'
+}
+
+// lexCondStringOp reads the name after #, @ or ! and yields it as a string
+// identifier such as $a; a bare # or @ names the anonymous string $.
+func (l *yaraLexer) lexCondStringOp(lval *yySymType, tok int) int {
+	l.pos++
+	start := l.pos
+	for l.pos < len(l.input) && (l.input[l.pos] == '_' || isAlnum(l.input[l.pos])) {
+		l.pos++
+	}
+	lval.str = "$" + l.input[start:l.pos]
+	return tok
 }
 
 func (l *yaraLexer) lexCondStringRef(lval *yySymType) int {
@@ -590,6 +648,19 @@ func (l *yaraLexer) lexCondInt(lval *yySymType) int {
 	start := l.pos
 	for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
 		l.pos++
+	}
+	if l.pos+1 < len(l.input) && l.input[l.pos] == '.' && isDigit(l.input[l.pos+1]) {
+		l.pos++
+		for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
+			l.pos++
+		}
+		v, err := strconv.ParseFloat(l.input[start:l.pos], 64)
+		if err != nil {
+			l.errorf("invalid float literal %q", l.input[start:l.pos])
+			return 0
+		}
+		lval.flt = v
+		return FLOAT_LIT
 	}
 	end := l.pos
 	scale := int64(1)
