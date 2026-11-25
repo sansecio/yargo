@@ -29,7 +29,7 @@ func comparisonExpr(lexer interface{ Error(string) }, op string, left, right ast
 
 func isIntegerExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
-	case ast.IntLit, ast.Filesize, ast.FuncCall:
+	case ast.IntLit, ast.Filesize, ast.FuncCall, ast.Ident, ast.StrLit:
 		return true
 	case ast.ParenExpr:
 		return isIntegerExpr(e.Inner)

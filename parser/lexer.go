@@ -449,6 +449,12 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 		return l.lexConditionOp()
 	case '$':
 		return l.lexCondStringRef(lval)
+	case '"':
+		lval.str = l.readQuotedString()
+		return STRING_LIT
+	case '/':
+		lval.str = l.readRegex()
+		return REGEX_LIT
 	}
 
 	if ch == '0' && l.pos+1 < len(l.input) && (l.input[l.pos+1] == 'x' || l.input[l.pos+1] == 'X') {
@@ -482,6 +488,26 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 			return THEM
 		case "filesize":
 			return FILESIZE
+		case "contains":
+			return CONTAINS
+		case "icontains":
+			return ICONTAINS
+		case "startswith":
+			return STARTSWITH
+		case "istartswith":
+			return ISTARTSWITH
+		case "endswith":
+			return ENDSWITH
+		case "iendswith":
+			return IENDSWITH
+		case "iequals":
+			return IEQUALS
+		case "matches":
+			return MATCHES
+		case "true":
+			return TRUE
+		case "false":
+			return FALSE
 		default:
 			lval.str = word
 			return COND_IDENT

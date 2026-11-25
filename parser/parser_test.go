@@ -590,7 +590,7 @@ func TestParseInvalidInputs(t *testing.T) {
 		{"unterminated block comment", `rule t { /* comment`, "unterminated"},
 		{"integer overflow", `rule t { condition: 99999999999999999999 }`, "integer"},
 		{"hex integer overflow", `rule t { condition: 0xFFFFFFFFFFFFFFFFFF }`, "integer"},
-		{"unsupported bare identifier", `rule t { condition: entrypoint }`, "syntax error"},
+		{"unterminated condition string", `rule t { condition: filename == "abc`, "unterminated"},
 		{"string comparison left operand", `rule t { strings: $a = "a" condition: $a >= 0 }`, "integer operands"},
 		{"string comparison right operand", `rule t { strings: $a = "a" condition: 0 <= $a }`, "integer operands"},
 		{"quantifier comparison operand", `rule t { strings: $a = "a" condition: any of them == 1 }`, "integer operands"},

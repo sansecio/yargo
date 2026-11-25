@@ -64,6 +64,9 @@ type (
 		patternMap    []patternRef
 		slotRule      []int32 // string slot -> rule index
 		regexPatterns []*regexPattern
+		ruleIndex     map[string]int32 // rule name -> index in rules
+		externals     map[string]bool  // declared external variable names
+		skipped       []SkippedRule
 	}
 )
 
@@ -175,9 +178,32 @@ func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
 	return true
 }
 
+// Externals holds the values of external variables, such as filename and
+// filepath, for one scan. Values may be string, bool or an integer type. A
+// variable that is not set is undefined, which makes any condition using it
+// false.
+type Externals map[string]any
+
+// SkippedRule names a rule that Compile left out and why.
+type SkippedRule struct {
+	Rule   string
+	Reason string
+}
+
+// Skipped lists the rules Compile left out because they use a construct the
+// scanner cannot honor.
+func (r *Rules) Skipped() []SkippedRule {
+	return r.skipped
+}
+
 // ScanMem scans a byte buffer for matching rules. A timeout of zero or less
 // means no timeout.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
+	return r.ScanMemWith(buf, nil, flags, timeout, cb)
+}
+
+// ScanMemWith is ScanMem with the values of external variables for this scan.
+func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
 	if len(r.rules) == 0 {
 		return nil
 	}
@@ -193,7 +219,7 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	if err != nil {
 		return err
 	}
-	return r.evaluateRules(ctx, buf, hits, cb)
+	return r.evaluateRules(ctx, buf, hits, ext, cb)
 }
 
 // ctxCheckInterval is how many AC matches (or regex verification windows)
@@ -372,7 +398,8 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 
 // evaluateRules evaluates hit-bearing rules and rules whose conditions may
 // match without hits, invokes the callback, and handles abort/timeout.
-func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, cb ScanCallback) error {
+func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
+	results := make([]bool, len(r.rules))
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
 	// order. A rule present in both inputs is evaluated only once.
@@ -408,8 +435,15 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, cb Sc
 			slotBase:    cr.slotBase,
 			buf:         buf,
 			stringNames: cr.stringNames,
+			externals:   ext,
+			ruleIndex:   r.ruleIndex,
+			results:     results,
 		}
-		if !evalExpr(cr.condition, evalCtx) || cr.private {
+		if !evalExpr(cr.condition, evalCtx) {
+			continue
+		}
+		results[ruleIdx] = true
+		if cr.private {
 			continue
 		}
 

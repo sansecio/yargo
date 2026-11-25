@@ -33,11 +33,12 @@ import (
 %token <byt> HEX_BYTE
 %token HEX_WILDCARD
 %token AND OR NOT AT ANY ALL NONE OF THEM EQ NE LT GT LE GE FILESIZE
+%token CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES TRUE FALSE
 
 %left OR
 %left AND
 %right NOT
-%nonassoc EQ NE LT GT LE GE
+%nonassoc EQ NE LT GT LE GE CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES
 %nonassoc AT
 
 %type <rules> rule_list
@@ -176,6 +177,18 @@ meta_entry:
 	| IDENT '=' INT_LIT
 	{
 		$$ = &ast.MetaEntry{Key: $1, Value: $3}
+	}
+	| IDENT '=' IDENT
+	{
+		switch $3 {
+		case "true":
+			$$ = &ast.MetaEntry{Key: $1, Value: true}
+		case "false":
+			$$ = &ast.MetaEntry{Key: $1, Value: false}
+		default:
+			yylex.Error("invalid meta value " + $3)
+			$$ = &ast.MetaEntry{Key: $1}
+		}
 	}
 	;
 
@@ -340,6 +353,39 @@ expr:
 	{
 		$$ = comparisonExpr(yylex, ">=", $1, $3)
 	}
+	| expr CONTAINS expr
+	{
+		$$ = ast.BinaryExpr{Op: "contains", Left: $1, Right: $3}
+	}
+	| expr ICONTAINS expr
+	{
+		$$ = ast.BinaryExpr{Op: "icontains", Left: $1, Right: $3}
+	}
+	| expr STARTSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "startswith", Left: $1, Right: $3}
+	}
+	| expr ISTARTSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "istartswith", Left: $1, Right: $3}
+	}
+	| expr ENDSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "endswith", Left: $1, Right: $3}
+	}
+	| expr IENDSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "iendswith", Left: $1, Right: $3}
+	}
+	| expr IEQUALS expr
+	{
+		$$ = ast.BinaryExpr{Op: "iequals", Left: $1, Right: $3}
+	}
+	| expr MATCHES REGEX_LIT
+	{
+		pattern, mods := parseRegex($3)
+		$$ = ast.BinaryExpr{Op: "matches", Left: $1, Right: ast.RegexLit{Pattern: pattern, Modifiers: mods}}
+	}
 	;
 
 primary_expr:
@@ -378,6 +424,22 @@ primary_expr:
 	| COND_IDENT '(' func_args ')'
 	{
 		$$ = ast.FuncCall{Name: $1, Args: $3}
+	}
+	| COND_IDENT
+	{
+		$$ = ast.Ident{Name: $1}
+	}
+	| STRING_LIT
+	{
+		$$ = ast.StrLit{Value: unquoteString($1)}
+	}
+	| TRUE
+	{
+		$$ = ast.BoolLit{Value: true}
+	}
+	| FALSE
+	{
+		$$ = ast.BoolLit{Value: false}
 	}
 	| COND_STRING_ID
 	{

@@ -192,6 +192,36 @@ type AnyOf struct {
 
 func (AnyOf) exprNode() {}
 
+// StrLit represents a string literal in a condition.
+type StrLit struct {
+	Value string
+}
+
+func (StrLit) exprNode() {}
+
+// BoolLit represents true or false.
+type BoolLit struct {
+	Value bool
+}
+
+func (BoolLit) exprNode() {}
+
+// Ident represents a bare identifier: an external variable such as filename,
+// a reference to another rule, or a loop variable.
+type Ident struct {
+	Name string
+}
+
+func (Ident) exprNode() {}
+
+// RegexLit represents the regular expression operand of matches.
+type RegexLit struct {
+	Pattern   string
+	Modifiers RegexModifiers
+}
+
+func (RegexLit) exprNode() {}
+
 // NOf represents a quantifier over a set of strings: "N of", "none of", or
 // "any of" and "all of" with more than one pattern. Quant is "count" (at
 // least N), "none", "any" or "all". Patterns hold "them" or $names with an

@@ -8,13 +8,18 @@ import (
 	"github.com/sansecio/yargo/parser"
 )
 
-func compileSource(t *testing.T, src string) *Rules {
+func compileWith(t *testing.T, src string, opts CompileOptions) (*Rules, error) {
 	t.Helper()
 	rs, err := parser.New().Parse(src)
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	rules, err := Compile(rs)
+	return CompileWithOptions(rs, opts)
+}
+
+func compileSource(t *testing.T, src string) *Rules {
+	t.Helper()
+	rules, err := compileWith(t, src, CompileOptions{})
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}

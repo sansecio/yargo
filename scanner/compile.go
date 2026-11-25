@@ -24,6 +24,11 @@ type CompileOptions struct {
 	// empty subtype value are never filtered.
 	SkipSubtypes []string
 
+	// Externals names the external variables rules may use besides the
+	// built-in filename, filepath, extension, filetype and owner. Rules that
+	// use any other bare identifier are skipped.
+	Externals []string
+
 	// RegexCompiler overrides the function used to compile regex patterns.
 	// When nil, defaults to go-re2's experimental.CompileLatin1.
 	RegexCompiler CompileFunc
@@ -51,7 +56,9 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	opts.RegexCompiler = recoverCompile(opts.RegexCompiler)
 
 	rules := &Rules{
-		rules: make([]*compiledRule, 0, len(rs.Rules)),
+		rules:     make([]*compiledRule, 0, len(rs.Rules)),
+		ruleIndex: make(map[string]int32, len(rs.Rules)),
+		externals: declaredExternals(opts.Externals),
 	}
 
 	var allPatterns [][]byte
@@ -67,7 +74,11 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	for _, r := range rs.Rules {
-		if r.Condition == nil || r.Global || hasUnsupportedModifier(r) {
+		if r.Condition == nil {
+			continue
+		}
+		if reason := unsupportedReason(r, rules); reason != "" {
+			rules.skipped = append(rules.skipped, SkippedRule{Rule: r.Name, Reason: reason})
 			continue
 		}
 
@@ -93,6 +104,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			rules.slotRule = append(rules.slotRule, int32(ruleIdx))
 		}
 		rules.rules = append(rules.rules, cr)
+		rules.ruleIndex[r.Name] = int32(ruleIdx)
 		if mayMatchWithoutHits(cr.condition) {
 			rules.zeroHitRules = append(rules.zeroHitRules, int32(ruleIdx))
 		}
@@ -149,6 +161,64 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	}
 
 	return rules, nil
+}
+
+var builtinExternals = []string{"filename", "filepath", "extension", "filetype", "owner"}
+
+func declaredExternals(extra []string) map[string]bool {
+	m := make(map[string]bool, len(builtinExternals)+len(extra))
+	for _, n := range builtinExternals {
+		m[n] = true
+	}
+	for _, n := range extra {
+		m[n] = true
+	}
+	return m
+}
+
+// unsupportedReason returns why the rule cannot be honored, or "" when it can.
+func unsupportedReason(r *ast.Rule, rules *Rules) string {
+	if r.Global {
+		return "global rule"
+	}
+	if hasUnsupportedModifier(r) {
+		return "unsupported string modifier"
+	}
+	return conditionReason(r.Condition, rules)
+}
+
+// conditionReason walks a condition and reports the first construct the
+// evaluator cannot resolve, such as an identifier that is neither a declared
+// external variable nor an earlier rule.
+func conditionReason(expr ast.Expr, rules *Rules) string {
+	switch e := expr.(type) {
+	case ast.Ident:
+		if rules.externals[e.Name] {
+			return ""
+		}
+		if _, ok := rules.ruleIndex[e.Name]; ok {
+			return ""
+		}
+		return "unknown identifier " + e.Name
+	case ast.BinaryExpr:
+		if reason := conditionReason(e.Left, rules); reason != "" {
+			return reason
+		}
+		return conditionReason(e.Right, rules)
+	case ast.NotExpr:
+		return conditionReason(e.Inner, rules)
+	case ast.ParenExpr:
+		return conditionReason(e.Inner, rules)
+	case ast.AtExpr:
+		return conditionReason(e.Pos, rules)
+	case ast.FuncCall:
+		for _, a := range e.Args {
+			if reason := conditionReason(a, rules); reason != "" {
+				return reason
+			}
+		}
+	}
+	return ""
 }
 
 // hasUnsupportedModifier reports whether any of the rule's strings carries a
