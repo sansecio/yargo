@@ -197,6 +197,12 @@ func conditionReason(expr ast.Expr, rules *Rules) string {
 		if rules.externals[e.Name] {
 			return ""
 		}
+		if strings.HasPrefix(e.Name, "pe.") {
+			if supportedPEMember(e) {
+				return ""
+			}
+			return "unsupported pe member " + e.Name
+		}
 		if _, ok := rules.ruleIndex[e.Name]; ok {
 			return ""
 		}
@@ -231,7 +237,20 @@ func conditionReason(expr ast.Expr, rules *Rules) string {
 			return reason
 		}
 		return conditionReason(e.Body, &scoped)
+	case ast.Field:
+		if !supportedPEMember(e) {
+			return "unsupported module member " + e.Name
+		}
+		return conditionReason(e.Base.(ast.Index).Index, rules)
+	case ast.Index:
+		return "unsupported module index"
 	case ast.FuncCall:
+		if strings.HasPrefix(e.Name, "pe.") {
+			if !supportedPEFunction(e.Name, len(e.Args)) {
+				return "unsupported pe function " + e.Name
+			}
+			return firstReason(rules, e.Args...)
+		}
 		if !knownFunction(e.Name) {
 			return "unsupported function " + e.Name
 		}

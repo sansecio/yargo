@@ -400,6 +400,7 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 // match without hits, invokes the callback, and handles abort/timeout.
 func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
 	results := make([]bool, len(r.rules))
+	scan := &scanState{buf: buf}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
 	// order. A rule present in both inputs is evaluated only once.
@@ -439,6 +440,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 			ruleIndex:   r.ruleIndex,
 			results:     results,
 			deadline:    ctx,
+			scan:        scan,
 		}
 		if !evalExpr(cr.condition, evalCtx) {
 			continue
