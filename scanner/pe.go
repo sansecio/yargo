@@ -62,6 +62,8 @@ type peInfo struct {
 	resourceTimestamp int64
 	versionInfo       map[string]string
 	versionList       []versionEntry
+	signaturesParsed  bool
+	signatures        []peSignature
 }
 
 func (p *peInfo) stopped() bool {
@@ -363,12 +365,17 @@ var peScalars = map[string]bool{
 	"pe.entry_point": true, "pe.image_base": true, "pe.dll_characteristics": true,
 	"pe.number_of_sections": true, "pe.number_of_exports": true,
 	"pe.number_of_resources": true, "pe.resource_timestamp": true, "pe.number_of_version_infos": true,
-	"pe.overlay.offset": true, "pe.overlay.size": true, "pe.is_pe": true,
+	"pe.number_of_signatures": true, "pe.overlay.offset": true, "pe.overlay.size": true, "pe.is_pe": true,
 }
 
 var peResourceFields = map[string]bool{
 	"rva": true, "offset": true, "length": true, "type": true, "id": true, "language": true,
 	"type_string": true, "name_string": true, "language_string": true,
+}
+
+var peSignatureFields = map[string]bool{
+	"thumbprint": true, "issuer": true, "subject": true, "version": true, "serial": true,
+	"not_before": true, "not_after": true, "number_of_certificates": true,
 }
 
 var peVersionListFields = map[string]bool{"key": true, "value": true}
@@ -377,6 +384,7 @@ var peArrayFields = map[string]map[string]bool{
 	"pe.sections":          peSectionFields,
 	"pe.resources":         peResourceFields,
 	"pe.version_info_list": peVersionListFields,
+	"pe.signatures":        peSignatureFields,
 }
 
 var peFunctions = map[string]int{
@@ -447,6 +455,9 @@ func (p *peInfo) scalar(name string) any {
 	case "pe.resource_timestamp":
 		p.ensureResources()
 		return p.resourceTimestamp
+	case "pe.number_of_signatures":
+		p.ensureSignatures()
+		return int64(len(p.signatures))
 	case "pe.number_of_version_infos":
 		p.ensureResources()
 		return int64(len(p.versionList))

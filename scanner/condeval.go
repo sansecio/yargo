@@ -734,6 +734,8 @@ func evalPEField(e ast.Field, ctx *evalContext) any {
 		return info.resourceField(i, e.Name)
 	case "pe.version_info_list":
 		return info.versionInfoListField(i, e.Name)
+	case "pe.signatures":
+		return info.signatureField(i, e.Name)
 	}
 	return nil
 }
