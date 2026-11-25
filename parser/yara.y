@@ -122,7 +122,7 @@ rule_head:
 	;
 
 tags:
-	/* empty */
+
 	{
 		$$ = nil
 	}
