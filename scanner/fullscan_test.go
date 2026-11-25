@@ -38,6 +38,21 @@ func TestFullBufferRegexIsOptIn(t *testing.T) {
 	}
 }
 
+func TestStringWhoseOnlyAtomIsARepeatedByteNeedsFullBufferScan(t *testing.T) {
+	src := "rule r { strings: $a = { 60 [0-8] E8 ?? 00 00 00 [0-8] 58 } condition: $a }"
+	rs, err := parser.New().Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Compile(rs); err == nil {
+		t.Error("expected an error without FullBufferRegex")
+	}
+	rules := compileFullBuffer(t, src)
+	if got := scanNames(t, rules, []byte{9, 0x60, 0xe8, 1, 0, 0, 0, 0x58}); len(got) != 1 {
+		t.Errorf("matches = %v", got)
+	}
+}
+
 func TestFullBufferRegexMatches(t *testing.T) {
 	rules := compileFullBuffer(t, `
 rule class { strings: $a = /[0-9][a-f][0-9]/ condition: $a }
