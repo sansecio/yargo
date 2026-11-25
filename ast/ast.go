@@ -51,6 +51,7 @@ type StringModifiers struct {
 	Unsupported []string
 }
 
+// XorRange is the key range of an xor(min-max) modifier.
 type XorRange struct {
 	Min, Max byte
 }
@@ -216,12 +217,14 @@ type AnyOf struct {
 
 func (AnyOf) exprNode() {}
 
+// FloatLit represents a floating point literal like 7.5.
 type FloatLit struct {
 	Value float64
 }
 
 func (FloatLit) exprNode() {}
 
+// UnaryExpr represents arithmetic negation (Op "-") or bitwise not (Op "~").
 type UnaryExpr struct {
 	Op    string
 	Inner Expr
@@ -229,12 +232,15 @@ type UnaryExpr struct {
 
 func (UnaryExpr) exprNode() {}
 
+// CountOf represents a string count like #a.
 type CountOf struct {
 	Name string
 }
 
 func (CountOf) exprNode() {}
 
+// OffsetOf represents a match offset like @a[i]. Index is nil for @a,
+// which means the first match.
 type OffsetOf struct {
 	Name  string
 	Index Expr
@@ -242,6 +248,8 @@ type OffsetOf struct {
 
 func (OffsetOf) exprNode() {}
 
+// LenOf represents a match length like !a[i]. Index is nil for !a,
+// which means the first match.
 type LenOf struct {
 	Name  string
 	Index Expr
@@ -249,6 +257,7 @@ type LenOf struct {
 
 func (LenOf) exprNode() {}
 
+// InExpr represents a string match inside an offset range, like $a in (0..100).
 type InExpr struct {
 	Ref    StringRef
 	Lo, Hi Expr
@@ -256,6 +265,9 @@ type InExpr struct {
 
 func (InExpr) exprNode() {}
 
+// ForExpr represents a for loop. Quant is "any", "all", "none" or "count"
+// (with N). It iterates Var over the range Lo..Hi, or over Patterns when
+// Patterns is set, and requires Body to hold for the quantified number of items.
 type ForExpr struct {
 	Quant    string
 	N        int64
@@ -267,6 +279,7 @@ type ForExpr struct {
 
 func (ForExpr) exprNode() {}
 
+// Index represents an array or dictionary access like pe.sections[0].
 type Index struct {
 	Base  Expr
 	Index Expr
@@ -274,6 +287,7 @@ type Index struct {
 
 func (Index) exprNode() {}
 
+// Field represents a member access like pe.number_of_sections.
 type Field struct {
 	Base Expr
 	Name string
@@ -281,24 +295,29 @@ type Field struct {
 
 func (Field) exprNode() {}
 
+// StrLit represents a text string literal in a condition.
 type StrLit struct {
 	Value string
 }
 
 func (StrLit) exprNode() {}
 
+// BoolLit represents the true and false literals.
 type BoolLit struct {
 	Value bool
 }
 
 func (BoolLit) exprNode() {}
 
+// Ident represents a bare identifier in a condition: a rule reference,
+// an external variable, a loop variable or a module name.
 type Ident struct {
 	Name string
 }
 
 func (Ident) exprNode() {}
 
+// RegexLit represents a regular expression used with the matches operator.
 type RegexLit struct {
 	Pattern   string
 	Modifiers RegexModifiers
@@ -306,6 +325,8 @@ type RegexLit struct {
 
 func (RegexLit) exprNode() {}
 
+// NOf represents "<quantifier> of <string set>". Quant is "any", "all",
+// "none" or "count" (with N).
 type NOf struct {
 	Quant    string
 	N        int64

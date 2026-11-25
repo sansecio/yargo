@@ -97,6 +97,7 @@ func evalExpr(expr ast.Expr, ctx *evalContext) bool {
 	return truthy(evalAny(expr, ctx))
 }
 
+// evalExprInt evaluates an expression that should return an integer.
 func evalExprInt(expr ast.Expr, ctx *evalContext) int64 {
 	n, _ := evalAny(expr, ctx).(int64)
 	return n
@@ -221,6 +222,7 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	}
 }
 
+// evalFuncCall evaluates a function call and returns its result.
 func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 	if len(fn.Args) == 0 && !strings.HasPrefix(fn.Name, "pe.") {
 		return nil
@@ -284,6 +286,7 @@ func readInteger(name string, posArg any, buf []byte) (any, bool) {
 	return int64(u<<shift) >> shift, true
 }
 
+// evalBinaryExpr evaluates a binary expression.
 func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 	switch e.Op {
 	case "and":

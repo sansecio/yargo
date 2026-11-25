@@ -398,6 +398,7 @@ func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*rege
 
 	switch v := s.Value.(type) {
 	case ast.RegexString:
+		// on a regex, nocase means the same as the i flag
 		if s.Modifiers.Nocase {
 			v.Modifiers.CaseInsensitive = true
 		}
@@ -408,6 +409,8 @@ func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*rege
 	default:
 		return nil, nil
 	}
+	// The regex itself is compiled lazily on first use, which discards
+	// errors, so reject invalid patterns here.
 	if err := checkRegex(rePattern, opts.RegexCompiler); err != nil {
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
@@ -448,6 +451,8 @@ func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, a
 		rules.fullBufferRegexes = append(rules.fullBufferRegexes, regexIdx)
 		return allPatterns
 	}
+	// a case-insensitive regex always requires a full scan (see above), so
+	// every atom that reaches here belongs to a case-sensitive regex
 	for _, atom := range prep.atoms {
 		rules.patternMap = append(rules.patternMap, patternRef{
 			regexIdx: regexIdx,
@@ -637,6 +642,12 @@ func widenBytes(b []byte) []byte {
 	return w
 }
 
+// base64Patterns returns the substrings that every base64 encoding of data
+// contains, whatever precedes or follows it. Each of the three lead offsets
+// aligns data differently within the base64 3-byte groups; the leading chars
+// that encode the unknown preceding bytes are skipped, and when the input is
+// not a multiple of 3 the last char also encodes bits of the following data,
+// so it is dropped.
 func base64Patterns(data []byte, enc *base64.Encoding) [][]byte {
 	patterns := make([][]byte, 0, 3)
 	for lead := range 3 {

@@ -182,13 +182,18 @@ func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
 	return true
 }
 
+// Externals holds external variable values for one scan, keyed by name.
+// Values may be int, int32, uint32, int64, bool or string; values of any
+// other type leave the variable undefined.
 type Externals map[string]any
 
+// SkippedRule names a rule that Compile did not compile and why.
 type SkippedRule struct {
 	Rule   string
 	Reason string
 }
 
+// Skipped returns the rules that were not compiled, with the reason.
 func (r *Rules) Skipped() []SkippedRule {
 	return r.skipped
 }
@@ -199,6 +204,8 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	return r.ScanMemWith(buf, nil, flags, timeout, cb)
 }
 
+// ScanMemWith is like ScanMem but evaluates conditions with the given
+// external variable values, overriding the defaults declared at compile time.
 func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
 	if len(r.rules) == 0 {
 		return nil
