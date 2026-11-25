@@ -37,6 +37,7 @@ import (
 %token FOR IN RANGE SHL SHR
 %token <byt> HEX_BYTE
 %token HEX_WILDCARD
+%token <hexToken> HEX_MASKED
 %token AND OR NOT AT ANY ALL NONE OF THEM EQ NE LT GT LE GE FILESIZE
 %token CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES TRUE FALSE
 
@@ -305,6 +306,10 @@ hex_token:
 	| HEX_WILDCARD
 	{
 		$$ = ast.HexWildcard{}
+	}
+	| HEX_MASKED
+	{
+		$$ = $1
 	}
 	| HEX_JUMP
 	{

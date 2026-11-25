@@ -57,16 +57,17 @@ type (
 
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
-		rules         []*compiledRule
-		zeroHitRules  []int32 // sorted indexes of rules that may match without hits
-		matcher       *ahocorasick.AhoCorasick
-		patterns      [][]byte
-		patternMap    []patternRef
-		slotRule      []int32 // string slot -> rule index
-		regexPatterns []*regexPattern
-		ruleIndex     map[string]int32
-		externals     map[string]bool
-		skipped       []SkippedRule
+		rules             []*compiledRule
+		zeroHitRules      []int32 // sorted indexes of rules that may match without hits
+		matcher           *ahocorasick.AhoCorasick
+		patterns          [][]byte
+		patternMap        []patternRef
+		slotRule          []int32 // string slot -> rule index
+		regexPatterns     []*regexPattern
+		fullBufferRegexes []int
+		ruleIndex         map[string]int32
+		externals         map[string]bool
+		skipped           []SkippedRule
 	}
 )
 
@@ -272,6 +273,10 @@ func (r *Rules) collectMatches(ctx context.Context, buf []byte) ([]hit, error) {
 	if err != nil {
 		return nil, err
 	}
+	hits, err = r.scanFullBufferRegexes(ctx, buf, hits)
+	if err != nil {
+		return nil, err
+	}
 	return groupBySlot(hits), nil
 }
 
@@ -386,6 +391,61 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 	}
 
 	return hits, nil
+}
+
+// maxFullBufferMatches bounds the matches recorded for one full-buffer regex.
+const maxFullBufferMatches = 1 << 16
+
+type allIndexer interface {
+	FindAllIndex(b []byte, n int) [][]int
+}
+
+func (r *Rules) scanFullBufferRegexes(ctx context.Context, buf []byte, hits []hit) ([]hit, error) {
+	for _, idx := range r.fullBufferRegexes {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		rp := r.regexPatterns[idx]
+		re := rp.compiled()
+		if re == nil {
+			continue
+		}
+		for _, loc := range findAllIndex(ctx, re, buf) {
+			if loc[1] == loc[0] {
+				continue
+			}
+			if rp.fullword && !checkWordBoundary(buf, loc[0], loc[1], false) {
+				continue
+			}
+			hits = append(hits, hit{pos: loc[0], slot: rp.slot, n: int32(loc[1] - loc[0])})
+		}
+	}
+	return hits, nil
+}
+
+func findAllIndex(ctx context.Context, re Regexp, buf []byte) [][]int {
+	if all, ok := re.(allIndexer); ok {
+		return recoverFindAllIndex(all, buf)
+	}
+	var locs [][]int
+	for pos := 0; pos <= len(buf) && len(locs) < maxFullBufferMatches && ctx.Err() == nil; {
+		loc := recoverFindIndex(re, buf[pos:])
+		if loc == nil {
+			break
+		}
+		locs = append(locs, []int{pos + loc[0], pos + loc[1]})
+		pos += max(loc[1], loc[0]+1)
+	}
+	return locs
+}
+
+func recoverFindAllIndex(re allIndexer, b []byte) (locs [][]int) {
+	defer func() {
+		if r := recover(); r != nil {
+			locs = nil
+		}
+	}()
+	return re.FindAllIndex(b, maxFullBufferMatches)
 }
 
 // evaluateRules evaluates hit-bearing rules and rules whose conditions may

@@ -376,17 +376,28 @@ func (l *yaraLexer) lexHexString(lval *yySymType) int {
 			l.pos += 2
 			return HEX_WILDCARD
 		}
+		if l.pos+1 < len(l.input) && isHexDigit(l.input[l.pos+1]) {
+			lval.hexToken = ast.HexMasked{Value: hexVal(l.input[l.pos+1]), Mask: 0x0F}
+			l.pos += 2
+			return HEX_MASKED
+		}
 	case '[':
 		return l.lexHexJumpToken(lval)
 	case '(':
 		return l.lexHexAltToken(lval)
 	}
 
-	if isHexDigit(ch) {
-		if l.pos+1 < len(l.input) && isHexDigit(l.input[l.pos+1]) {
-			lval.byt = hexVal(l.input[l.pos])<<4 | hexVal(l.input[l.pos+1])
+	if isHexDigit(ch) && l.pos+1 < len(l.input) {
+		next := l.input[l.pos+1]
+		if isHexDigit(next) {
+			lval.byt = hexVal(l.input[l.pos])<<4 | hexVal(next)
 			l.pos += 2
 			return HEX_BYTE
+		}
+		if next == '?' {
+			lval.hexToken = ast.HexMasked{Value: hexVal(ch) << 4, Mask: 0xF0}
+			l.pos += 2
+			return HEX_MASKED
 		}
 	}
 
@@ -411,14 +422,23 @@ func (l *yaraLexer) lexHexJumpToken(lval *yySymType) int {
 
 func (l *yaraLexer) lexHexAltToken(lval *yySymType) int {
 	start := l.pos
-	for l.pos < len(l.input) && l.input[l.pos] != ')' {
+	depth := 0
+	for l.pos < len(l.input) {
+		switch l.input[l.pos] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
 		l.pos++
+		if depth == 0 {
+			break
+		}
 	}
-	if l.pos >= len(l.input) {
+	if depth != 0 {
 		l.errorf("unterminated hex alternation")
 		return 0
 	}
-	l.pos++ // skip )
 	lval.str = l.input[start:l.pos]
 	return HEX_ALT
 }

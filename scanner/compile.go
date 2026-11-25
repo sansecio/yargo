@@ -20,6 +20,11 @@ type CompileOptions struct {
 	// a full buffer scan, instead of returning an error.
 	SkipInvalidRegex bool
 
+	// FullBufferRegex accepts regexes without a usable literal atom, and
+	// case-insensitive ones, by running them over the whole buffer. Each
+	// such regex costs one pass over every scanned buffer.
+	FullBufferRegex bool
+
 	// SkipSubtypes filters out rules whose meta "subtype" field matches
 	// any of the given values. Rules without a "subtype" meta or with an
 	// empty subtype value are never filtered.
@@ -370,8 +375,9 @@ func hasASCIILetter(p []byte) bool {
 }
 
 type regexPrep struct {
-	pattern string
-	atoms   [][]byte
+	pattern  string
+	atoms    [][]byte
+	fullScan bool
 }
 
 func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*regexPrep, error) {
@@ -395,6 +401,9 @@ func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*rege
 	}
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
 	if !hasAtoms || caseInsensitive {
+		if opts.FullBufferRegex {
+			return &regexPrep{pattern: rePattern, fullScan: true}, nil
+		}
 		return nil, fmt.Errorf("rule %q string %s: regex requires full buffer scan", ruleName, s.Name)
 	}
 	return &regexPrep{pattern: rePattern, atoms: atoms}, nil
@@ -409,6 +418,10 @@ func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, a
 	}
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
+	if prep.fullScan {
+		rules.fullBufferRegexes = append(rules.fullBufferRegexes, regexIdx)
+		return allPatterns
+	}
 	for _, atom := range prep.atoms {
 		rules.patternMap = append(rules.patternMap, patternRef{
 			regexIdx: regexIdx,
@@ -472,18 +485,24 @@ func checkRegex(pattern string, compile CompileFunc) error {
 
 func hexStringToRegex(h ast.HexString) string {
 	var sb strings.Builder
+	writeHexTokens(&sb, h.Tokens)
+	return sb.String()
+}
 
+func writeHexTokens(sb *strings.Builder, tokens []ast.HexToken) {
 	// Coalesce consecutive wildcards into a single .{n}
 	i := 0
-	for i < len(h.Tokens) {
-		switch t := h.Tokens[i].(type) {
+	for i < len(tokens) {
+		switch t := tokens[i].(type) {
 		case ast.HexByte:
-			fmt.Fprintf(&sb, "\\x%02x", t.Value)
+			fmt.Fprintf(sb, "\\x%02x", t.Value)
+		case ast.HexMasked:
+			writeMasked(sb, t)
 		case ast.HexWildcard:
 			// Count consecutive wildcards
 			count := 1
-			for i+count < len(h.Tokens) {
-				if _, ok := h.Tokens[i+count].(ast.HexWildcard); ok {
+			for i+count < len(tokens) {
+				if _, ok := tokens[i+count].(ast.HexWildcard); ok {
 					count++
 				} else {
 					break
@@ -492,18 +511,28 @@ func hexStringToRegex(h ast.HexString) string {
 			if count == 1 {
 				sb.WriteByte('.')
 			} else {
-				fmt.Fprintf(&sb, ".{%d}", count)
+				fmt.Fprintf(sb, ".{%d}", count)
 			}
 			i += count - 1 // -1 because the loop will increment
 		case ast.HexJump:
-			writeJump(&sb, t)
+			writeJump(sb, t)
 		case ast.HexAlt:
-			writeAlt(&sb, t)
+			writeAlt(sb, t)
 		}
 		i++
 	}
+}
 
-	return sb.String()
+func writeMasked(sb *strings.Builder, m ast.HexMasked) {
+	sb.WriteByte('[')
+	if m.Mask == 0xF0 {
+		fmt.Fprintf(sb, "\\x%02x-\\x%02x", m.Value, m.Value|0x0F)
+	} else {
+		for hi := 0; hi < 16; hi++ {
+			fmt.Fprintf(sb, "\\x%02x", byte(hi<<4)|m.Value)
+		}
+	}
+	sb.WriteByte(']')
 }
 
 func writeJump(sb *strings.Builder, j ast.HexJump) {
@@ -523,15 +552,11 @@ func writeJump(sb *strings.Builder, j ast.HexJump) {
 
 func writeAlt(sb *strings.Builder, a ast.HexAlt) {
 	sb.WriteString("(?:")
-	for i, item := range a.Alternatives {
+	for i, branch := range a.Alternatives {
 		if i > 0 {
 			sb.WriteByte('|')
 		}
-		if item.Wildcard {
-			sb.WriteByte('.')
-		} else if item.Byte != nil {
-			fmt.Fprintf(sb, "\\x%02x", *item.Byte)
-		}
+		writeHexTokens(sb, branch)
 	}
 	sb.WriteByte(')')
 }

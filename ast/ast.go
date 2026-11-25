@@ -112,19 +112,22 @@ type HexJump struct {
 
 func (HexJump) hexToken() {}
 
-// HexAlt represents an alternation like (41|42|43) matching any of the byte values.
-// Each alternative can be a byte value or ?? wildcard.
+// HexMasked represents a byte with a wildcard nibble: 4? has Value 0x40 and
+// Mask 0xF0, ?4 has Value 0x04 and Mask 0x0F.
+type HexMasked struct {
+	Value byte
+	Mask  byte
+}
+
+func (HexMasked) hexToken() {}
+
+// HexAlt represents an alternation like (41|42 ??|43 [1-2] 44). Each
+// alternative is a sequence of tokens, which may nest further alternations.
 type HexAlt struct {
-	Alternatives []HexAltItem
+	Alternatives [][]HexToken
 }
 
 func (HexAlt) hexToken() {}
-
-// HexAltItem represents a single item in a hex alternation.
-type HexAltItem struct {
-	Byte     *byte // nil if wildcard
-	Wildcard bool
-}
 
 // Expr represents a condition expression node.
 type Expr interface {

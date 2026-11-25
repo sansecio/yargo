@@ -183,30 +183,113 @@ func parseRegex(s string) (string, ast.RegexModifiers) {
 	return s, mods
 }
 
+const maxHexAltDepth = 16
+
+type hexAltParser struct {
+	s   string
+	pos int
+}
+
 func parseHexAlt(s string) (ast.HexAlt, error) {
-	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+	p := &hexAltParser{s: s}
+	alt, err := p.alt(0)
+	if err != nil {
+		return ast.HexAlt{}, err
+	}
+	if p.pos != len(s) {
 		return ast.HexAlt{}, fmt.Errorf("invalid hex alternation %q", s)
 	}
-	s = s[1 : len(s)-1]
-	parts := strings.Split(s, "|")
-	items := make([]ast.HexAltItem, len(parts))
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "??" {
-			items[i] = ast.HexAltItem{Wildcard: true}
-			continue
-		}
-		if len(part) != 2 {
-			return ast.HexAlt{}, fmt.Errorf("unsupported hex alternative %q (only single bytes and ?? are supported)", part)
-		}
-		b, err := strconv.ParseUint(part, 16, 8)
-		if err != nil {
-			return ast.HexAlt{}, fmt.Errorf("invalid hex alternative %q", part)
-		}
-		v := byte(b)
-		items[i] = ast.HexAltItem{Byte: &v}
+	return alt, nil
+}
+
+func (p *hexAltParser) alt(depth int) (ast.HexAlt, error) {
+	if depth >= maxHexAltDepth {
+		return ast.HexAlt{}, fmt.Errorf("hex alternation nested deeper than %d", maxHexAltDepth)
 	}
-	return ast.HexAlt{Alternatives: items}, nil
+	p.pos++
+	var alt ast.HexAlt
+	for {
+		branch, err := p.branch(depth)
+		if err != nil {
+			return ast.HexAlt{}, err
+		}
+		alt.Alternatives = append(alt.Alternatives, branch)
+		if p.pos >= len(p.s) {
+			return ast.HexAlt{}, fmt.Errorf("unterminated hex alternation %q", p.s)
+		}
+		p.pos++
+		if p.s[p.pos-1] == ')' {
+			return alt, nil
+		}
+	}
+}
+
+func (p *hexAltParser) branch(depth int) ([]ast.HexToken, error) {
+	var tokens []ast.HexToken
+	for p.pos < len(p.s) {
+		c := p.s[p.pos]
+		switch {
+		case c == '|' || c == ')':
+			return checkBranch(tokens)
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+			p.pos++
+		case c == '(':
+			nested, err := p.alt(depth + 1)
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, nested)
+		case c == '[':
+			end := strings.IndexByte(p.s[p.pos:], ']')
+			if end < 0 {
+				return nil, fmt.Errorf("unterminated hex jump in %q", p.s)
+			}
+			jump, err := parseHexJump(p.s[p.pos : p.pos+end+1])
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, jump)
+			p.pos += end + 1
+		default:
+			token, err := p.byteToken()
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, token)
+		}
+	}
+	return nil, fmt.Errorf("unterminated hex alternation %q", p.s)
+}
+
+func (p *hexAltParser) byteToken() (ast.HexToken, error) {
+	if p.pos+1 >= len(p.s) {
+		return nil, fmt.Errorf("invalid hex alternative in %q", p.s)
+	}
+	hi, lo := p.s[p.pos], p.s[p.pos+1]
+	p.pos += 2
+	switch {
+	case hi == '?' && lo == '?':
+		return ast.HexWildcard{}, nil
+	case hi == '?' && isHexDigit(lo):
+		return ast.HexMasked{Value: hexVal(lo), Mask: 0x0F}, nil
+	case isHexDigit(hi) && lo == '?':
+		return ast.HexMasked{Value: hexVal(hi) << 4, Mask: 0xF0}, nil
+	case isHexDigit(hi) && isHexDigit(lo):
+		return ast.HexByte{Value: hexVal(hi)<<4 | hexVal(lo)}, nil
+	}
+	return nil, fmt.Errorf("invalid hex alternative %q", p.s[p.pos-2:p.pos])
+}
+
+func checkBranch(tokens []ast.HexToken) ([]ast.HexToken, error) {
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("empty hex alternative")
+	}
+	_, first := tokens[0].(ast.HexJump)
+	_, last := tokens[len(tokens)-1].(ast.HexJump)
+	if first || last {
+		return nil, fmt.Errorf("hex alternative cannot start or end with a jump")
+	}
+	return tokens, nil
 }
 
 func parseHexJump(s string) (ast.HexJump, error) {
