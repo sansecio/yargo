@@ -157,6 +157,15 @@ func TestPEOverlayIsZeroWithoutAppendedData(t *testing.T) {
 	}
 }
 
+func TestPEResourceTimestampIsUndefinedWithoutResourceDirectory(t *testing.T) {
+	for _, cond := range []string{"pe.resource_timestamp == 0", "not pe.resource_timestamp == 0"} {
+		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		if got := scanNames(t, rules, buildPE(t)); len(got) != 0 {
+			t.Errorf("%s matched a PE without resources", cond)
+		}
+	}
+}
+
 func TestPEMembersOnNonPEAreUndefined(t *testing.T) {
 	for _, cond := range []string{
 		"pe.overlay.size == 0", "not pe.overlay.size == 0",

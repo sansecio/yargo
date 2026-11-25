@@ -66,6 +66,7 @@ func (p *peInfo) ensureResources() {
 	}
 	ts, _ := p.u32(base + 4)
 	p.resourceTimestamp = int64(ts)
+	p.hasResourceDir = true
 	w := &resourceWalk{p: p, base: base, typ: -1, id: -1, language: -1}
 	w.dir(base, 0, optStr{}, optStr{}, optStr{})
 }

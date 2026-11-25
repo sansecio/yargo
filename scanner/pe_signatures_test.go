@@ -90,6 +90,10 @@ func newTestCert(t *testing.T, serial *big.Int, subject pkix.Name, parent *testC
 }
 
 func buildSignedData(signer *testCert, extraCerts []*testCert, spcContent bool, nested ...[]byte) []byte {
+	return buildSignedDataWithAttr(signer, extraCerts, spcContent, oidSpcNested, nested...)
+}
+
+func buildSignedDataWithAttr(signer *testCert, extraCerts []*testCert, spcContent bool, attrOID asn1.ObjectIdentifier, nested ...[]byte) []byte {
 	var certs []byte
 	certs = append(certs, signer.cert.Raw...)
 	for _, c := range extraCerts {
@@ -110,7 +114,7 @@ func buildSignedData(signer *testCert, extraCerts []*testCert, spcContent bool, 
 	if len(nested) > 0 {
 		var attrs [][]byte
 		for _, n := range nested {
-			attrs = append(attrs, derSeq(derMarshal(oidSpcNested), derSet(n)))
+			attrs = append(attrs, derSeq(derMarshal(attrOID), derSet(n)))
 		}
 		signerInfo = append(signerInfo, derContext(1, attrs...))
 	}
@@ -192,6 +196,18 @@ func TestPESignatureCounts(t *testing.T) {
 				t.Errorf("number_of_signatures != %d", tt.want)
 			}
 		})
+	}
+}
+
+func TestPESignatureCountsTimestampCountersignatureCertificates(t *testing.T) {
+	root := newTestCert(t, big.NewInt(1), pkix.Name{CommonName: "Root"}, nil)
+	leaf := newTestCert(t, big.NewInt(2), pkix.Name{CommonName: "Leaf"}, root)
+	tsa := newTestCert(t, big.NewInt(3), pkix.Name{CommonName: "Timestamp"}, root)
+	counter := buildSignedData(tsa, []*testCert{root}, false)
+	data := attachSignature(t, buildSignedDataWithAttr(leaf, []*testCert{root}, true, asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 3, 3, 1}, counter))
+	rules := compileSource(t, "rule r { condition: pe.number_of_signatures == 1 and pe.signatures[0].number_of_certificates == 4 }")
+	if got := scanNames(t, rules, data); len(got) != 1 {
+		t.Errorf("matches = %v", got)
 	}
 }
 

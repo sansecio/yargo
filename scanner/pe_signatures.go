@@ -27,6 +27,7 @@ var (
 	oidPKCS7SignedData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
 	oidSpcIndirectData = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4}
 	oidSpcNestedSig    = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 4, 1}
+	oidMSCountersig    = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 3, 3, 1}
 )
 
 type peSignature struct {
@@ -145,6 +146,9 @@ func parseAuthenticode(der []byte, depth int, out []peSignature) []peSignature {
 	}
 	certs := parseCertificates(sd.Certs)
 	sig := peSignature{certificates: int64(len(certs))}
+	if len(sd.Signers) > 0 {
+		sig.certificates += countersignatureCertificates(sd.Signers[0].UnauthAttrs)
+	}
 	if !sd.Content.Type.Equal(oidSpcIndirectData) {
 		return append(out, sig)
 	}
@@ -164,6 +168,33 @@ func parseAuthenticode(der []byte, depth int, out []peSignature) []peSignature {
 		}
 	}
 	return append(out[:self], out[self+1:]...)
+}
+
+func countersignatureCertificates(attrs []pkcs7Attribute) int64 {
+	var total int64
+	for _, attr := range attrs {
+		if !attr.Type.Equal(oidMSCountersig) {
+			continue
+		}
+		values := attr.Values.Bytes
+		for n := 0; len(values) > 0 && n < maxSignatures; n++ {
+			var v asn1.RawValue
+			var err error
+			if values, err = asn1.Unmarshal(values, &v); err != nil {
+				break
+			}
+			var info pkcs7ContentInfo
+			if _, err := asn1.Unmarshal(v.FullBytes, &info); err != nil || !info.Type.Equal(oidPKCS7SignedData) {
+				continue
+			}
+			var sd pkcs7SignedData
+			if _, err := asn1.Unmarshal(info.Content.Bytes, &sd); err != nil {
+				continue
+			}
+			total += int64(len(parseCertificates(sd.Certs)))
+		}
+	}
+	return total
 }
 
 func nestedSignatures(attrs []pkcs7Attribute) [][]byte {

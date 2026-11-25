@@ -60,6 +60,7 @@ type peInfo struct {
 	resourcesParsed   bool
 	resources         []peResource
 	resourceTimestamp int64
+	hasResourceDir    bool
 	versionInfo       map[string]string
 	versionList       []versionEntry
 	signaturesParsed  bool
@@ -454,6 +455,9 @@ func (p *peInfo) scalar(name string) any {
 		return int64(len(p.resources))
 	case "pe.resource_timestamp":
 		p.ensureResources()
+		if !p.hasResourceDir {
+			return nil
+		}
 		return p.resourceTimestamp
 	case "pe.number_of_signatures":
 		p.ensureSignatures()
