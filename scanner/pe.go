@@ -14,7 +14,9 @@ import (
 const (
 	maxImportDescriptors = 4096
 	maxImportThunks      = 1 << 14
-	maxExportNames       = 1 << 16
+	maxExportNames       = 1 << 13
+	maxTotalImports      = 1 << 14
+	maxNameBytes         = 1 << 20
 	maxCString           = 512
 )
 
@@ -43,11 +45,28 @@ type peInfo struct {
 	imports    []peImport
 	exports    []peExport
 	numExports int64
+	nameBytes  int
+	walked     map[uint32]bool
+	done       <-chan struct{}
+}
+
+func (p *peInfo) stopped() bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *peInfo) full() bool {
+	return len(p.imports) >= maxTotalImports || p.nameBytes >= maxNameBytes
 }
 
 // scanState holds per-scan data shared by every rule's evaluation, parsed on
 // first use.
 type scanState struct {
+	done     <-chan struct{}
 	buf      []byte
 	pe       *peInfo
 	peParsed bool
@@ -56,12 +75,12 @@ type scanState struct {
 func (s *scanState) peInfo() *peInfo {
 	if !s.peParsed {
 		s.peParsed = true
-		s.pe = parsePE(s.buf)
+		s.pe = parsePE(s.buf, s.done)
 	}
 	return s.pe
 }
 
-func parsePE(buf []byte) *peInfo {
+func parsePE(buf []byte, done <-chan struct{}) *peInfo {
 	if len(buf) < 0x40 || buf[0] != 'M' || buf[1] != 'Z' {
 		return nil
 	}
@@ -69,7 +88,7 @@ func parsePE(buf []byte) *peInfo {
 	if err != nil {
 		return nil
 	}
-	info := &peInfo{file: f, buf: buf, chars: int64(f.Characteristics)}
+	info := &peInfo{file: f, buf: buf, chars: int64(f.Characteristics), walked: map[uint32]bool{}, done: done}
 	var dirs []pe.DataDirectory
 	switch oh := f.OptionalHeader.(type) {
 	case *pe.OptionalHeader64:
@@ -164,6 +183,9 @@ func (p *peInfo) parseExports(dir pe.DataDirectory) {
 		return
 	}
 	for i := 0; i < int(min(numNames, maxExportNames)); i++ {
+		if p.full() || (i%256 == 0 && p.stopped()) {
+			return
+		}
 		nameRVA, ok := p.u32(namesOff + 4*i)
 		if !ok {
 			return
@@ -176,6 +198,7 @@ func (p *peInfo) parseExports(dir pe.DataDirectory) {
 		if !ok {
 			continue
 		}
+		p.nameBytes += len(name)
 		p.exports = append(p.exports, peExport{name: name, ordinal: int64(first) + int64(idx)})
 	}
 }
@@ -189,6 +212,9 @@ func (p *peInfo) parseImports(dir pe.DataDirectory) {
 		return
 	}
 	for i := 0; i < maxImportDescriptors; i++ {
+		if p.full() || p.stopped() {
+			return
+		}
 		d := base + 20*i
 		oft, ok1 := p.u32(d)
 		nameRVA, ok2 := p.u32(d + 12)
@@ -204,6 +230,10 @@ func (p *peInfo) parseImports(dir pe.DataDirectory) {
 		if thunks == 0 {
 			thunks = ft
 		}
+		if p.walked[thunks] {
+			continue
+		}
+		p.walked[thunks] = true
 		p.parseThunks(dll, thunks)
 	}
 }
@@ -218,6 +248,9 @@ func (p *peInfo) parseThunks(dll string, rva uint32) {
 		size = 8
 	}
 	for i := 0; i < maxImportThunks; i++ {
+		if p.full() || (i%256 == 0 && p.stopped()) {
+			return
+		}
 		var v uint64
 		if p.is64 {
 			v, ok = p.u64(off + size*i)
@@ -239,6 +272,7 @@ func (p *peInfo) parseThunks(dll string, rva uint32) {
 		}
 		name, ok := p.cstring(uint32(v) + 2)
 		if ok {
+			p.nameBytes += len(name)
 			p.imports = append(p.imports, peImport{dll: dll, name: name})
 		}
 	}
