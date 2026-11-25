@@ -90,14 +90,14 @@ func TestParseHexStrings(t *testing.T) {
 		{"jump unbounded", "{ FF [-] D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexJump{}, ast.HexByte{Value: 0xD8}}},
 		{"jump min only", "{ FF [4-] D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexJump{Min: new(4)}, ast.HexByte{Value: 0xD8}}},
 		{"jump max only", "{ FF [-16] D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexJump{Max: new(16)}, ast.HexByte{Value: 0xD8}}},
-		{"alternation", "{ FF (41|42) D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}}, {ast.HexByte{Value: 0x42}}}}, ast.HexByte{Value: 0xD8}}},
-		{"alt with wildcard", "{ (41|??) }", []ast.HexToken{ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}}, {ast.HexWildcard{}}}}}},
+		{"alternation", "{ FF (41|42) D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x41))}, {Byte: new(byte(0x42))}}}, ast.HexByte{Value: 0xD8}}},
+		{"alt with wildcard", "{ (41|??) }", []ast.HexToken{ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x41))}, {Wildcard: true}}}}},
 		{"high nibble", "{ 4? FF }", []ast.HexToken{ast.HexMasked{Value: 0x40, Mask: 0xF0}, ast.HexByte{Value: 0xFF}}},
 		{"low nibble", "{ FF ?4 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexMasked{Value: 0x04, Mask: 0x0F}}},
-		{"multi byte alternatives", "{ (41 B8 | 68) 00 }", []ast.HexToken{ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexByte{Value: 0xB8}}, {ast.HexByte{Value: 0x68}}}}, ast.HexByte{Value: 0x00}}},
-		{"nibbles in alternatives", "{ FF ( D? | 5? | ?1 ) }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexMasked{Value: 0xD0, Mask: 0xF0}}, {ast.HexMasked{Value: 0x50, Mask: 0xF0}}, {ast.HexMasked{Value: 0x01, Mask: 0x0F}}}}}},
-		{"jump and wildcard in alternative", "{ (FF 75 ?? | 53 [1-2] 54) }", []ast.HexToken{ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0xFF}, ast.HexByte{Value: 0x75}, ast.HexWildcard{}}, {ast.HexByte{Value: 0x53}, ast.HexJump{Min: new(1), Max: new(2)}, ast.HexByte{Value: 0x54}}}}}},
-		{"nested alternation", "{ (41 (42|43) | 44) }", []ast.HexToken{ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x42}}, {ast.HexByte{Value: 0x43}}}}}, {ast.HexByte{Value: 0x44}}}}}},
+		{"multi byte alternatives", "{ (41 B8 | 68) 00 }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexByte{Value: 0xB8}}, {ast.HexByte{Value: 0x68}}}}, ast.HexByte{Value: 0x00}}},
+		{"nibbles in alternatives", "{ FF ( D? | 5? | ?1 ) }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexMasked{Value: 0xD0, Mask: 0xF0}}, {ast.HexMasked{Value: 0x50, Mask: 0xF0}}, {ast.HexMasked{Value: 0x01, Mask: 0x0F}}}}}},
+		{"jump and wildcard in alternative", "{ (FF 75 ?? | 53 [1-2] 54) }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0xFF}, ast.HexByte{Value: 0x75}, ast.HexWildcard{}}, {ast.HexByte{Value: 0x53}, ast.HexJump{Min: new(1), Max: new(2)}, ast.HexByte{Value: 0x54}}}}}},
+		{"nested alternation", "{ (41 (42|43) | 44) }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x42))}, {Byte: new(byte(0x43))}}}}, {ast.HexByte{Value: 0x44}}}}}},
 	}
 
 	for _, tt := range tests {
@@ -467,7 +467,7 @@ func TestParseHexAltWithSpaces(t *testing.T) {
 	rs := mustParse(t, `rule test { strings: $ = { (AB | CD) EF } condition: any of them }`)
 	hex := rs.Rules[0].Strings[0].Value.(ast.HexString)
 	want := []ast.HexToken{
-		ast.HexAlt{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0xAB}}, {ast.HexByte{Value: 0xCD}}}},
+		ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0xAB))}, {Byte: new(byte(0xCD))}}},
 		ast.HexByte{Value: 0xEF},
 	}
 	if !hexTokensEqual(hex.Tokens, want) {

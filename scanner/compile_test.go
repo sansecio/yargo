@@ -495,9 +495,9 @@ func Test_hexStringToRegex(t *testing.T) {
 			name: "byte alternation",
 			tokens: []ast.HexToken{
 				ast.HexByte{Value: 0x00},
-				ast.HexAlt{Alternatives: [][]ast.HexToken{
-					{ast.HexByte{Value: 0x90}},
-					{ast.HexByte{Value: 0xCC}},
+				ast.HexAlt{Alternatives: []ast.HexAltItem{
+					{Byte: new(byte(0x90))},
+					{Byte: new(byte(0xCC))},
 				}},
 				ast.HexByte{Value: 0xFF},
 			},
@@ -506,9 +506,9 @@ func Test_hexStringToRegex(t *testing.T) {
 		{
 			name: "alternation with wildcard",
 			tokens: []ast.HexToken{
-				ast.HexAlt{Alternatives: [][]ast.HexToken{
-					{ast.HexByte{Value: 0x41}},
-					{ast.HexWildcard{}},
+				ast.HexAlt{Alternatives: []ast.HexAltItem{
+					{Byte: new(byte(0x41))},
+					{Wildcard: true},
 				}},
 			},
 			want: `(?:\x41|.)`,
@@ -521,9 +521,9 @@ func Test_hexStringToRegex(t *testing.T) {
 				ast.HexWildcard{},
 				ast.HexWildcard{},
 				ast.HexJump{Min: new(4), Max: new(8)},
-				ast.HexAlt{Alternatives: [][]ast.HexToken{
-					{ast.HexByte{Value: 0x90}},
-					{ast.HexByte{Value: 0xCC}},
+				ast.HexAlt{Alternatives: []ast.HexAltItem{
+					{Byte: new(byte(0x90))},
+					{Byte: new(byte(0xCC))},
 				}},
 			},
 			want: `\x4d\x5a.{2}.{4,8}(?:\x90|\xcc)`,
@@ -541,7 +541,7 @@ func Test_hexStringToRegex(t *testing.T) {
 		{
 			name: "multi byte alternatives with wildcard and jump",
 			tokens: []ast.HexToken{
-				ast.HexAlt{Alternatives: [][]ast.HexToken{
+				ast.HexAlternation{Alternatives: [][]ast.HexToken{
 					{ast.HexByte{Value: 0x41}, ast.HexByte{Value: 0xB8}},
 					{ast.HexByte{Value: 0x53}, ast.HexWildcard{}, ast.HexWildcard{}, ast.HexJump{Min: new(1), Max: new(2)}, ast.HexByte{Value: 0x54}},
 				}},

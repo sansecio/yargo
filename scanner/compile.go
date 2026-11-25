@@ -541,6 +541,8 @@ func writeHexTokens(sb *strings.Builder, tokens []ast.HexToken) {
 			writeJump(sb, t)
 		case ast.HexAlt:
 			writeAlt(sb, t)
+		case ast.HexAlternation:
+			writeAlternation(sb, t)
 		}
 		i++
 	}
@@ -574,6 +576,21 @@ func writeJump(sb *strings.Builder, j ast.HexJump) {
 }
 
 func writeAlt(sb *strings.Builder, a ast.HexAlt) {
+	sb.WriteString("(?:")
+	for i, item := range a.Alternatives {
+		if i > 0 {
+			sb.WriteByte('|')
+		}
+		if item.Wildcard {
+			sb.WriteByte('.')
+		} else if item.Byte != nil {
+			fmt.Fprintf(sb, "\\x%02x", *item.Byte)
+		}
+	}
+	sb.WriteByte(')')
+}
+
+func writeAlternation(sb *strings.Builder, a ast.HexAlternation) {
 	sb.WriteString("(?:")
 	for i, branch := range a.Alternatives {
 		if i > 0 {

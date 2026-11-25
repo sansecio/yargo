@@ -217,38 +217,58 @@ type hexAltParser struct {
 	pos int
 }
 
-func parseHexAlt(s string) (ast.HexAlt, error) {
+func parseHexAlt(s string) (ast.HexToken, error) {
 	p := &hexAltParser{s: s}
 	alt, err := p.alt(0)
 	if err != nil {
-		return ast.HexAlt{}, err
+		return nil, err
 	}
 	if p.pos != len(s) {
-		return ast.HexAlt{}, fmt.Errorf("invalid hex alternation %q", s)
+		return nil, fmt.Errorf("invalid hex alternation %q", s)
 	}
 	return alt, nil
 }
 
-func (p *hexAltParser) alt(depth int) (ast.HexAlt, error) {
+func (p *hexAltParser) alt(depth int) (ast.HexToken, error) {
 	if depth >= maxHexAltDepth {
-		return ast.HexAlt{}, fmt.Errorf("hex alternation nested deeper than %d", maxHexAltDepth)
+		return nil, fmt.Errorf("hex alternation nested deeper than %d", maxHexAltDepth)
 	}
 	p.pos++
-	var alt ast.HexAlt
+	var branches [][]ast.HexToken
 	for {
 		branch, err := p.branch(depth)
 		if err != nil {
-			return ast.HexAlt{}, err
+			return nil, err
 		}
-		alt.Alternatives = append(alt.Alternatives, branch)
+		branches = append(branches, branch)
 		if p.pos >= len(p.s) {
-			return ast.HexAlt{}, fmt.Errorf("unterminated hex alternation %q", p.s)
+			return nil, fmt.Errorf("unterminated hex alternation %q", p.s)
 		}
 		p.pos++
 		if p.s[p.pos-1] == ')' {
-			return alt, nil
+			return hexAltToken(branches), nil
 		}
 	}
+}
+
+// hexAltToken keeps the HexAlt shape for alternations of single bytes and
+// ?? wildcards, and uses HexAlternation only when a branch needs more.
+func hexAltToken(branches [][]ast.HexToken) ast.HexToken {
+	items := make([]ast.HexAltItem, 0, len(branches))
+	for _, branch := range branches {
+		if len(branch) != 1 {
+			return ast.HexAlternation{Alternatives: branches}
+		}
+		switch t := branch[0].(type) {
+		case ast.HexByte:
+			items = append(items, ast.HexAltItem{Byte: &t.Value})
+		case ast.HexWildcard:
+			items = append(items, ast.HexAltItem{Wildcard: true})
+		default:
+			return ast.HexAlternation{Alternatives: branches}
+		}
+	}
+	return ast.HexAlt{Alternatives: items}
 }
 
 func (p *hexAltParser) branch(depth int) ([]ast.HexToken, error) {
