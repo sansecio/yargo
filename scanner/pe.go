@@ -270,7 +270,12 @@ func (p *peInfo) parseThunks(dll string, rva uint32) {
 			ordFlag = 1 << 63
 		}
 		if v&ordFlag != 0 {
-			p.imports = append(p.imports, peImport{dll: dll, ordinal: int64(v & 0xffff), byOrdinal: true})
+			ordinal := uint16(v)
+			name := lookupOrdinal(dll, ordinal)
+			if name == "" {
+				name = "ord" + itoa(int64(ordinal))
+			}
+			p.imports = append(p.imports, peImport{dll: dll, name: name, ordinal: int64(ordinal), byOrdinal: true})
 			continue
 		}
 		name, ok := p.cstring(uint32(v) + 2)
@@ -293,12 +298,7 @@ func (p *peInfo) imphash() string {
 		}
 		sb.WriteString(dll)
 		sb.WriteByte('.')
-		if imp.byOrdinal {
-			sb.WriteString("ord")
-			sb.WriteString(itoa(imp.ordinal))
-		} else {
-			sb.WriteString(strings.ToLower(imp.name))
-		}
+		sb.WriteString(strings.ToLower(imp.name))
 	}
 	sum := md5.Sum([]byte(sb.String()))
 	return hex.EncodeToString(sum[:])
@@ -471,7 +471,7 @@ func (p *peInfo) countImports(args []any) any {
 		}
 		switch fn := args[1].(type) {
 		case string:
-			if !imp.byOrdinal && imp.name == fn {
+			if imp.name == fn {
 				n++
 			}
 		case int64:
