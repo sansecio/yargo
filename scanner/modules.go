@@ -13,7 +13,7 @@ import (
 func window(buf []byte, offset, size any) ([]byte, bool) {
 	o, ok1 := offset.(int64)
 	s, ok2 := size.(int64)
-	if !ok1 || !ok2 || o < 0 || s < 0 || o+s > int64(len(buf)) {
+	if !ok1 || !ok2 || o < 0 || s < 0 || o > int64(len(buf)) || s > int64(len(buf))-o {
 		return nil, false
 	}
 	return buf[o : o+s], true

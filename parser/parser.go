@@ -65,7 +65,7 @@ func comparisonExpr(lexer interface{ Error(string) }, op string, left, right ast
 func isIntegerExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case ast.IntLit, ast.FloatLit, ast.Filesize, ast.FuncCall, ast.Ident, ast.StrLit,
-		ast.CountOf, ast.OffsetOf, ast.LenOf, ast.UnaryExpr:
+		ast.CountOf, ast.OffsetOf, ast.LenOf, ast.UnaryExpr, ast.Index, ast.Field:
 		return true
 	case ast.BinaryExpr:
 		return isArithmeticOp(e.Op)

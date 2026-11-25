@@ -438,6 +438,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 			externals:   ext,
 			ruleIndex:   r.ruleIndex,
 			results:     results,
+			deadline:    ctx,
 		}
 		if !evalExpr(cr.condition, evalCtx) {
 			continue

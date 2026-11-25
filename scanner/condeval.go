@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"cmp"
+	"context"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,6 +17,7 @@ type evalContext struct {
 	slotBase    int32            // slot of the rule's first string
 	buf         []byte           // the buffer being scanned
 	stringNames []string         // all string names defined in the rule
+	deadline    context.Context  // scan context; cancelled at the scan timeout
 	vars        map[string]int64 // loop variables in scope
 	cur         int              // string the anonymous $ stands for inside a for-of loop
 	inSet       bool             // evaluating the body of a for-of loop
@@ -257,7 +259,7 @@ func readInteger(name string, posArg any, buf []byte) (any, bool) {
 		return nil, false
 	}
 	pos, ok := posArg.(int64)
-	if !ok || pos < 0 || pos+int64(r.size) > int64(len(buf)) {
+	if !ok || pos < 0 || len(buf) < r.size || pos > int64(len(buf))-int64(r.size) {
 		return int64(0), true
 	}
 	b := buf[pos : pos+int64(r.size)]
@@ -502,6 +504,15 @@ func evalIn(e ast.InExpr, ctx *evalContext) any {
 	return false
 }
 
+const (
+	maxLoopIterations = 1 << 22
+	loopCheckInterval = 1 << 10
+)
+
+func (ctx *evalContext) expired() bool {
+	return ctx.deadline != nil && ctx.deadline.Err() != nil
+}
+
 // evalFor runs a for loop. Quantifier semantics follow YARA: "any" needs one
 // true body, "all" needs every body true, "none" needs no true body and
 // "count" needs at least N.
@@ -534,9 +545,14 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 		if ctx.vars == nil {
 			ctx.vars = make(map[string]int64, 1)
 		}
-		for i := lo; i <= hi; i++ {
+		aborted := false
+		for i, n := lo, 0; lo <= hi; i, n = i+1, n+1 {
+			if n >= maxLoopIterations || (n%loopCheckInterval == 0 && ctx.expired()) {
+				aborted = true
+				break
+			}
 			ctx.vars[e.Var] = i
-			if !tally() {
+			if !tally() || i == hi {
 				break
 			}
 		}
@@ -544,6 +560,9 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 			ctx.vars[e.Var] = prev
 		} else {
 			delete(ctx.vars, e.Var)
+		}
+		if aborted {
+			return nil
 		}
 	} else {
 		prevCur, prevIn := ctx.cur, ctx.inSet

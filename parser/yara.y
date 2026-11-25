@@ -40,6 +40,7 @@ import (
 %token AND OR NOT AT ANY ALL NONE OF THEM EQ NE LT GT LE GE FILESIZE
 %token CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES TRUE FALSE
 
+%nonassoc PRIMARY
 %left OR
 %left AND
 %right NOT
@@ -52,6 +53,7 @@ import (
 %left '+' '-'
 %left '*' '\\' '%'
 %right UMINUS '~'
+%left '[' '.'
 
 %type <rules> rule_list
 %type <rule> rule rule_head
@@ -330,7 +332,7 @@ condition_section:
 	;
 
 expr:
-	primary_expr
+	primary_expr %prec PRIMARY
 	{
 		$$ = $1
 	}
@@ -498,17 +500,24 @@ primary_expr:
 	{
 		$$ = ast.OffsetOf{Name: $1}
 	}
-	| STR_OFFSET '[' expr ']'
-	{
-		$$ = ast.OffsetOf{Name: $1, Index: $3}
-	}
 	| STR_LEN
 	{
 		$$ = ast.LenOf{Name: $1}
 	}
-	| STR_LEN '[' expr ']'
+	| primary_expr '[' expr ']'
 	{
-		$$ = ast.LenOf{Name: $1, Index: $3}
+		switch b := $1.(type) {
+		case ast.OffsetOf:
+			$$ = ast.OffsetOf{Name: b.Name, Index: $3}
+		case ast.LenOf:
+			$$ = ast.LenOf{Name: b.Name, Index: $3}
+		default:
+			$$ = ast.Index{Base: $1, Index: $3}
+		}
+	}
+	| primary_expr '.' COND_IDENT
+	{
+		$$ = ast.Field{Base: $1, Name: $3}
 	}
 	| FLOAT_LIT
 	{
@@ -610,11 +619,11 @@ func_args:
 	{
 		$$ = nil
 	}
-	| primary_expr
+	| expr
 	{
 		$$ = []ast.Expr{$1}
 	}
-	| func_args ',' primary_expr
+	| func_args ',' expr
 	{
 		$$ = append($1, $3)
 	}

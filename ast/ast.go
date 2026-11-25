@@ -260,6 +260,23 @@ type ForExpr struct {
 
 func (ForExpr) exprNode() {}
 
+// Index represents base[index], such as pe.sections[0] or pe.version_info["Key"].
+type Index struct {
+	Base  Expr
+	Index Expr
+}
+
+func (Index) exprNode() {}
+
+// Field represents base.name applied to an indexed module value, such as
+// pe.sections[0].name.
+type Field struct {
+	Base Expr
+	Name string
+}
+
+func (Field) exprNode() {}
+
 // StrLit represents a string literal in a condition.
 type StrLit struct {
 	Value string
