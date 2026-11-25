@@ -116,6 +116,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			metas:     make([]Meta, len(r.Meta)),
 			condition: r.Condition,
 			private:   r.Private,
+			global:    r.Global,
 			slotBase:  int32(len(rules.slotRule)),
 		}
 		for i, m := range r.Meta {
@@ -128,7 +129,10 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		}
 		rules.rules = append(rules.rules, cr)
 		rules.ruleIndex[r.Name] = int32(ruleIdx)
-		if mayMatchWithoutHits(cr.condition) {
+		if r.Global {
+			rules.globalRules = append(rules.globalRules, int32(ruleIdx))
+		}
+		if r.Global || mayMatchWithoutHits(cr.condition) {
 			rules.zeroHitRules = append(rules.zeroHitRules, int32(ruleIdx))
 		}
 
@@ -202,9 +206,6 @@ func declaredExternals(extra []string) map[string]bool {
 }
 
 func unsupportedReason(r *ast.Rule, rules *Rules) string {
-	if r.Global {
-		return "global rule"
-	}
 	if hasUnsupportedModifier(r) {
 		return "unsupported string modifier"
 	}

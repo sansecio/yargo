@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"sort"
 	"sync"
 	"time"
 
@@ -65,6 +66,7 @@ type (
 		slotRule          []int32 // string slot -> rule index
 		regexPatterns     []*regexPattern
 		fullBufferRegexes []int
+		globalRules       []int32
 		ruleIndex         map[string]int32
 		externals         map[string]bool
 		skipped           []SkippedRule
@@ -99,6 +101,7 @@ type (
 		stringNames    []string
 		stringPrivates []bool
 		private        bool
+		global         bool
 		slotBase       int32 // slot of this rule's first string
 	}
 
@@ -448,11 +451,42 @@ func recoverFindAllIndex(re allIndexer, b []byte) (locs [][]int) {
 	return re.FindAllIndex(b, maxFullBufferMatches)
 }
 
+func (r *Rules) evalRule(ctx context.Context, buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool, scan *scanState) bool {
+	return evalExpr(cr.condition, &evalContext{
+		hits:        ruleHits,
+		slotBase:    cr.slotBase,
+		buf:         buf,
+		stringNames: cr.stringNames,
+		externals:   ext,
+		ruleIndex:   r.ruleIndex,
+		results:     results,
+		deadline:    ctx,
+		scan:        scan,
+	})
+}
+
+// globalsHold evaluates the global rules first. One unsatisfied global rule
+// stops every other rule of the rule set from matching.
+func (r *Rules) globalsHold(ctx context.Context, buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
+	for _, idx := range r.globalRules {
+		cr := r.rules[idx]
+		lo := sort.Search(len(hits), func(i int) bool { return hits[i].slot >= cr.slotBase })
+		hi := lo + sort.Search(len(hits)-lo, func(i int) bool { return hits[lo+i].slot >= cr.slotBase+int32(len(cr.stringNames)) })
+		if !r.evalRule(ctx, buf, cr, hits[lo:hi], ext, results, scan) {
+			return false
+		}
+	}
+	return true
+}
+
 // evaluateRules evaluates hit-bearing rules and rules whose conditions may
 // match without hits, invokes the callback, and handles abort/timeout.
 func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
 	results := make([]bool, len(r.rules))
 	scan := &scanState{buf: buf, done: ctx.Done()}
+	if !r.globalsHold(ctx, buf, hits, ext, results, scan) {
+		return nil
+	}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
 	// order. A rule present in both inputs is evaluated only once.
@@ -483,18 +517,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 		}
 
 		cr := r.rules[ruleIdx]
-		evalCtx := &evalContext{
-			hits:        ruleHits,
-			slotBase:    cr.slotBase,
-			buf:         buf,
-			stringNames: cr.stringNames,
-			externals:   ext,
-			ruleIndex:   r.ruleIndex,
-			results:     results,
-			deadline:    ctx,
-			scan:        scan,
-		}
-		if !evalExpr(cr.condition, evalCtx) {
+		if !r.evalRule(ctx, buf, cr, ruleHits, ext, results, scan) {
 			continue
 		}
 		results[ruleIdx] = true
