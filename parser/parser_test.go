@@ -75,6 +75,8 @@ func TestParseMeta(t *testing.T) {
 	}
 }
 
+const alphabet64 = "ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcba9876543210+/"
+
 func TestParseHexStrings(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -148,11 +150,17 @@ func TestParseModifiers(t *testing.T) {
 		{`"x" private`, ast.StringModifiers{Private: true}},
 		{`"x" wide`, ast.StringModifiers{Wide: true}},
 		{`"x" xor`, ast.StringModifiers{Xor: &ast.XorRange{Min: 0, Max: 255}}},
-		{`"x" base64wide`, ast.StringModifiers{Unsupported: []string{"base64wide"}}},
+		{`"x" base64wide`, ast.StringModifiers{Base64Wide: true}},
+		{`"x" base64 base64wide`, ast.StringModifiers{Base64: true, Base64Wide: true}},
+		{`"x" wide base64`, ast.StringModifiers{Wide: true, Base64: true}},
 		{`"x" wide xor nocase`, ast.StringModifiers{Wide: true, Nocase: true, Xor: &ast.XorRange{Min: 0, Max: 255}}},
 		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 255}}},
 		{`"x" xor ( 0x01 )`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 1}}},
 		{`"x" base64("!@#$%^&*(){}")`, ast.StringModifiers{Unsupported: []string{`base64("!@#$%^&*(){}")`}}},
+		{`"x" base64("` + alphabet64 + `")`, ast.StringModifiers{Base64: true, Base64Alphabet: alphabet64}},
+		{`"x" base64wide("` + alphabet64 + `")`, ast.StringModifiers{Base64Wide: true, Base64Alphabet: alphabet64}},
+		{`"x" base64("` + alphabet64 + `") base64wide("` + alphabet64 + `")`, ast.StringModifiers{Base64: true, Base64Wide: true, Base64Alphabet: alphabet64}},
+		{`"x" base64("` + alphabet64 + `") base64wide`, ast.StringModifiers{Base64: true, Base64Alphabet: alphabet64, Unsupported: []string{"base64wide"}}},
 		{`"x" base64wide("abc") fullword`, ast.StringModifiers{Fullword: true, Unsupported: []string{`base64wide("abc")`}}},
 		{`"x" frobnicate`, ast.StringModifiers{Unsupported: []string{"frobnicate"}}},
 	}
@@ -193,7 +201,7 @@ func TestParseModifierWarnings(t *testing.T) {
 	rs := mustParse(t, `
 rule first {
 	strings:
-		$a = "one" base64wide nocase
+		$a = "one" base64wide("abc") nocase
 		$ = "two" xor(0x300)
 	condition:
 		any of them
@@ -207,7 +215,7 @@ rule second {
 }`)
 
 	want := []string{
-		`rule "first" string $a: unsupported modifier "base64wide", rule will not match`,
+		`rule "first" string $a: unsupported modifier "base64wide(\"abc\")", rule will not match`,
 		`rule "first" string $: unsupported modifier "xor(0x300)", rule will not match`,
 	}
 	if !reflect.DeepEqual(rs.Warnings, want) {

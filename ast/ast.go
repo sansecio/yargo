@@ -36,13 +36,15 @@ type StringDef struct {
 
 // StringModifiers represents the modifiers applied to a string.
 type StringModifiers struct {
-	Ascii    bool
-	Wide     bool
-	Xor      *XorRange
-	Base64   bool
-	Fullword bool
-	Nocase   bool
-	Private  bool
+	Ascii          bool
+	Wide           bool
+	Xor            *XorRange
+	Base64         bool
+	Fullword       bool
+	Base64Wide     bool
+	Base64Alphabet string
+	Nocase         bool
+	Private        bool
 	// Unsupported holds modifiers the scanner cannot honor (e.g. wide, xor,
 	// or base64 with a custom alphabet). Compilation skips rules that use
 	// them, since matching without the modifier would be wrong.

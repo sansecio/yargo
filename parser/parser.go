@@ -48,6 +48,22 @@ func parseXorModifier(s string) (*ast.XorRange, bool) {
 	return &ast.XorRange{Min: min, Max: max}, true
 }
 
+func parseBase64Modifier(s string) (wide bool, alphabet string, ok bool) {
+	name, args, found := strings.Cut(s, "(")
+	if !found || (name != "base64" && name != "base64wide") || !strings.HasSuffix(args, ")") {
+		return false, "", false
+	}
+	args = strings.TrimSpace(strings.TrimSuffix(args, ")"))
+	if len(args) < 2 || args[0] != '"' || args[len(args)-1] != '"' {
+		return false, "", false
+	}
+	alphabet = unquoteString(args)
+	if len(alphabet) != 64 || strings.ContainsAny(alphabet, "\r\n") {
+		return false, "", false
+	}
+	return name == "base64wide", alphabet, true
+}
+
 func parseXorKey(s string) (byte, bool) {
 	v, err := strconv.ParseUint(strings.TrimSpace(s), 0, 8)
 	return byte(v), err == nil

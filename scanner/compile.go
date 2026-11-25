@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -141,7 +142,11 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 				}
 				continue
 			}
-			for _, p := range withWideVariants(patterns, s.Modifiers) {
+			variants := withWideVariants(patterns, s.Modifiers)
+			if isBase64(s) {
+				variants = base64Variants([]byte(s.Value.(ast.TextString).Value), s.Modifiers)
+			}
+			for _, p := range variants {
 				rules.patternMap = append(rules.patternMap, patternRef{
 					slot:     slot,
 					fullword: s.Modifiers.Fullword,
@@ -314,14 +319,20 @@ func hasUnsupportedModifier(r *ast.Rule) bool {
 	return false
 }
 
+func isBase64(s *ast.StringDef) bool {
+	return s.Modifiers.Base64 || s.Modifiers.Base64Wide
+}
+
 func unsupportedWide(s *ast.StringDef) bool {
+	if isBase64(s) {
+		_, text := s.Value.(ast.TextString)
+		return !text || s.Modifiers.Xor != nil
+	}
 	if !s.Modifiers.Wide && s.Modifiers.Xor == nil {
 		return false
 	}
-	if _, ok := s.Value.(ast.TextString); !ok {
-		return true
-	}
-	return s.Modifiers.Base64
+	_, ok := s.Value.(ast.TextString)
+	return !ok
 }
 
 type variant struct {
@@ -435,9 +446,6 @@ func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, a
 func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
 	switch v := s.Value.(type) {
 	case ast.TextString:
-		if s.Modifiers.Base64 {
-			return generateBase64Patterns([]byte(v.Value)), false
-		}
 		return [][]byte{[]byte(v.Value)}, false
 	case ast.RegexString:
 		return nil, true
@@ -561,43 +569,66 @@ func writeAlt(sb *strings.Builder, a ast.HexAlt) {
 	sb.WriteByte(')')
 }
 
-func generateBase64Patterns(data []byte) [][]byte {
-	// Each offset aligns data differently within the base64 3-byte groups.
-	// The prefix padding bytes and the number of leading base64 chars to skip
-	// (which depend on the unknown preceding context) vary per offset.
-	offsets := [3]struct{ pad, skip int }{{0, 0}, {1, 2}, {2, 3}}
-	patterns := make([][]byte, 0, 3)
-
-	for _, o := range offsets {
-		padded := append(make([]byte, o.pad), data...)
-		enc := base64.StdEncoding.EncodeToString(padded)
-		if len(enc) <= o.skip {
-			continue
+func base64Variants(text []byte, m ast.StringModifiers) []variant {
+	enc := base64.StdEncoding.WithPadding(base64.NoPadding)
+	if m.Base64Alphabet != "" {
+		enc = base64.NewEncoding(m.Base64Alphabet).WithPadding(base64.NoPadding)
+	}
+	var sources [][]byte
+	if m.Wide {
+		sources = append(sources, widenBytes(text))
+	}
+	if m.Ascii || !m.Wide {
+		sources = append(sources, text)
+	}
+	var out []variant
+	for _, src := range sources {
+		if m.Base64 {
+			for _, p := range base64Patterns(src, enc) {
+				out = append(out, variant{bytes: p})
+			}
 		}
-		trimmed := strings.TrimRight(enc[o.skip:], "=")
-		if trim := trailingUnstableChars(len(data) + o.pad); trim > 0 && len(trimmed) > trim {
-			trimmed = trimmed[:len(trimmed)-trim]
-		}
-		if len(trimmed) > 0 {
-			patterns = append(patterns, []byte(trimmed))
+		if m.Base64Wide {
+			for _, p := range base64Patterns(src, enc) {
+				out = append(out, variant{bytes: widenBytes(p)})
+			}
 		}
 	}
-
-	return patterns
+	return out
 }
 
-// trailingUnstableChars returns how many trailing base64 chars depend on
-// what follows the data. When data length isn't a multiple of 3, the final
-// base64 chars encode partial bytes that include bits from following data.
-func trailingUnstableChars(dataLen int) int {
-	switch dataLen % 3 {
-	case 1:
-		return 1 // last char encodes 2 bits of data + 4 bits of next byte
-	case 2:
-		return 1 // last char encodes 4 bits of data + 2 bits of next byte
-	default:
-		return 0 // complete 3-byte groups, fully stable
+func widenBytes(b []byte) []byte {
+	w := make([]byte, 0, len(b)*2)
+	for _, c := range b {
+		w = append(w, c, 0)
 	}
+	return w
+}
+
+// base64Patterns returns the encodings of data at the three possible
+// alignments within a base64 group, without the leading and trailing
+// characters that depend on neighboring bytes (the scheme of YARA's
+// libyara/base64.c, BSD-3-Clause).
+func base64Patterns(data []byte, enc *base64.Encoding) [][]byte {
+	patterns := make([][]byte, 0, 3)
+	for lead := range 3 {
+		if lead == 1 && len(data) == 1 {
+			continue
+		}
+		padded := append(bytes.Repeat([]byte{'A'}, lead), data...)
+		encoded := enc.EncodeToString(padded)
+		skip := 0
+		if lead > 0 {
+			skip = lead + 1
+		}
+		if len(padded)%3 != 0 {
+			encoded = encoded[:len(encoded)-1]
+		}
+		if len(encoded) > skip {
+			patterns = append(patterns, []byte(encoded[skip:]))
+		}
+	}
+	return patterns
 }
 
 func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {

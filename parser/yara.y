@@ -266,8 +266,14 @@ modifiers:
 			$$.Ascii = true
 		case "wide":
 			$$.Wide = true
-		case "base64":
-			$$.Base64 = true
+		case "base64", "base64wide":
+			if $$.Base64Alphabet != "" {
+				$$.Unsupported = append($$.Unsupported, $2)
+			} else if $2 == "base64" {
+				$$.Base64 = true
+			} else {
+				$$.Base64Wide = true
+			}
 		case "fullword":
 			$$.Fullword = true
 		case "nocase":
@@ -280,6 +286,10 @@ modifiers:
 			// rule is skipped at compile time and reported as a warning
 			if x, ok := parseXorModifier($2); ok {
 				$$.Xor = x
+			} else if wide, alphabet, ok := parseBase64Modifier($2); ok && ($$.Base64Alphabet == alphabet || ($$.Base64Alphabet == "" && !$$.Base64 && !$$.Base64Wide)) {
+				$$.Base64Alphabet = alphabet
+				$$.Base64 = $$.Base64 || !wide
+				$$.Base64Wide = $$.Base64Wide || wide
 			} else {
 				$$.Unsupported = append($$.Unsupported, $2)
 			}
