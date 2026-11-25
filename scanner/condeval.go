@@ -47,6 +47,9 @@ func mayMatchWithoutHits(expr ast.Expr) bool {
 	case ast.StringRef, ast.AtExpr, ast.AnyOf, ast.AllOf:
 		return false
 
+	case ast.NOf:
+		return e.Quant == "none" || (e.Quant == "count" && e.N <= 0)
+
 	case ast.IntLit:
 		return e.Value != 0
 
@@ -125,6 +128,9 @@ func evalExpr(expr ast.Expr, ctx *evalContext) bool {
 
 	case ast.AllOf:
 		return evalAllOf(e, ctx)
+
+	case ast.NOf:
+		return evalNOf(e, ctx)
 
 	default:
 		return false
@@ -241,6 +247,34 @@ func evalAllOf(e ast.AllOf, ctx *evalContext) bool {
 		}
 	}
 	return true
+}
+
+// evalNOf evaluates quantifiers over a set of string patterns. A string named
+// by several patterns counts once.
+func evalNOf(e ast.NOf, ctx *evalContext) bool {
+	var seen []int
+	matched := 0
+	for _, p := range e.Patterns {
+		for _, idx := range matchingStringIndices(p, ctx.stringNames) {
+			if slices.Contains(seen, idx) {
+				continue
+			}
+			seen = append(seen, idx)
+			if ctx.matched(idx) {
+				matched++
+			}
+		}
+	}
+	switch e.Quant {
+	case "none":
+		return matched == 0
+	case "any":
+		return matched >= 1
+	case "all":
+		return len(seen) > 0 && matched == len(seen)
+	default:
+		return matched >= int(e.N)
+	}
 }
 
 // matchingStringIndices returns the indices of strings that match the pattern.

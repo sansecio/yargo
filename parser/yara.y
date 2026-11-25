@@ -32,7 +32,7 @@ import (
 %token <num> INT_LIT
 %token <byt> HEX_BYTE
 %token HEX_WILDCARD
-%token AND OR NOT AT ANY ALL OF THEM EQ NE LT GT LE GE FILESIZE
+%token AND OR NOT AT ANY ALL NONE OF THEM EQ NE LT GT LE GE FILESIZE
 
 %left OR
 %left AND
@@ -53,6 +53,7 @@ import (
 %type <hexToken> hex_token
 %type <expr> expr primary_expr condition_section
 %type <exprs> func_args
+%type <strs> string_set set_items
 
 %%
 
@@ -346,21 +347,29 @@ primary_expr:
 	{
 		$$ = ast.ParenExpr{Inner: $2}
 	}
-	| ANY OF THEM
+	| ANY OF string_set
 	{
-		$$ = ast.AnyOf{Pattern: "them"}
+		if len($3) == 1 {
+			$$ = ast.AnyOf{Pattern: $3[0]}
+		} else {
+			$$ = ast.NOf{Quant: "any", Patterns: $3}
+		}
 	}
-	| ANY OF '(' STRING_PATTERN ')'
+	| ALL OF string_set
 	{
-		$$ = ast.AnyOf{Pattern: $4}
+		if len($3) == 1 {
+			$$ = ast.AllOf{Pattern: $3[0]}
+		} else {
+			$$ = ast.NOf{Quant: "all", Patterns: $3}
+		}
 	}
-	| ALL OF THEM
+	| NONE OF string_set
 	{
-		$$ = ast.AllOf{Pattern: "them"}
+		$$ = ast.NOf{Quant: "none", Patterns: $3}
 	}
-	| ALL OF '(' STRING_PATTERN ')'
+	| INT_LIT OF string_set
 	{
-		$$ = ast.AllOf{Pattern: $4}
+		$$ = ast.NOf{Quant: "count", N: $1, Patterns: $3}
 	}
 	| COND_STRING_ID AT primary_expr
 	{
@@ -381,6 +390,36 @@ primary_expr:
 	| FILESIZE
 	{
 		$$ = ast.Filesize{}
+	}
+	;
+
+string_set:
+	THEM
+	{
+		$$ = []string{"them"}
+	}
+	| '(' set_items ')'
+	{
+		$$ = $2
+	}
+	;
+
+set_items:
+	STRING_PATTERN
+	{
+		$$ = []string{$1}
+	}
+	| COND_STRING_ID
+	{
+		$$ = []string{$1}
+	}
+	| set_items ',' STRING_PATTERN
+	{
+		$$ = append($1, $3)
+	}
+	| set_items ',' COND_STRING_ID
+	{
+		$$ = append($1, $3)
 	}
 	;
 

@@ -192,6 +192,18 @@ type AnyOf struct {
 
 func (AnyOf) exprNode() {}
 
+// NOf represents a quantifier over a set of strings: "N of", "none of", or
+// "any of" and "all of" with more than one pattern. Quant is "count" (at
+// least N), "none", "any" or "all". Patterns hold "them" or $names with an
+// optional trailing wildcard.
+type NOf struct {
+	Quant    string
+	N        int64
+	Patterns []string
+}
+
+func (NOf) exprNode() {}
+
 // AllOf represents "all of them" or "all of (pattern)".
 type AllOf struct {
 	Pattern string // e.g., "them" or "$prefix_*"

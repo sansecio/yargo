@@ -474,6 +474,8 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 			return ANY
 		case "all":
 			return ALL
+		case "none":
+			return NONE
 		case "of":
 			return OF
 		case "them":
@@ -563,7 +565,22 @@ func (l *yaraLexer) lexCondInt(lval *yySymType) int {
 	for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
 		l.pos++
 	}
-	return l.intToken(lval, l.input[start:l.pos])
+	end := l.pos
+	scale := int64(1)
+	if l.pos+1 < len(l.input) && l.input[l.pos+1] == 'B' {
+		switch l.input[l.pos] {
+		case 'K':
+			scale = 1 << 10
+		case 'M':
+			scale = 1 << 20
+		}
+		if scale > 1 {
+			l.pos += 2
+		}
+	}
+	tok := l.intToken(lval, l.input[start:end])
+	lval.num *= scale
+	return tok
 }
 
 func (l *yaraLexer) lexInt(lval *yySymType) int {
