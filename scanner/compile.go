@@ -86,6 +86,25 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			}
 		}
 
+		preps := make([]*regexPrep, len(r.Strings))
+		var prepErr error
+		for si, s := range r.Strings {
+			if _, isRegex := generatePatterns(s); !isRegex {
+				continue
+			}
+			if preps[si], prepErr = prepareRegex(s, r.Name, opts); prepErr != nil {
+				break
+			}
+		}
+		if prepErr != nil {
+			if !opts.SkipInvalidRegex {
+				errs = append(errs, prepErr)
+				continue
+			}
+			rules.skipped = append(rules.skipped, SkippedRule{Rule: r.Name, Reason: prepErr.Error()})
+			continue
+		}
+
 		cr := &compiledRule{
 			name:      r.Name,
 			metas:     make([]Meta, len(r.Meta)),
@@ -112,10 +131,8 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 
 			patterns, isRegex := generatePatterns(s)
 			if isRegex {
-				var err error
-				allPatterns, err = compileRegex(rules, s, slot, r.Name, allPatterns, opts)
-				if err != nil {
-					errs = append(errs, err)
+				if preps[si] != nil {
+					allPatterns = compileRegex(rules, s, preps[si], slot, allPatterns, opts)
 				}
 				continue
 			}
@@ -352,13 +369,17 @@ func hasASCIILetter(p []byte) bool {
 	return false
 }
 
-func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, allPatterns [][]byte, opts CompileOptions) ([][]byte, error) {
+type regexPrep struct {
+	pattern string
+	atoms   [][]byte
+}
+
+func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*regexPrep, error) {
 	var rePattern string
 	var caseInsensitive bool
 
 	switch v := s.Value.(type) {
 	case ast.RegexString:
-		// on a regex, nocase means the same as the i flag
 		if s.Modifiers.Nocase {
 			v.Modifiers.CaseInsensitive = true
 		}
@@ -366,46 +387,36 @@ func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, a
 		caseInsensitive = v.Modifiers.CaseInsensitive
 	case ast.HexString:
 		rePattern = "(?s)" + hexStringToRegex(v)
-		caseInsensitive = false
 	default:
-		return allPatterns, nil
+		return nil, nil
 	}
-	// The regex itself is compiled lazily on first use, which discards
-	// errors, so reject invalid patterns here.
 	if err := checkRegex(rePattern, opts.RegexCompiler); err != nil {
-		if opts.SkipInvalidRegex {
-			return allPatterns, nil
-		}
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
-	requiresFullScan := !hasAtoms || caseInsensitive
-	if requiresFullScan {
-		if opts.SkipInvalidRegex {
-			return allPatterns, nil
-		}
+	if !hasAtoms || caseInsensitive {
 		return nil, fmt.Errorf("rule %q string %s: regex requires full buffer scan", ruleName, s.Name)
 	}
+	return &regexPrep{pattern: rePattern, atoms: atoms}, nil
+}
 
+func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, allPatterns [][]byte, opts CompileOptions) [][]byte {
 	rp := &regexPattern{
-		pattern:  rePattern,
+		pattern:  prep.pattern,
 		compile:  opts.RegexCompiler,
 		slot:     slot,
 		fullword: s.Modifiers.Fullword,
 	}
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
-
-	// a case-insensitive regex always requires a full scan (see above), so
-	// every atom that reaches here belongs to a case-sensitive regex
-	for _, atom := range atoms {
+	for _, atom := range prep.atoms {
 		rules.patternMap = append(rules.patternMap, patternRef{
 			regexIdx: regexIdx,
 			verify:   hasASCIILetter(atom),
 		})
 		allPatterns = append(allPatterns, atom)
 	}
-	return allPatterns, nil
+	return allPatterns
 }
 
 func generatePatterns(s *ast.StringDef) ([][]byte, bool) {

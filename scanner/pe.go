@@ -20,6 +20,11 @@ const (
 	maxCString           = 512
 )
 
+type thunkKey struct {
+	dll string
+	rva uint32
+}
+
 type peImport struct {
 	dll       string
 	name      string
@@ -45,7 +50,7 @@ type peInfo struct {
 	exports    []peExport
 	numExports int64
 	nameBytes  int
-	walked     map[uint32]bool
+	walked     map[thunkKey]bool
 	done       <-chan struct{}
 }
 
@@ -85,7 +90,7 @@ func parsePE(buf []byte, done <-chan struct{}) *peInfo {
 	if err != nil {
 		return nil
 	}
-	info := &peInfo{file: f, buf: buf, chars: int64(f.Characteristics), walked: map[uint32]bool{}, done: done}
+	info := &peInfo{file: f, buf: buf, chars: int64(f.Characteristics), walked: map[thunkKey]bool{}, done: done}
 	var dirs []pe.DataDirectory
 	switch oh := f.OptionalHeader.(type) {
 	case *pe.OptionalHeader64:
@@ -227,10 +232,11 @@ func (p *peInfo) parseImports(dir pe.DataDirectory) {
 		if thunks == 0 {
 			thunks = ft
 		}
-		if p.walked[thunks] {
+		key := thunkKey{dll: strings.ToLower(dll), rva: thunks}
+		if p.walked[key] {
 			continue
 		}
-		p.walked[thunks] = true
+		p.walked[key] = true
 		p.parseThunks(dll, thunks)
 	}
 }

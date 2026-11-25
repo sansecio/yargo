@@ -41,6 +41,8 @@ func TestExpressions(t *testing.T) {
 		{"bitwise xor", "(filesize ^ 1) == 5", "abcd", true},
 		{"shift left", "(filesize << 2) == 16", "abcd", true},
 		{"shift right", "(filesize >> 1) == 2", "abcd", true},
+		{"bitwise xor binds tighter than equality", "filesize ^ 1 == 5", "abcd", true},
+		{"bitwise or binds tighter than equality", "filesize | 3 == 7", "abcd", true},
 		{"bitwise not", "~0 == -1", "abcd", true},
 		{"unary minus", "-filesize < 0", "abcd", true},
 		{"precedence multiply over add", "1 + 2 * 3 == 7", "abcd", true},

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/sansecio/yargo/ast"
+	"github.com/sansecio/yargo/parser"
 )
 
 func TestUnsupportedModuleFieldsRejectedAtCompile(t *testing.T) {
@@ -19,6 +20,23 @@ func TestUnsupportedModuleFieldsRejectedAtCompile(t *testing.T) {
 		if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
 			t.Errorf("%s: expected rejection, got %d rules, skipped %+v", cond, rules.NumRules(), rules.Skipped())
 		}
+	}
+}
+
+func TestSkippedRegexStringSkipsTheWholeRule(t *testing.T) {
+	rs, err := parser.New().Parse(`rule negated { strings: $a = "abc" $re = /xyz/ nocase condition: $a and not $re }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := CompileWithOptions(rs, CompileOptions{SkipInvalidRegex: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
+		t.Errorf("expected the rule to be skipped, got %d rules, %+v", rules.NumRules(), rules.Skipped())
+	}
+	if _, err := Compile(rs); err == nil {
+		t.Error("expected a compile error without SkipInvalidRegex")
 	}
 }
 

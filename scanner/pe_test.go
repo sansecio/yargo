@@ -168,6 +168,24 @@ func TestPEImportsAreCappedAgainstRepeatedThunkArrays(t *testing.T) {
 	}
 }
 
+func TestPEImportsOfDLLsSharingAThunkArrayAreAllRecorded(t *testing.T) {
+	b := buildPE(t)
+	le := binary.LittleEndian
+	at := func(rva int) int { return 0x400 + rva - 0x2000 }
+	d := at(0x2000) + 20
+	le.PutUint32(b[d:], 0x2100)
+	le.PutUint32(b[d+16:], 0x2100)
+	for _, cond := range []string{
+		`pe.imports("kernel32.dll", "CreateFileA")`,
+		`pe.imports("msvcrt.dll", "CreateFileA")`,
+	} {
+		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		if got := scanNames(t, rules, b); len(got) != 1 {
+			t.Errorf("%s: expected match, got %v", cond, got)
+		}
+	}
+}
+
 func TestPEModuleOnNonPEIsUndefined(t *testing.T) {
 	for _, cond := range []string{"pe.is_dll()", "not pe.is_dll()", "pe.number_of_sections == 0", "not pe.number_of_sections == 0", "pe.exports(\"a\")"} {
 		rules := compileSource(t, "rule r { condition: "+cond+" }")

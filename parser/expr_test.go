@@ -32,6 +32,8 @@ func TestParseExpressions(t *testing.T) {
 		{`pe.sections[0].name == "x"`, ast.BinaryExpr{Op: "==", Left: ast.Field{Base: ast.Index{Base: ast.Ident{Name: "pe.sections"}, Index: i(0)}, Name: "name"}, Right: ast.StrLit{Value: "x"}}},
 		{`pe.version_info["Key"] contains "x"`, ast.BinaryExpr{Op: "contains", Left: ast.Index{Base: ast.Ident{Name: "pe.version_info"}, Index: ast.StrLit{Value: "Key"}}, Right: ast.StrLit{Value: "x"}}},
 		{`pe.imports("a.dll", "f") and pe.is_dll()`, ast.BinaryExpr{Op: "and", Left: ast.FuncCall{Name: "pe.imports", Args: []ast.Expr{ast.StrLit{Value: "a.dll"}, ast.StrLit{Value: "f"}}}, Right: ast.FuncCall{Name: "pe.is_dll"}}},
+		{`uint8(0) ^ 1 == 2`, ast.BinaryExpr{Op: "==", Left: ast.BinaryExpr{Op: "^", Left: ast.FuncCall{Name: "uint8", Args: []ast.Expr{i(0)}}, Right: i(1)}, Right: i(2)}},
+		{`1 | 2 == 3 and 4 & 5 != 0`, ast.BinaryExpr{Op: "and", Left: ast.BinaryExpr{Op: "==", Left: ast.BinaryExpr{Op: "|", Left: i(1), Right: i(2)}, Right: i(3)}, Right: ast.BinaryExpr{Op: "!=", Left: ast.BinaryExpr{Op: "&", Left: i(4), Right: i(5)}, Right: i(0)}}},
 		{`for any i in (1..3) : (@a[i] > 0)`, ast.ForExpr{Quant: "any", Var: "i", Lo: i(1), Hi: i(3), Body: ast.ParenExpr{Inner: ast.BinaryExpr{Op: ">", Left: ast.OffsetOf{Name: "$a", Index: ast.Ident{Name: "i"}}, Right: i(0)}}}},
 		{`for 2 i in (0..9) : (i > 0)`, ast.ForExpr{Quant: "count", N: 2, Var: "i", Lo: i(0), Hi: i(9), Body: ast.ParenExpr{Inner: ast.BinaryExpr{Op: ">", Left: ast.Ident{Name: "i"}, Right: i(0)}}}},
 		{`for all of ($a*) : ($ at 0)`, ast.ForExpr{Quant: "all", Patterns: []string{"$a*"}, Body: ast.ParenExpr{Inner: ast.AtExpr{Ref: ast.StringRef{Name: "$"}, Pos: i(0)}}}},
