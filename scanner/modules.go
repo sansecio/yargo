@@ -40,6 +40,9 @@ func evalModuleFunc(name string, args []any, buf []byte) any {
 	switch {
 	case name == "math.entropy" && len(rest) == 0:
 		return entropy(data)
+	case (name == "math.mean" || name == "math.deviation") && len(data) == 0:
+		// an empty range has no mean; libyara divides by zero here
+		return nil
 	case name == "math.mean" && len(rest) == 0:
 		return mean(data)
 	case name == "math.deviation" && len(rest) == 1:
@@ -111,9 +114,6 @@ func entropy(data []byte) float64 {
 }
 
 func mean(data []byte) float64 {
-	if len(data) == 0 {
-		return math.NaN()
-	}
 	var sum float64
 	for _, b := range data {
 		sum += float64(b)
@@ -122,9 +122,6 @@ func mean(data []byte) float64 {
 }
 
 func deviation(data []byte, m float64) float64 {
-	if len(data) == 0 {
-		return math.NaN()
-	}
 	var sum float64
 	for _, b := range data {
 		sum += math.Abs(float64(b) - m)

@@ -46,3 +46,18 @@ func TestStringOverloadsOfMathAndHash(t *testing.T) {
 		}
 	}
 }
+
+// libyara's math.mean and math.deviation over an empty range divide by
+// zero; an empty window has no mean, so it is undefined rather than NaN.
+func TestMeanAndDeviationOfEmptyWindowAreUndefined(t *testing.T) {
+	for _, cond := range []string{
+		`not (math.mean(0, 0) >= 0)`,
+		`not (math.deviation(0, 0, 1.0) >= 0)`,
+		`not (math.mean("") >= 0)`,
+	} {
+		rules := compileSource(t, `import "math" rule r { condition: `+cond+` }`)
+		if got := scanNames(t, rules, []byte("x")); len(got) != 0 {
+			t.Errorf("%s: matched %v, want undefined", cond, got)
+		}
+	}
+}
