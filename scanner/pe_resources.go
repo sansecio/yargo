@@ -213,6 +213,13 @@ func (p *peInfo) node(off int) (length int, ok bool) {
 }
 
 func (p *peInfo) parseVersionInfo(rva uint32) {
+	if p.versionParsed[rva] {
+		return
+	}
+	if p.versionParsed == nil {
+		p.versionParsed = map[uint32]bool{}
+	}
+	p.versionParsed[rva] = true
 	off, ok := p.rvaToOffset(rva)
 	if !ok || !p.fits(off, 6) || !p.fits(off+6, 32) || !p.wideEquals(off+6, "VS_VERSION_INFO") {
 		return
