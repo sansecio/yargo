@@ -3,10 +3,8 @@ package scanner
 import (
 	"cmp"
 	"context"
-	"regexp"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/sansecio/yargo/ast"
 )
@@ -25,6 +23,7 @@ type evalContext struct {
 	externals   Externals
 	ruleIndex   map[string]int32
 	results     []bool
+	regexes     map[ast.RegexLit]*regexPattern
 }
 
 // hitsFor returns the hits for the given string index. They are contiguous
@@ -671,11 +670,8 @@ func compareStrings(op, l, r string) any {
 	}
 }
 
-var condRegexes sync.Map
-
 func evalMatches(e ast.BinaryExpr, ctx *evalContext) any {
-	l := evalAny(e.Left, ctx)
-	s, ok := l.(string)
+	s, ok := evalAny(e.Left, ctx).(string)
 	if !ok {
 		return nil
 	}
@@ -683,20 +679,15 @@ func evalMatches(e ast.BinaryExpr, ctx *evalContext) any {
 	if !ok {
 		return nil
 	}
-	pattern := buildRE2Pattern(lit.Pattern, lit.Modifiers)
-	cached, ok := condRegexes.Load(pattern)
-	if !ok {
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			re = nil
-		}
-		cached, _ = condRegexes.LoadOrStore(pattern, re)
+	rp := ctx.regexes[lit]
+	if rp == nil {
+		return nil
 	}
-	re, _ := cached.(*regexp.Regexp)
+	re := rp.compiled()
 	if re == nil {
-		return false
+		return nil
 	}
-	return re.MatchString(s)
+	return recoverFindIndex(re, []byte(s)) != nil
 }
 
 func (ctx *evalContext) lookupPE(name string) any {

@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -59,5 +60,38 @@ func TestMeanAndDeviationOfEmptyWindowAreUndefined(t *testing.T) {
 		if got := scanNames(t, rules, []byte("x")); len(got) != 0 {
 			t.Errorf("%s: matched %v, want undefined", cond, got)
 		}
+	}
+}
+
+// Condition regexes go through the configured compiler at compile time, so
+// an invalid one fails Compile instead of silently evaluating to false.
+// https://yara.readthedocs.io/en/stable/writingrules.html#conditions
+func TestMatchesUsesTheConfiguredCompiler(t *testing.T) {
+	_, err := compileWith(t, `rule r { condition: not ("x" matches /a{2000}/) }`, CompileOptions{})
+	if err == nil || !strings.Contains(err.Error(), "invalid regex") {
+		t.Errorf("expected an invalid regex error, got %v", err)
+	}
+
+	var compiled []string
+	refuse := errors.New("refused")
+	opts := CompileOptions{RegexCompiler: func(p string) (Regexp, error) {
+		compiled = append(compiled, p)
+		if strings.Contains(p, "refuse") {
+			return nil, refuse
+		}
+		return defaultCompile(p)
+	}}
+	rules, err := compileWith(t, `rule r { condition: "hello" matches /hel+o/ and not ("abc" matches /x/) }`, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := scanNames(t, rules, []byte("data")); len(got) != 1 {
+		t.Errorf("matches = %v", got)
+	}
+	if len(compiled) == 0 {
+		t.Error("the configured RegexCompiler was never called")
+	}
+	if _, err := compileWith(t, `rule r { condition: "x" matches /\Crefuse/ }`, opts); !errors.Is(err, refuse) {
+		t.Errorf("expected the compiler's error, got %v", err)
 	}
 }

@@ -13,14 +13,15 @@ import (
 // fails what libyara itself rejects, like undefined identifiers.
 type condChecker struct {
 	rules   *Rules
+	compile CompileFunc
 	imports map[string]bool
 	skipped map[string]bool // rules of the set that were not compiled
 	vars    []string        // loop variables in scope
 	err     error
 }
 
-func newCondChecker(rules *Rules, imports []string) *condChecker {
-	c := &condChecker{rules: rules, imports: map[string]bool{}, skipped: map[string]bool{}}
+func newCondChecker(rules *Rules, imports []string, compile CompileFunc) *condChecker {
+	c := &condChecker{rules: rules, compile: compile, imports: map[string]bool{}, skipped: map[string]bool{}}
 	for _, m := range imports {
 		c.imports[m] = true
 	}
@@ -53,6 +54,12 @@ func (c *condChecker) reason(expr ast.Expr) string {
 	case ast.Ident:
 		return c.ident(e)
 	case ast.BinaryExpr:
+		if lit, ok := e.Right.(ast.RegexLit); ok && e.Op == "matches" {
+			if reason := c.regex(lit); reason != "" {
+				return reason
+			}
+			return c.reason(e.Left)
+		}
 		return c.first(e.Left, e.Right)
 	case ast.NotExpr:
 		return c.reason(e.Inner)
@@ -80,6 +87,20 @@ func (c *condChecker) reason(expr ast.Expr) string {
 		}
 		return c.first(e.Args...)
 	}
+	return ""
+}
+
+// regex checks a matches operand with the configured compiler, like string
+// regexes, and keeps it for the scan, which compiles it on first use.
+func (c *condChecker) regex(lit ast.RegexLit) string {
+	if _, ok := c.rules.condRegexes[lit]; ok {
+		return ""
+	}
+	pattern := buildRE2Pattern(lit.Pattern, lit.Modifiers)
+	if err := checkRegex(pattern, c.compile); err != nil {
+		return c.fail("invalid regex /%s/: %w", lit.Pattern, err)
+	}
+	c.rules.condRegexes[lit] = &regexPattern{pattern: pattern, compile: c.compile}
 	return ""
 }
 

@@ -58,9 +58,10 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	opts.RegexCompiler = recoverCompile(opts.RegexCompiler)
 
 	rules := &Rules{
-		rules:     make([]*compiledRule, 0, len(rs.Rules)),
-		ruleIndex: make(map[string]int32, len(rs.Rules)),
-		externals: declaredExternals(opts.Externals),
+		rules:       make([]*compiledRule, 0, len(rs.Rules)),
+		ruleIndex:   make(map[string]int32, len(rs.Rules)),
+		condRegexes: map[ast.RegexLit]*regexPattern{},
+		externals:   declaredExternals(opts.Externals),
 	}
 
 	var allPatterns [][]byte
@@ -75,7 +76,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		}
 	}
 
-	check := newCondChecker(rules, rs.Imports)
+	check := newCondChecker(rules, rs.Imports, opts.RegexCompiler)
 	for _, r := range rs.Rules {
 		if r.Condition == nil {
 			check.skipped[r.Name] = true

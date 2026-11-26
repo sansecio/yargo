@@ -70,6 +70,7 @@ type (
 		ruleIndex         map[string]int32
 		externals         map[string]bool
 		skipped           []SkippedRule
+		condRegexes       map[ast.RegexLit]*regexPattern
 	}
 )
 
@@ -465,6 +466,7 @@ func (r *Rules) evalRule(ctx context.Context, buf []byte, cr *compiledRule, rule
 		stringNames: cr.stringNames,
 		externals:   ext,
 		ruleIndex:   r.ruleIndex,
+		regexes:     r.condRegexes,
 		results:     results,
 		deadline:    ctx,
 		scan:        scan,
