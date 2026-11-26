@@ -6,7 +6,6 @@ import (
 	"cmp"
 	"context"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -478,11 +477,15 @@ func (r *Rules) evalRule(ctx context.Context, buf []byte, cr *compiledRule, rule
 	})
 }
 
+func compareSlot(h hit, slot int32) int {
+	return cmp.Compare(h.slot, slot)
+}
+
 func (r *Rules) globalsHold(ctx context.Context, buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
 	for _, idx := range r.globalRules {
 		cr := r.rules[idx]
-		lo := sort.Search(len(hits), func(i int) bool { return hits[i].slot >= cr.slotBase })
-		hi := lo + sort.Search(len(hits)-lo, func(i int) bool { return hits[lo+i].slot >= cr.slotBase+int32(len(cr.stringNames)) })
+		lo, _ := slices.BinarySearchFunc(hits, cr.slotBase, compareSlot)
+		hi, _ := slices.BinarySearchFunc(hits, cr.slotBase+int32(len(cr.stringNames)), compareSlot)
 		if !r.evalRule(ctx, buf, cr, hits[lo:hi], ext, results, scan) {
 			return false
 		}

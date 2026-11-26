@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -34,9 +33,7 @@ type evalContext struct {
 // because the rule's hits are sorted by slot.
 func (ctx *evalContext) hitsFor(idx int) []hit {
 	slot := ctx.slotBase + int32(idx)
-	lo, ok := slices.BinarySearchFunc(ctx.hits, slot, func(h hit, s int32) int {
-		return cmp.Compare(h.slot, s)
-	})
+	lo, ok := slices.BinarySearchFunc(ctx.hits, slot, compareSlot)
 	if !ok {
 		return nil
 	}
