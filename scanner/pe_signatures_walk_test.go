@@ -61,3 +61,18 @@ func TestPESignaturesWalkEveryWinCertificateOfTypePKCSSignedData(t *testing.T) {
 		})
 	}
 }
+
+func TestPESignatureEntryPastTheSecurityDirectoryIsIgnored(t *testing.T) {
+	root := newTestCert(t, big.NewInt(1), pkix.Name{CommonName: "Root"}, nil)
+	signer := newTestCert(t, big.NewInt(2), pkix.Name{CommonName: "Signer"}, root)
+	b := attachCertificates(t, winCert{2, buildSignedData(signer, []*testCert{root}, true)})
+	binary.LittleEndian.PutUint32(b[0x58+112+36:], 16)
+	info := parsePE(b, nil)
+	if info == nil {
+		t.Fatal("PE did not parse")
+	}
+	info.ensureSignatures()
+	if len(info.signatures) != 0 {
+		t.Errorf("got %d signatures from an entry longer than the security directory, want 0", len(info.signatures))
+	}
+}

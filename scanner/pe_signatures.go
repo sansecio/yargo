@@ -130,7 +130,7 @@ func (p *peInfo) ensureSignatures() {
 	end := off + int(dir.Size)
 	for off+winCertHeaderBytes <= end && len(p.signatures) < maxSignatures && !p.stopped() {
 		length := int(binary.LittleEndian.Uint32(p.buf[off:]))
-		if length < winCertHeaderBytes || !p.fits(off, length) {
+		if length < winCertHeaderBytes || length > end-off {
 			return
 		}
 		if binary.LittleEndian.Uint16(p.buf[off+6:]) == winCertTypePKCSSignedData {
