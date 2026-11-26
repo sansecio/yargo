@@ -167,9 +167,8 @@ func (p *peInfo) parseOverlay() {
 
 func (p *peInfo) rvaToOffset(rva uint32) (int, bool) {
 	for _, s := range p.file.Sections {
-		span := max(s.VirtualSize, s.Size)
-		if rva >= s.VirtualAddress && rva-s.VirtualAddress < span {
-			off := uint64(s.Offset) + uint64(rva-s.VirtualAddress)
+		if rva >= s.VirtualAddress && rva-s.VirtualAddress < s.Size {
+			off := uint64(s.Offset&^0x1FF) + uint64(rva-s.VirtualAddress)
 			return int(off), off < uint64(len(p.buf))
 		}
 	}
