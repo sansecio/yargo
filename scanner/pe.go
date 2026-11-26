@@ -95,11 +95,31 @@ func (s *scanState) peInfo() *peInfo {
 	return s.pe
 }
 
+// noSymbols hides the COFF symbol table fields (PointerToSymbolTable and
+// NumberOfSymbols) from debug/pe, which rejects the file when they are garbage.
+// libyara never reads the symbol table.
+type noSymbols struct {
+	r   *bytes.Reader
+	buf []byte
+}
+
+func (n noSymbols) ReadAt(p []byte, off int64) (int, error) {
+	c, err := n.r.ReadAt(p, off)
+	if len(n.buf) < 0x40 {
+		return c, err
+	}
+	start := int64(binary.LittleEndian.Uint32(n.buf[0x3c:])) + 4 + 8
+	for i := max(off, start); i < min(off+int64(c), start+8); i++ {
+		p[i-off] = 0
+	}
+	return c, err
+}
+
 func parsePE(buf []byte, done <-chan struct{}) *peInfo {
 	if len(buf) < 0x40 || buf[0] != 'M' || buf[1] != 'Z' {
 		return nil
 	}
-	f, err := pe.NewFile(bytes.NewReader(buf))
+	f, err := pe.NewFile(noSymbols{r: bytes.NewReader(buf), buf: buf})
 	if err != nil {
 		return nil
 	}
