@@ -524,13 +524,18 @@ func (p *peInfo) call(name string, args []any) any {
 	case "pe.imphash":
 		return p.imphash()
 	case "pe.section_index":
-		want, ok := args[0].(string)
-		if !ok {
-			return nil
-		}
-		for i, s := range p.file.Sections {
-			if s.Name == want {
-				return int64(i)
+		switch a := args[0].(type) {
+		case string:
+			for i, s := range p.file.Sections {
+				if s.Name == a {
+					return int64(i)
+				}
+			}
+		case int64:
+			for i, s := range p.file.Sections[:min(len(p.file.Sections), maxPESections)] {
+				if a >= int64(s.Offset) && a < int64(s.Offset)+int64(s.Size) {
+					return int64(i)
+				}
 			}
 		}
 		return nil
