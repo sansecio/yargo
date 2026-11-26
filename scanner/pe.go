@@ -569,11 +569,11 @@ func (p *peInfo) countImports(args []any) any {
 		switch fn := args[1].(type) {
 		case string:
 			if imp.name == fn {
-				n++
+				return int64(1)
 			}
 		case int64:
 			if imp.byOrdinal && imp.ordinal == fn {
-				n++
+				return int64(1)
 			}
 		}
 	}
