@@ -6,6 +6,7 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"encoding/hex"
+	"strconv"
 	"strings"
 
 	"github.com/sansecio/yargo/ast"
@@ -327,7 +328,7 @@ func (p *peInfo) parseThunks(dll string, rva uint32) {
 			ordinal := uint16(v)
 			name := lookupOrdinal(dll, ordinal)
 			if name == "" {
-				name = "ord" + itoa(int64(ordinal))
+				name = "ord" + strconv.Itoa(int(ordinal))
 			}
 			p.imports = append(p.imports, peImport{dll: dll, name: name, ordinal: int64(ordinal), byOrdinal: true})
 			continue
@@ -361,19 +362,6 @@ func (p *peInfo) imphash() string {
 	sum := md5.Sum([]byte(sb.String()))
 	p.imphashValue = hex.EncodeToString(sum[:])
 	return p.imphashValue
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for ; n > 0; n /= 10 {
-		i--
-		b[i] = byte('0' + n%10)
-	}
-	return string(b[i:])
 }
 
 var peConstants = map[string]int64{

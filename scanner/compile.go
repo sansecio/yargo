@@ -289,11 +289,7 @@ func withWideVariants(patterns [][]byte, m ast.StringModifiers) []variant {
 	}
 	if m.Wide {
 		for _, p := range patterns {
-			w := make([]byte, 0, len(p)*2)
-			for _, b := range p {
-				w = append(w, b, 0)
-			}
-			out = append(out, variant{bytes: w, wide: true})
+			out = append(out, variant{bytes: widenBytes(p), wide: true})
 		}
 	}
 	if m.Xor == nil {

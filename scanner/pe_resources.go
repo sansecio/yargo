@@ -12,22 +12,25 @@ const (
 	resourceTypeVersion = 16
 )
 
-type optInt struct {
-	v  int64
+// opt is a module value that may be undefined.
+type opt[T any] struct {
+	v  T
 	ok bool
 }
 
-type optStr struct {
-	v  string
-	ok bool
+func (o opt[T]) value() any {
+	if !o.ok {
+		return nil
+	}
+	return o.v
 }
 
 type peResource struct {
 	rva, offset, length int64
 	hasOffset           bool
-	typ, id, language   optInt
-	typeStr, nameStr    optStr
-	languageStr         optStr
+	typ, id, language   opt[int64]
+	typeStr, nameStr    opt[string]
+	languageStr         opt[string]
 }
 
 type versionEntry struct {
@@ -68,22 +71,22 @@ func (p *peInfo) ensureResources() {
 	p.resourceTimestamp = int64(ts)
 	p.hasResourceDir = true
 	w := &resourceWalk{p: p, base: base, typ: -1, id: -1, language: -1}
-	w.dir(base, 0, optStr{}, optStr{}, optStr{})
+	w.dir(base, 0, opt[string]{}, opt[string]{}, opt[string]{})
 }
 
-func (w *resourceWalk) name(entryName uint32) optStr {
+func (w *resourceWalk) name(entryName uint32) opt[string] {
 	if entryName&0x80000000 == 0 {
-		return optStr{}
+		return opt[string]{}
 	}
 	off := w.base + int(entryName&0x7FFFFFFF)
 	length, ok := w.p.u16(off)
 	if !ok || length > maxResourceNameLen || !w.p.fits(off, 2+int(length)*2) {
-		return optStr{}
+		return opt[string]{}
 	}
-	return optStr{v: string(w.p.buf[off+2 : off+2+int(length)*2]), ok: true}
+	return opt[string]{v: string(w.p.buf[off+2 : off+2+int(length)*2]), ok: true}
 }
 
-func (w *resourceWalk) dir(off, level int, typeStr, nameStr, langStr optStr) {
+func (w *resourceWalk) dir(off, level int, typeStr, nameStr, langStr opt[string]) {
 	chars, _ := w.p.u32(off)
 	named, _ := w.p.u16(off + 12)
 	ids, _ := w.p.u16(off + 14)
@@ -138,17 +141,17 @@ func (w *resourceWalk) dir(off, level int, typeStr, nameStr, langStr optStr) {
 	}
 }
 
-func optValue(s optStr, n int64) (optInt, optStr) {
+func optValue(s opt[string], n int64) (opt[int64], opt[string]) {
 	if s.ok {
-		return optInt{}, s
+		return opt[int64]{}, s
 	}
 	if n != -1 {
-		return optInt{v: n, ok: true}, optStr{}
+		return opt[int64]{v: n, ok: true}, opt[string]{}
 	}
-	return optInt{}, optStr{}
+	return opt[int64]{}, opt[string]{}
 }
 
-func (w *resourceWalk) collect(rva, size uint32, typeStr, nameStr, langStr optStr) {
+func (w *resourceWalk) collect(rva, size uint32, typeStr, nameStr, langStr opt[string]) {
 	p := w.p
 	if len(p.resources) >= maxResources {
 		return
@@ -310,20 +313,6 @@ func (p *peInfo) resourceField(i int64, field string) any {
 		return r.languageStr.value()
 	}
 	return nil
-}
-
-func (o optInt) value() any {
-	if !o.ok {
-		return nil
-	}
-	return o.v
-}
-
-func (o optStr) value() any {
-	if !o.ok {
-		return nil
-	}
-	return o.v
 }
 
 func (p *peInfo) versionInfoField(key string) any {

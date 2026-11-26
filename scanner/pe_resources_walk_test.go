@@ -23,7 +23,7 @@ func TestPEResourceLeafAtTheTypeLevelHasNoIDOrLanguage(t *testing.T) {
 	if len(res) != 2 {
 		t.Fatalf("got %d resources, want 2", len(res))
 	}
-	if got := res[1]; got.typ != (optInt{v: 16, ok: true}) || got.id.ok || got.language.ok {
+	if got := res[1]; got.typ != (opt[int64]{v: 16, ok: true}) || got.id.ok || got.language.ok {
 		t.Errorf("leaf inherited the previous sibling: %+v", got)
 	}
 }
@@ -38,7 +38,7 @@ func TestPEResourceLeafAtTheNameLevelHasNoLanguage(t *testing.T) {
 	if len(res) != 3 {
 		t.Fatalf("got %d resources, want 3", len(res))
 	}
-	if got := res[1]; got.id != (optInt{v: 8, ok: true}) || got.language.ok {
+	if got := res[1]; got.id != (opt[int64]{v: 8, ok: true}) || got.language.ok {
 		t.Errorf("leaf inherited the language of the previous sibling: %+v", got)
 	}
 }
