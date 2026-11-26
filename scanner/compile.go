@@ -69,12 +69,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	var hasNocase bool
 	ruleIdx := 0
 
-	skipSubtypes := make(map[string]bool, len(opts.SkipSubtypes))
-	for _, t := range opts.SkipSubtypes {
-		if t != "" {
-			skipSubtypes[t] = true
-		}
-	}
+	skipSubtypes := subtypeSet(opts.SkipSubtypes)
 
 	check := newCondChecker(rules, rs.Imports, opts.RegexCompiler)
 	for _, r := range rs.Rules {
@@ -100,16 +95,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			}
 		}
 
-		preps := make([]*regexPrep, len(r.Strings))
-		var prepErr error
-		for si, s := range r.Strings {
-			if _, isRegex := generatePatterns(s); !isRegex {
-				continue
-			}
-			if preps[si], prepErr = prepareRegex(s, r.Name, opts); prepErr != nil {
-				break
-			}
-		}
+		preps, prepErr := prepareRegexes(r, opts)
 		if prepErr != nil {
 			check.skipped[r.Name] = true
 			if !opts.SkipInvalidRegex {
@@ -120,58 +106,18 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			continue
 		}
 
-		cr := &compiledRule{
-			name:      r.Name,
-			metas:     make([]Meta, len(r.Meta)),
-			condition: r.Condition,
-			private:   r.Private,
-			global:    r.Global,
-			slotBase:  int32(len(rules.slotRule)),
-		}
-		for i, m := range r.Meta {
-			cr.metas[i] = Meta{Identifier: m.Key, Value: m.Value}
-		}
-		for _, s := range r.Strings {
-			cr.stringNames = append(cr.stringNames, s.Name)
-			cr.stringPrivates = append(cr.stringPrivates, s.Modifiers.Private)
-			rules.slotRule = append(rules.slotRule, int32(ruleIdx))
-		}
-		rules.rules = append(rules.rules, cr)
-		rules.ruleIndex[r.Name] = int32(ruleIdx)
-		if r.Global {
-			rules.globalRules = append(rules.globalRules, int32(ruleIdx))
-		}
-		if r.Global || mayMatchWithoutHits(cr.condition) {
-			rules.zeroHitRules = append(rules.zeroHitRules, int32(ruleIdx))
-		}
-
+		cr := rules.addRule(r, int32(ruleIdx))
 		for si, s := range r.Strings {
 			slot := cr.slotBase + int32(si)
-
-			patterns, isRegex := generatePatterns(s)
-			if isRegex {
+			if _, isRegex := generatePatterns(s); isRegex {
 				if preps[si] != nil {
 					allPatterns = compileRegex(rules, s, preps[si], slot, allPatterns, opts)
 				}
 				continue
 			}
-			variants := withWideVariants(patterns, s.Modifiers)
-			if isBase64(s) {
-				variants = base64Variants([]byte(s.Value.(ast.TextString).Value), s.Modifiers)
-			}
-			for _, p := range variants {
-				rules.patternMap = append(rules.patternMap, patternRef{
-					slot:     slot,
-					fullword: s.Modifiers.Fullword,
-					wide:     p.wide,
-					verify:   !s.Modifiers.Nocase && hasASCIILetter(p.bytes),
-					regexIdx: -1,
-				})
-				allPatterns = append(allPatterns, p.bytes)
-				if s.Modifiers.Nocase {
-					hasNocase = true
-				}
-			}
+			before := len(allPatterns)
+			allPatterns = rules.addTextPatterns(s, slot, allPatterns)
+			hasNocase = hasNocase || (s.Modifiers.Nocase && len(allPatterns) > before)
 		}
 		ruleIdx++
 	}
@@ -180,6 +126,21 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		return nil, errors.Join(errs...)
 	}
 
+	rules.buildMatcher(allPatterns, hasNocase)
+	return rules, nil
+}
+
+func subtypeSet(subtypes []string) map[string]bool {
+	set := make(map[string]bool, len(subtypes))
+	for _, t := range subtypes {
+		if t != "" {
+			set[t] = true
+		}
+	}
+	return set
+}
+
+func (rules *Rules) buildMatcher(allPatterns [][]byte, hasNocase bool) {
 	if !hasNocase {
 		// without nocase patterns the automaton matches exactly, so no
 		// hit ever needs verifying against the original buffer
@@ -197,8 +158,72 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
 	}
+}
 
-	return rules, nil
+// prepareRegexes checks and prepares the regex and complex hex strings of r,
+// leaving nil for the other strings.
+func prepareRegexes(r *ast.Rule, opts CompileOptions) ([]*regexPrep, error) {
+	preps := make([]*regexPrep, len(r.Strings))
+	for si, s := range r.Strings {
+		if _, isRegex := generatePatterns(s); !isRegex {
+			continue
+		}
+		var err error
+		if preps[si], err = prepareRegex(s, r.Name, opts); err != nil {
+			return nil, err
+		}
+	}
+	return preps, nil
+}
+
+// addRule registers r as rule ruleIdx with its metas and string slots.
+func (rules *Rules) addRule(r *ast.Rule, ruleIdx int32) *compiledRule {
+	cr := &compiledRule{
+		name:      r.Name,
+		metas:     make([]Meta, len(r.Meta)),
+		condition: r.Condition,
+		private:   r.Private,
+		global:    r.Global,
+		slotBase:  int32(len(rules.slotRule)),
+	}
+	for i, m := range r.Meta {
+		cr.metas[i] = Meta{Identifier: m.Key, Value: m.Value}
+	}
+	for _, s := range r.Strings {
+		cr.stringNames = append(cr.stringNames, s.Name)
+		cr.stringPrivates = append(cr.stringPrivates, s.Modifiers.Private)
+		rules.slotRule = append(rules.slotRule, ruleIdx)
+	}
+	rules.rules = append(rules.rules, cr)
+	rules.ruleIndex[r.Name] = ruleIdx
+	if r.Global {
+		rules.globalRules = append(rules.globalRules, ruleIdx)
+	}
+	if r.Global || mayMatchWithoutHits(cr.condition) {
+		rules.zeroHitRules = append(rules.zeroHitRules, ruleIdx)
+	}
+	return cr
+}
+
+// addTextPatterns adds the automaton patterns of a text or simple hex
+// string: its wide, xor or base64 variants.
+func (rules *Rules) addTextPatterns(s *ast.StringDef, slot int32, allPatterns [][]byte) [][]byte {
+	patterns, _ := generatePatterns(s)
+	variants := withWideVariants(patterns, s.Modifiers)
+	if isBase64(s) {
+		variants = base64Variants([]byte(s.Value.(ast.TextString).Value), s.Modifiers)
+	}
+	for _, p := range variants {
+		rules.patternMap = append(rules.patternMap, patternRef{
+			slot:     slot,
+			fullword: s.Modifiers.Fullword,
+			wide:     p.wide,
+			verify:   !s.Modifiers.Nocase && hasASCIILetter(p.bytes),
+			regexIdx: -1,
+		})
+		allPatterns = append(allPatterns, p.bytes)
+	}
+	return allPatterns
 }
 
 var builtinExternals = []string{"filename", "filepath", "extension", "filetype", "owner"}
