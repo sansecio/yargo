@@ -104,13 +104,15 @@ func (w *resourceWalk) dir(off, level int, typeStr, nameStr, langStr optStr) {
 		entryName, _ := w.p.u32(e)
 		data, _ := w.p.u32(e + 4)
 		if data == 0 {
-			return
+			continue
 		}
 		switch level {
 		case 0:
+			w.id, w.language = -1, -1
 			w.typ = int64(int32(entryName))
 			typeStr = w.name(entryName)
 		case 1:
+			w.language = -1
 			w.id = int64(int32(entryName))
 			nameStr = w.name(entryName)
 		case 2:
