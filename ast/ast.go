@@ -3,22 +3,23 @@ package ast
 
 // RuleSet represents a collection of YARA rules.
 type RuleSet struct {
-	Imports []string
-	Rules   []*Rule
+	Rules []*Rule
 	// Warnings lists constructs that parsed but cannot be honored, such as
 	// unsupported string modifiers. The affected rules never match.
 	Warnings []string
+	// Imports lists the modules named by import statements, in order.
+	Imports []string
 }
 
 // Rule represents a single YARA rule.
 type Rule struct {
 	Name      string
-	Tags      []string
-	Private   bool
-	Global    bool
 	Meta      []*MetaEntry
 	Strings   []*StringDef
-	Condition Expr // parsed condition expression
+	Condition Expr     // parsed condition expression
+	Tags      []string // tags after the rule name
+	Private   bool     // private rules never reach the scan callback
+	Global    bool     // global rules gate every other rule of the rule set
 }
 
 // MetaEntry represents a key-value pair in the meta section.
@@ -36,19 +37,19 @@ type StringDef struct {
 
 // StringModifiers represents the modifiers applied to a string.
 type StringModifiers struct {
-	Ascii          bool
-	Wide           bool
-	Xor            *XorRange
-	Base64         bool
-	Fullword       bool
-	Base64Wide     bool
-	Base64Alphabet string
-	Nocase         bool
-	Private        bool
+	Ascii    bool
+	Base64   bool
+	Fullword bool
+	Nocase   bool
+	Private  bool
 	// Unsupported holds modifiers the scanner cannot honor (e.g. wide, xor,
 	// or base64 with a custom alphabet). Compilation skips rules that use
 	// them, since matching without the modifier would be wrong.
-	Unsupported []string
+	Unsupported    []string
+	Wide           bool
+	Xor            *XorRange // nil without the xor modifier
+	Base64Wide     bool
+	Base64Alphabet string // custom base64 alphabet, empty for the standard one
 }
 
 // XorRange is the key range of an xor(min-max) modifier.
