@@ -21,6 +21,8 @@ const (
 	maxSerialBytes     = 20
 	securityDirectory  = 4
 	winCertHeaderBytes = 8
+
+	winCertTypePKCSSignedData = 0x0002
 )
 
 var (
@@ -125,11 +127,17 @@ func (p *peInfo) ensureSignatures() {
 	if dir.Size < winCertHeaderBytes || !p.fits(off, winCertHeaderBytes) {
 		return
 	}
-	length := int(binary.LittleEndian.Uint32(p.buf[off:]))
-	if length < winCertHeaderBytes || !p.fits(off, length) {
-		return
+	end := off + int(dir.Size)
+	for off+winCertHeaderBytes <= end && len(p.signatures) < maxSignatures && !p.stopped() {
+		length := int(binary.LittleEndian.Uint32(p.buf[off:]))
+		if length < winCertHeaderBytes || !p.fits(off, length) {
+			return
+		}
+		if binary.LittleEndian.Uint16(p.buf[off+6:]) == winCertTypePKCSSignedData {
+			p.signatures = parseAuthenticode(p.buf[off+winCertHeaderBytes:off+length], 0, p.signatures)
+		}
+		off += (length + 7) &^ 7
 	}
-	p.signatures = parseAuthenticode(p.buf[off+winCertHeaderBytes:off+length], 0, nil)
 }
 
 func parseAuthenticode(der []byte, depth int, out []peSignature) []peSignature {
