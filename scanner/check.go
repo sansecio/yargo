@@ -75,7 +75,7 @@ func (c *condChecker) reason(expr ast.Expr) string {
 	case ast.Index:
 		return c.index(e)
 	case ast.FuncCall:
-		if reason := c.callee(e.Name, len(e.Args)); reason != "" {
+		if reason := c.callee(e.Name, e.Args); reason != "" {
 			return reason
 		}
 		return c.first(e.Args...)
@@ -180,25 +180,78 @@ func (c *condChecker) indexBase(e ast.Index) string {
 	return c.module(module)
 }
 
-func (c *condChecker) callee(name string, args int) string {
+func (c *condChecker) callee(name string, args []ast.Expr) string {
 	module, _, dotted := strings.Cut(name, ".")
 	if !dotted {
-		if _, ok := integerReaders[name]; ok {
-			return ""
+		if _, ok := integerReaders[name]; !ok {
+			return c.fail("undefined identifier %q", name)
 		}
-		return c.fail("undefined identifier %q", name)
+		if !matchesSignature("i", args) {
+			return c.fail("wrong arguments for function %q", name)
+		}
+		return ""
 	}
 	if reason := c.module(module); reason != "" {
 		return reason
 	}
 	if module == "pe" {
-		if !supportedPEFunction(name, args) {
+		if !supportedPEFunction(name, len(args)) {
 			return "unsupported pe function " + name
 		}
 		return ""
 	}
-	if _, ok := supportedFunctions[name]; !ok {
+	signatures, ok := supportedFunctions[name]
+	if !ok {
 		return "unsupported function " + name
 	}
-	return ""
+	for _, sig := range signatures {
+		if matchesSignature(sig, args) {
+			return ""
+		}
+	}
+	return c.fail("wrong arguments for function %q", name)
+}
+
+// matchesSignature reports whether args fit sig (see supportedFunctions).
+// Arguments whose type depends on the scan, like identifiers, fit any letter.
+func matchesSignature(sig string, args []ast.Expr) bool {
+	if len(sig) != len(args) {
+		return false
+	}
+	for i, a := range args {
+		switch literalKind(a) {
+		case 's':
+			if sig[i] != 's' {
+				return false
+			}
+		case 'f':
+			if sig[i] != 'f' {
+				return false
+			}
+		case 'i':
+			if sig[i] == 's' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// literalKind is i, f or s when expr is an integer, float or string
+// whatever the scanned data, and 0 when it depends on identifiers or
+// function results.
+func literalKind(expr ast.Expr) byte {
+	switch e := expr.(type) {
+	case ast.IntLit, ast.Filesize, ast.CountOf, ast.OffsetOf, ast.LenOf:
+		return 'i'
+	case ast.FloatLit:
+		return 'f'
+	case ast.StrLit:
+		return 's'
+	case ast.ParenExpr:
+		return literalKind(e.Inner)
+	case ast.UnaryExpr:
+		return literalKind(e.Inner)
+	}
+	return 0
 }

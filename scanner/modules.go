@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"math"
+	"strings"
 )
 
 func window(buf []byte, offset, size any) ([]byte, bool) {
@@ -17,58 +18,76 @@ func window(buf []byte, offset, size any) ([]byte, bool) {
 	return buf[o : o+s], true
 }
 
-var supportedFunctions = map[string]int{
-	"math.entropy": 2, "math.mean": 2, "math.deviation": 3, "math.count": 3,
-	"hash.md5": 2, "hash.sha1": 2, "hash.sha256": 2,
+// supportedFunctions maps each implemented math and hash function to the
+// signatures of its overloads, one letter per argument: i for an integer,
+// f for a number, s for a string. The range overloads read (offset, size)
+// of the scanned data, the string ones their string argument.
+// https://yara.readthedocs.io/en/stable/modules/math.html
+// https://yara.readthedocs.io/en/stable/modules/hash.html
+var supportedFunctions = map[string][]string{
+	"math.entropy": {"ii", "s"}, "math.mean": {"ii", "s"}, "math.deviation": {"iif", "sf"}, "math.count": {"iii", "i"},
+	"hash.md5": {"ii", "s"}, "hash.sha1": {"ii", "s"}, "hash.sha256": {"ii", "s"},
 }
 
 func evalModuleFunc(name string, args []any, buf []byte) any {
-	if want, ok := supportedFunctions[name]; !ok || len(args) != want {
+	if name == "math.count" {
+		return countByte(args, buf)
+	}
+	data, rest, ok := functionData(args, buf)
+	if !ok {
 		return nil
 	}
-	switch name {
-	case "math.entropy":
-		data, ok := window(buf, args[0], args[1])
-		if !ok {
-			return nil
-		}
+	switch {
+	case name == "math.entropy" && len(rest) == 0:
 		return entropy(data)
-	case "math.mean":
-		data, ok := window(buf, args[0], args[1])
-		if !ok {
-			return nil
-		}
+	case name == "math.mean" && len(rest) == 0:
 		return mean(data)
-	case "math.deviation":
-		data, ok := window(buf, args[0], args[1])
-		if !ok {
-			return nil
-		}
-		m, ok := toNumber(args[2])
+	case name == "math.deviation" && len(rest) == 1:
+		m, ok := toNumber(rest[0])
 		if !ok {
 			return nil
 		}
 		return deviation(data, m.asFloat())
-	case "math.count":
-		data, ok := window(buf, args[1], args[2])
-		b, bok := args[0].(int64)
-		if !ok || !bok {
-			return nil
-		}
-		var n int64
-		for _, c := range data {
-			if int64(c) == b {
-				n++
-			}
-		}
-		return n
-	default:
-		data, ok := window(buf, args[0], args[1])
-		if !ok {
-			return nil
-		}
+	case strings.HasPrefix(name, "hash.") && len(rest) == 0:
 		return digest(name, data)
 	}
+	return nil
+}
+
+// functionData returns the bytes a math or hash function reads: its string
+// argument, or the (offset, size) window of buf, followed by the remaining
+// arguments.
+func functionData(args []any, buf []byte) ([]byte, []any, bool) {
+	if s, ok := args[0].(string); ok {
+		return []byte(s), args[1:], true
+	}
+	if len(args) < 2 {
+		return nil, nil, false
+	}
+	data, ok := window(buf, args[0], args[1])
+	return data, args[2:], ok
+}
+
+// countByte implements math.count(byte, offset, size) and math.count(byte),
+// which counts over the whole scanned data.
+func countByte(args []any, buf []byte) any {
+	b, ok := args[0].(int64)
+	if !ok {
+		return nil
+	}
+	data := buf
+	if len(args) == 3 {
+		if data, ok = window(buf, args[1], args[2]); !ok {
+			return nil
+		}
+	}
+	var n int64
+	for _, c := range data {
+		if int64(c) == b {
+			n++
+		}
+	}
+	return n
 }
 
 func entropy(data []byte) float64 {
