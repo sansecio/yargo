@@ -58,6 +58,8 @@ func TestParseXorModifier(t *testing.T) {
 		{"xor(1)", &ast.XorRange{Min: 1, Max: 1}},
 		{"xor(0x01-0xff)", &ast.XorRange{Min: 1, Max: 255}},
 		{"xor(16-32)", &ast.XorRange{Min: 16, Max: 32}},
+		{"xor(010)", &ast.XorRange{Min: 10, Max: 10}},
+		{"xor(0o10-0o20)", &ast.XorRange{Min: 8, Max: 16}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.mod, func(t *testing.T) {
@@ -70,10 +72,16 @@ func TestParseXorModifier(t *testing.T) {
 	}
 }
 
+// xor keys are libyara _NUMBER_ tokens: decimal (leading zeros stay
+// decimal), 0x hex or 0o octal. Go's base prefixes like 0b and digit
+// underscores are not YARA syntax.
+// https://github.com/VirusTotal/yara/blob/master/libyara/lexer.l
 func TestParseXorModifierInvalidRange(t *testing.T) {
-	rs := mustParse(t, `rule t { strings: $a = "x" xor(0x300) condition: $a }`)
-	m := rs.Rules[0].Strings[0].Modifiers
-	if m.Xor != nil || len(m.Unsupported) != 1 {
-		t.Errorf("expected invalid xor range to stay unsupported, got %+v", m)
+	for _, mod := range []string{"xor(0x300)", "xor(0b11)", "xor(1_0)", "xor(0X10)"} {
+		rs := mustParse(t, `rule t { strings: $a = "x" `+mod+` condition: $a }`)
+		m := rs.Rules[0].Strings[0].Modifiers
+		if m.Xor != nil || len(m.Unsupported) != 1 {
+			t.Errorf("%s: expected invalid xor range to stay unsupported, got %+v", mod, m)
+		}
 	}
 }

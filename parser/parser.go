@@ -75,8 +75,16 @@ func hasDuplicateByte(s string) bool {
 	return false
 }
 
+// parseXorKey reads a libyara number: decimal, 0x hex or 0o octal.
 func parseXorKey(s string) (byte, bool) {
-	v, err := strconv.ParseUint(strings.TrimSpace(s), 0, 8)
+	s = strings.TrimSpace(s)
+	base := 10
+	if digits, ok := strings.CutPrefix(s, "0x"); ok {
+		s, base = digits, 16
+	} else if digits, ok := strings.CutPrefix(s, "0o"); ok {
+		s, base = digits, 8
+	}
+	v, err := strconv.ParseUint(s, base, 8)
 	return byte(v), err == nil
 }
 
