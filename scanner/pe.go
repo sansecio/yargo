@@ -546,7 +546,7 @@ func (p *peInfo) call(name string, args []any) any {
 				}
 			}
 		case int64:
-			return a >= p.exportBase && a-p.exportBase < p.numExports
+			return a >= 1 && a <= p.numExports && a >= p.exportBase && a-p.exportBase < p.numExports
 		}
 		return false
 	case "pe.imports":

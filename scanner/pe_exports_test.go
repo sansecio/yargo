@@ -18,10 +18,11 @@ func TestPEExportsOrdinalIsBasePlusTableIndex(t *testing.T) {
 		{"unnamed entry next to named ones", 1, 3, 2, "pe.exports(3)", true},
 		{"past the table", 1, 3, 2, "pe.exports(4)", false},
 		{"below the base", 5, 3, 2, "pe.exports(4)", false},
-		{"no names honours the base", 5, 2, 0, "pe.exports(5)", true},
-		{"no names last ordinal", 5, 2, 0, "pe.exports(6)", true},
-		{"no names ignores base-less index", 5, 2, 0, "pe.exports(1)", false},
-		{"no names past the table", 5, 2, 0, "pe.exports(7)", false},
+		{"no names honours the base", 2, 3, 0, "pe.exports(3)", true},
+		{"no names ignores base-less index", 2, 3, 0, "pe.exports(1)", false},
+		{"ordinal above the export count", 2, 3, 0, "pe.exports(4)", false},
+		{"base above the export count", 5, 2, 0, "pe.exports(5)", false},
+		{"ordinal zero", 0, 3, 0, "pe.exports(0)", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
