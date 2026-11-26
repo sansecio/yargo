@@ -123,3 +123,40 @@ func TestParseInvalidModifierCombinationsAreUnsupported(t *testing.T) {
 		}
 	}
 }
+
+// Only module identifiers take an index or a field, and comparisons between
+// a string and a number are a "type mismatch" in libyara
+// (yr_parser_reduce_operation in libyara/parser.c).
+// https://yara.readthedocs.io/en/stable/writingrules.html#conditions
+func TestParseRejectsIndexFieldAndComparisonMisuse(t *testing.T) {
+	for _, cond := range []string{
+		`1.foo`,
+		`filesize[1]`,
+		`(1).foo == 0`,
+		`#a[1] == 0`,
+		`"abc"[0] == 1`,
+		`"abc" > 1`,
+		`1 == "abc"`,
+		`filesize != "abc"`,
+		`#a + 1 < "x"`,
+		`("abc") == 1.5`,
+	} {
+		if _, err := New().Parse(`rule t { strings: $a = "x" condition: ` + cond + ` }`); err == nil {
+			t.Errorf("%s: expected a parse error", cond)
+		}
+	}
+	for _, cond := range []string{
+		`pe.sections[0].name == "x"`,
+		`pe.version_info["CompanyName"] == "x"`,
+		`@a[1] == 0`,
+		`!a[1] == 1`,
+		`pe.number_of_sections == 1`,
+		`"a" == "a"`,
+		`ext == 1`,
+		`1.5 < 2`,
+	} {
+		if _, err := New().Parse(`rule t { strings: $a = "x" condition: ` + cond + ` }`); err != nil {
+			t.Errorf("%s: unexpected error %v", cond, err)
+		}
+	}
+}

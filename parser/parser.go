@@ -183,7 +183,65 @@ func comparisonExpr(lexer interface{ Error(string) }, op string, left, right ast
 	if !isIntegerExpr(left) || !isIntegerExpr(right) {
 		lexer.Error("comparison requires integer operands")
 	}
+	if l, r := staticType(left), staticType(right); l != typeUnknown && r != typeUnknown && l != r {
+		lexer.Error("type mismatch")
+	}
 	return ast.BinaryExpr{Op: op, Left: left, Right: right}
+}
+
+type exprType int
+
+const (
+	typeUnknown exprType = iota
+	typeNumber
+	typeString
+)
+
+// staticType is the type an expression has whatever the scanned data,
+// or typeUnknown when it depends on identifiers or functions.
+func staticType(expr ast.Expr) exprType {
+	switch e := expr.(type) {
+	case ast.IntLit, ast.FloatLit, ast.Filesize, ast.CountOf, ast.OffsetOf, ast.LenOf, ast.UnaryExpr:
+		return typeNumber
+	case ast.StrLit:
+		return typeString
+	case ast.BinaryExpr:
+		if isArithmeticOp(e.Op) {
+			return typeNumber
+		}
+	case ast.ParenExpr:
+		return staticType(e.Inner)
+	}
+	return typeUnknown
+}
+
+// indexExpr builds base[index]. Besides @a[i] and !a[i], only module
+// identifiers like pe.sections can be indexed.
+func indexExpr(lexer interface{ Error(string) }, base, index ast.Expr) ast.Expr {
+	switch b := base.(type) {
+	case ast.OffsetOf:
+		return ast.OffsetOf{Name: b.Name, Index: index}
+	case ast.LenOf:
+		return ast.LenOf{Name: b.Name, Index: index}
+	case ast.Ident:
+	default:
+		lexer.Error("only identifiers can be indexed")
+	}
+	return ast.Index{Base: base, Index: index}
+}
+
+// fieldExpr builds base.name, which only applies to an indexed identifier
+// like pe.sections[0]; plain dotted names are lexed as one identifier.
+func fieldExpr(lexer interface{ Error(string) }, base ast.Expr, name string) ast.Expr {
+	if idx, ok := base.(ast.Index); !ok || !isIdent(idx.Base) {
+		lexer.Error("only indexed identifiers have fields")
+	}
+	return ast.Field{Base: base, Name: name}
+}
+
+func isIdent(expr ast.Expr) bool {
+	_, ok := expr.(ast.Ident)
+	return ok
 }
 
 func isIntegerExpr(expr ast.Expr) bool {

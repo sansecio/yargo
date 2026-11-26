@@ -490,18 +490,11 @@ primary_expr:
 	}
 	| primary_expr '[' expr ']'
 	{
-		switch b := $1.(type) {
-		case ast.OffsetOf:
-			$$ = ast.OffsetOf{Name: b.Name, Index: $3}
-		case ast.LenOf:
-			$$ = ast.LenOf{Name: b.Name, Index: $3}
-		default:
-			$$ = ast.Index{Base: $1, Index: $3}
-		}
+		$$ = indexExpr(yylex, $1, $3)
 	}
 	| primary_expr '.' COND_IDENT
 	{
-		$$ = ast.Field{Base: $1, Name: $3}
+		$$ = fieldExpr(yylex, $1, $3)
 	}
 	| FLOAT_LIT
 	{

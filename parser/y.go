@@ -182,7 +182,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line yara.y:616
+//line yara.y:609
 
 //line yacctab:1
 var yyExca = [...]int16{
@@ -1468,162 +1468,155 @@ yydefault:
 		yyDollar = yyS[yypt-4 : yypt+1]
 //line yara.y:492
 		{
-			switch b := yyDollar[1].expr.(type) {
-			case ast.OffsetOf:
-				yyVAL.expr = ast.OffsetOf{Name: b.Name, Index: yyDollar[3].expr}
-			case ast.LenOf:
-				yyVAL.expr = ast.LenOf{Name: b.Name, Index: yyDollar[3].expr}
-			default:
-				yyVAL.expr = ast.Index{Base: yyDollar[1].expr, Index: yyDollar[3].expr}
-			}
+			yyVAL.expr = indexExpr(yylex, yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 82:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:503
+//line yara.y:496
 		{
-			yyVAL.expr = ast.Field{Base: yyDollar[1].expr, Name: yyDollar[3].str}
+			yyVAL.expr = fieldExpr(yylex, yyDollar[1].expr, yyDollar[3].str)
 		}
 	case 83:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:507
+//line yara.y:500
 		{
 			yyVAL.expr = ast.FloatLit{Value: yyDollar[1].flt}
 		}
 	case 84:
 		yyDollar = yyS[yypt-13 : yypt+1]
-//line yara.y:511
+//line yara.y:504
 		{
 			yyVAL.expr = ast.ForExpr{Quant: yyDollar[2].quant.quant, N: yyDollar[2].quant.n, Var: yyDollar[3].str, Lo: yyDollar[6].expr, Hi: yyDollar[8].expr, Body: ast.ParenExpr{Inner: yyDollar[12].expr}}
 		}
 	case 85:
 		yyDollar = yyS[yypt-8 : yypt+1]
-//line yara.y:515
+//line yara.y:508
 		{
 			yyVAL.expr = ast.ForExpr{Quant: yyDollar[2].quant.quant, N: yyDollar[2].quant.n, Patterns: yyDollar[4].strs, Body: ast.ParenExpr{Inner: yyDollar[7].expr}}
 		}
 	case 86:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line yara.y:519
+//line yara.y:512
 		{
 			yyVAL.expr = ast.FuncCall{Name: yyDollar[1].str, Args: yyDollar[3].exprs}
 		}
 	case 87:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:523
+//line yara.y:516
 		{
 			yyVAL.expr = ast.Ident{Name: yyDollar[1].str}
 		}
 	case 88:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:527
+//line yara.y:520
 		{
 			yyVAL.expr = ast.StrLit{Value: unquoteString(yyDollar[1].str)}
 		}
 	case 89:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:531
+//line yara.y:524
 		{
 			yyVAL.expr = ast.BoolLit{Value: true}
 		}
 	case 90:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:535
+//line yara.y:528
 		{
 			yyVAL.expr = ast.BoolLit{Value: false}
 		}
 	case 91:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:539
+//line yara.y:532
 		{
 			yyVAL.expr = ast.StringRef{Name: yyDollar[1].str}
 		}
 	case 92:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:543
+//line yara.y:536
 		{
 			yyVAL.expr = ast.IntLit{Value: yyDollar[1].num}
 		}
 	case 93:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:547
+//line yara.y:540
 		{
 			yyVAL.expr = ast.Filesize{}
 		}
 	case 94:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:554
+//line yara.y:547
 		{
 			yyVAL.quant = forQuant{quant: "any"}
 		}
 	case 95:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:558
+//line yara.y:551
 		{
 			yyVAL.quant = forQuant{quant: "all"}
 		}
 	case 96:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:562
+//line yara.y:555
 		{
 			yyVAL.quant = forQuant{quant: "none"}
 		}
 	case 97:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:566
+//line yara.y:559
 		{
 			yyVAL.quant = forQuant{quant: "count", n: yyDollar[1].num}
 		}
 	case 98:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:573
+//line yara.y:566
 		{
 			yyVAL.strs = []string{"them"}
 		}
 	case 99:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:577
+//line yara.y:570
 		{
 			yyVAL.strs = yyDollar[2].strs
 		}
 	case 100:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:584
+//line yara.y:577
 		{
 			yyVAL.strs = []string{yyDollar[1].str}
 		}
 	case 101:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:588
+//line yara.y:581
 		{
 			yyVAL.strs = []string{yyDollar[1].str}
 		}
 	case 102:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:592
+//line yara.y:585
 		{
 			yyVAL.strs = append(yyDollar[1].strs, yyDollar[3].str)
 		}
 	case 103:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:596
+//line yara.y:589
 		{
 			yyVAL.strs = append(yyDollar[1].strs, yyDollar[3].str)
 		}
 	case 104:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line yara.y:603
+//line yara.y:596
 		{
 			yyVAL.exprs = nil
 		}
 	case 105:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:607
+//line yara.y:600
 		{
 			yyVAL.exprs = []ast.Expr{yyDollar[1].expr}
 		}
 	case 106:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:611
+//line yara.y:604
 		{
 			yyVAL.exprs = append(yyDollar[1].exprs, yyDollar[3].expr)
 		}
