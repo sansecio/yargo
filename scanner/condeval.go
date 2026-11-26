@@ -293,8 +293,12 @@ func readInteger(name string, posArg any, buf []byte) (any, bool) {
 func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 	switch e.Op {
 	case "and":
-		l, r := evalAny(e.Left, ctx), evalAny(e.Right, ctx)
-		if (l != nil && !truthy(l)) || (r != nil && !truthy(r)) {
+		l := evalAny(e.Left, ctx)
+		if l != nil && !truthy(l) {
+			return false
+		}
+		r := evalAny(e.Right, ctx)
+		if r != nil && !truthy(r) {
 			return false
 		}
 		if l == nil || r == nil {
@@ -302,8 +306,12 @@ func evalBinaryExpr(e ast.BinaryExpr, ctx *evalContext) any {
 		}
 		return true
 	case "or":
-		l, r := evalAny(e.Left, ctx), evalAny(e.Right, ctx)
-		if truthy(l) || truthy(r) {
+		l := evalAny(e.Left, ctx)
+		if truthy(l) {
+			return true
+		}
+		r := evalAny(e.Right, ctx)
+		if truthy(r) {
 			return true
 		}
 		if l == nil || r == nil {

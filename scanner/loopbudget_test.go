@@ -43,3 +43,33 @@ func TestDeadlineInsideALoopFailsTheScan(t *testing.T) {
 		t.Errorf("err = %v, want the deadline error", err)
 	}
 }
+
+func TestAndOrShortCircuit(t *testing.T) {
+	loop := `for all i in (0..0x7fffffffffffffff) : (true)`
+	for _, tc := range []struct {
+		cond string
+		want []string
+	}{
+		{"false and " + loop, nil},
+		{"(1 == 2) and " + loop, nil},
+		{"true or " + loop, []string{"r"}},
+		{"filesize > 0 or " + loop, []string{"r"}},
+	} {
+		rules := compileSource(t, "rule r { condition: "+tc.cond+" }")
+		start := time.Now()
+		var matches MatchRules
+		if err := rules.ScanMem([]byte("x"), 0, 0, &matches); err != nil {
+			t.Errorf("%s: right operand was evaluated: %v", tc.cond, err)
+		}
+		var got []string
+		for _, m := range matches {
+			got = append(got, m.Rule)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: matches = %v, want %v", tc.cond, got, tc.want)
+		}
+		if d := time.Since(start); d > 100*time.Millisecond {
+			t.Errorf("%s: took %v", tc.cond, d)
+		}
+	}
+}
