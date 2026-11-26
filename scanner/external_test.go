@@ -133,3 +133,14 @@ func TestExternalOfInvalidTypeFailsTheScan(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalOfInvalidTypeFailsTheScanWithoutRules(t *testing.T) {
+	rules, err := compileWith(t, ``, CompileOptions{Externals: []string{"level"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matches MatchRules
+	if err := rules.ScanMemWith(nil, Externals{"level": struct{}{}}, 0, time.Second, &matches); err == nil {
+		t.Error("expected an error for an external of an invalid type")
+	}
+}

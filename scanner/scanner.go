@@ -207,13 +207,12 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 // ScanMemWith is like ScanMem but evaluates conditions with the given
 // external variable values, overriding the defaults declared at compile time.
 func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
-	if len(r.rules) == 0 {
-		return nil
-	}
-
 	ext, err := normalizeExternals(ext)
 	if err != nil {
 		return err
+	}
+	if len(r.rules) == 0 {
+		return nil
 	}
 
 	ctx := context.Background()
