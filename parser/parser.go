@@ -35,17 +35,17 @@ func parseXorModifier(s string) (*ast.XorRange, bool) {
 	}
 	args = strings.TrimSuffix(args, ")")
 	lo, hi, isRange := strings.Cut(args, "-")
-	min, ok := parseXorKey(lo)
+	first, ok := parseXorKey(lo)
 	if !ok {
 		return nil, false
 	}
-	max := min
+	last := first
 	if isRange {
-		if max, ok = parseXorKey(hi); !ok || max < min {
+		if last, ok = parseXorKey(hi); !ok || last < first {
 			return nil, false
 		}
 	}
-	return &ast.XorRange{Min: min, Max: max}, true
+	return &ast.XorRange{Min: first, Max: last}, true
 }
 
 func parseBase64Modifier(s string) (wide bool, alphabet string, ok bool) {
