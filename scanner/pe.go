@@ -50,6 +50,7 @@ type peInfo struct {
 	imports    []peImport
 	exports    []peExport
 	numExports int64
+	exportBase int64
 	nameBytes  int
 	walked     map[thunkKey]bool
 	done       <-chan struct{}
@@ -226,6 +227,7 @@ func (p *peInfo) parseExports(dir pe.DataDirectory) {
 		return
 	}
 	p.numExports = int64(numFuncs)
+	p.exportBase = int64(first)
 	namesOff, nok := p.rvaToOffset(namesRVA)
 	ordsOff, ook := p.rvaToOffset(ordsRVA)
 	if !nok || !ook {
@@ -533,16 +535,15 @@ func (p *peInfo) call(name string, args []any) any {
 		}
 		return nil
 	case "pe.exports":
-		for _, e := range p.exports {
-			if n, ok := args[0].(string); ok && e.name == n {
-				return true
+		switch a := args[0].(type) {
+		case string:
+			for _, e := range p.exports {
+				if e.name == a {
+					return true
+				}
 			}
-			if o, ok := args[0].(int64); ok && e.ordinal == o {
-				return true
-			}
-		}
-		if o, ok := args[0].(int64); ok && p.numExports > 0 && len(p.exports) == 0 {
-			return o > 0 && o <= p.numExports
+		case int64:
+			return a >= p.exportBase && a-p.exportBase < p.numExports
 		}
 		return false
 	case "pe.imports":
