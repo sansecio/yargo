@@ -24,6 +24,7 @@ type yaraLexer struct {
 	ruleSet *ast.RuleSet
 	imports []string
 	err     string
+	errLine int
 }
 
 func newLexer(input string) *yaraLexer {
@@ -78,7 +79,8 @@ func (l *yaraLexer) Lex(lval *yySymType) int {
 // "syntax error" after the lexer has already recorded a descriptive one.
 func (l *yaraLexer) Error(s string) {
 	if l.err == "" {
-		l.err = fmt.Sprintf("%s (line %d)", s, l.line())
+		l.err = s
+		l.errLine = l.line()
 	}
 }
 

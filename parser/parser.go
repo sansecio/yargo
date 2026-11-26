@@ -110,6 +110,17 @@ func isArithmeticOp(op string) bool {
 	}
 }
 
+// Error is a parse error. Its text keeps the "parse error: <message>" form;
+// Line is the 1-based input line where parsing stopped.
+type Error struct {
+	Msg  string
+	Line int
+}
+
+func (e *Error) Error() string {
+	return "parse error: " + e.Msg
+}
+
 // Parse parses YARA rules from a string. Constructs that parse but cannot be
 // honored, such as unsupported string modifiers, are reported in the returned
 // RuleSet's Warnings instead of failing the parse.
@@ -117,7 +128,7 @@ func (p *Parser) Parse(input string) (*ast.RuleSet, error) {
 	l := newLexer(input)
 	yyParse(l)
 	if l.err != "" {
-		return nil, fmt.Errorf("parse error: %s", l.err)
+		return nil, &Error{Msg: l.err, Line: l.errLine}
 	}
 	if l.ruleSet == nil {
 		return &ast.RuleSet{}, nil

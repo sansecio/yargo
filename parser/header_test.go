@@ -1,8 +1,8 @@
 package parser
 
 import (
+	"errors"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -44,7 +44,11 @@ func TestParseErrorReportsLine(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
-	if !strings.Contains(err.Error(), "line 3") {
-		t.Errorf("expected error to name line 3, got %q", err.Error())
+	if err.Error() != "parse error: syntax error" {
+		t.Errorf("error text = %q, want main's %q", err.Error(), "parse error: syntax error")
+	}
+	var perr *Error
+	if !errors.As(err, &perr) || perr.Line != 3 {
+		t.Errorf("expected a *parser.Error on line 3, got %#v", err)
 	}
 }
