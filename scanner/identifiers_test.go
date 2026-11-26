@@ -61,3 +61,30 @@ rule r { condition: a and pe.is_pe == 0 and math.entropy(0, filesize) >= 0 and h
 		t.Errorf("expected both rules compiled, got %d, skipped %+v", rules.NumRules(), rules.Skipped())
 	}
 }
+
+// libyara fails compilation with "undefined string identifier" when a
+// condition names a string, or a string set, that the rule does not define.
+// https://yara.readthedocs.io/en/stable/writingrules.html#sets-of-strings
+func TestUndefinedStringIdentifiersFailCompilation(t *testing.T) {
+	for _, cond := range []string{
+		"$b",
+		"#b > 0",
+		"@b[1] == 0",
+		"!b == 1",
+		"$b at 0",
+		"$b in (0..10)",
+		"1 of ($b*)",
+		"any of ($b)",
+		"all of ($c*)",
+		"for any of ($b*) : ($)",
+	} {
+		_, err := compileWith(t, `rule r { strings: $a = "zz" condition: `+cond+` }`, CompileOptions{})
+		if err == nil || !strings.Contains(err.Error(), "undefined string identifier") {
+			t.Errorf("%s: expected an undefined string identifier error, got %v", cond, err)
+		}
+	}
+	rules := compileSource(t, `rule r { strings: $a = "zz" $ = "yy" condition: $a and #a > 0 and @a[1] == 0 and !a == 2 and $a at 0 and $a in (0..1) and any of ($a*) and all of them and 1 of ($a) and for any of ($a) : ($ and #a > 0) }`)
+	if rules.NumRules() != 1 || len(rules.Skipped()) != 0 {
+		t.Errorf("expected rule r compiled, got %d, skipped %+v", rules.NumRules(), rules.Skipped())
+	}
+}

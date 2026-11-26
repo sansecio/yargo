@@ -17,6 +17,7 @@ type condChecker struct {
 	imports map[string]bool
 	skipped map[string]bool // rules of the set that were not compiled
 	vars    []string        // loop variables in scope
+	strs    []string        // string names of the rule being checked
 	err     error
 }
 
@@ -32,6 +33,10 @@ func newCondChecker(rules *Rules, imports []string, compile CompileFunc) *condCh
 // to compile it.
 func (c *condChecker) rule(r *ast.Rule) (string, error) {
 	c.err = nil
+	c.strs = c.strs[:0]
+	for _, s := range r.Strings {
+		c.strs = append(c.strs, s.Name)
+	}
 	reason := c.reason(r.Condition)
 	if c.err != nil {
 		return "", c.err
@@ -68,16 +73,38 @@ func (c *condChecker) reason(expr ast.Expr) string {
 		return c.reason(e.Inner)
 	case ast.ParenExpr:
 		return c.reason(e.Inner)
+	case ast.StringRef:
+		return c.str(e.Name)
+	case ast.CountOf:
+		return c.str(e.Name)
 	case ast.AtExpr:
+		if reason := c.str(e.Ref.Name); reason != "" {
+			return reason
+		}
 		return c.reason(e.Pos)
 	case ast.UnaryExpr:
 		return c.reason(e.Inner)
 	case ast.OffsetOf:
+		if reason := c.str(e.Name); reason != "" {
+			return reason
+		}
 		return c.first(e.Index)
 	case ast.LenOf:
+		if reason := c.str(e.Name); reason != "" {
+			return reason
+		}
 		return c.first(e.Index)
 	case ast.InExpr:
+		if reason := c.str(e.Ref.Name); reason != "" {
+			return reason
+		}
 		return c.first(e.Lo, e.Hi)
+	case ast.AnyOf:
+		return c.set(e.Pattern)
+	case ast.AllOf:
+		return c.set(e.Pattern)
+	case ast.NOf:
+		return c.set(e.Patterns...)
 	case ast.ForExpr:
 		return c.forLoop(e)
 	case ast.Field:
@@ -119,8 +146,31 @@ func (c *condChecker) first(exprs ...ast.Expr) string {
 	return ""
 }
 
+// str fails a reference to a string the rule does not define, like
+// libyara's "undefined string identifier". The anonymous $ refers to the
+// string of an enclosing for..of loop.
+func (c *condChecker) str(name string) string {
+	if name == "$" || slices.Contains(c.strs, name) {
+		return ""
+	}
+	return c.fail("undefined string identifier %q", name)
+}
+
+// set fails a string set that matches none of the rule's strings.
+func (c *condChecker) set(patterns ...string) string {
+	for _, p := range patterns {
+		if p != "them" && len(matchingStringIndices(p, c.strs)) == 0 {
+			return c.fail("undefined string identifier %q", p)
+		}
+	}
+	return ""
+}
+
 func (c *condChecker) forLoop(e ast.ForExpr) string {
 	if e.Var == "" {
+		if reason := c.set(e.Patterns...); reason != "" {
+			return reason
+		}
 		return c.reason(e.Body)
 	}
 	if reason := c.first(e.Lo, e.Hi); reason != "" {
