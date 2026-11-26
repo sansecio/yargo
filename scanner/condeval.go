@@ -3,6 +3,7 @@ package scanner
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -514,19 +515,48 @@ func evalIn(e ast.InExpr, ctx *evalContext) any {
 	return false
 }
 
+// ErrLoopBudgetExceeded is returned by a scan whose for loops, across all
+// rules, ran more than maxLoopSteps iterations.
+var ErrLoopBudgetExceeded = errors.New("scanner: for loop iteration budget exceeded")
+
 const (
-	maxLoopIterations = 1 << 22
+	// maxLoopSteps bounds the for loop iterations of one scan, nested loops
+	// and all rules included; a trivial body costs about 40 ns, so the
+	// budget runs out in about a second.
+	maxLoopSteps      = 1 << 25
 	loopCheckInterval = 1 << 10
 )
 
-func (ctx *evalContext) expired() bool {
-	return ctx.deadline != nil && ctx.deadline.Err() != nil
+// step counts one loop iteration against the scan's budget and deadline.
+// Once either runs out it records the scan error and returns false, and
+// every loop of the scan stops.
+func (ctx *evalContext) step() bool {
+	if ctx.scan == nil {
+		ctx.scan = &scanState{}
+	}
+	s := ctx.scan
+	if s.err != nil {
+		return false
+	}
+	s.steps++
+	switch {
+	case s.steps > maxLoopSteps:
+		s.err = ErrLoopBudgetExceeded
+	case s.steps%loopCheckInterval == 0 && ctx.deadline != nil:
+		s.err = ctx.deadline.Err()
+	}
+	return s.err == nil
 }
 
 func evalFor(e ast.ForExpr, ctx *evalContext) any {
 	satisfied := 0
 	total := 0
+	aborted := false
 	tally := func() bool {
+		if !ctx.step() {
+			aborted = true
+			return false
+		}
 		total++
 		if evalExpr(e.Body, ctx) {
 			satisfied++
@@ -552,12 +582,7 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 		if ctx.vars == nil {
 			ctx.vars = make(map[string]int64, 1)
 		}
-		aborted := false
-		for i, n := lo, 0; lo <= hi; i, n = i+1, n+1 {
-			if n >= maxLoopIterations || (n%loopCheckInterval == 0 && ctx.expired()) {
-				aborted = true
-				break
-			}
+		for i := lo; lo <= hi; i++ {
 			ctx.vars[e.Var] = i
 			if !tally() || i == hi {
 				break
@@ -567,9 +592,6 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 			ctx.vars[e.Var] = prev
 		} else {
 			delete(ctx.vars, e.Var)
-		}
-		if aborted {
-			return nil
 		}
 	} else {
 		prevCur, prevIn := ctx.cur, ctx.inSet
@@ -581,6 +603,9 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 			}
 		}
 		ctx.cur, ctx.inSet = prevCur, prevIn
+	}
+	if aborted {
+		return nil
 	}
 	switch e.Quant {
 	case "any":

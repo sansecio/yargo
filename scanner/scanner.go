@@ -496,7 +496,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 	results := make([]bool, len(r.rules))
 	scan := &scanState{buf: buf, done: ctx.Done()}
 	if !r.globalsHold(ctx, buf, hits, ext, results, scan) {
-		return nil
+		return scan.err
 	}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
@@ -528,7 +528,11 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 		}
 
 		cr := r.rules[ruleIdx]
-		if !r.evalRule(ctx, buf, cr, ruleHits, ext, results, scan) {
+		matched := r.evalRule(ctx, buf, cr, ruleHits, ext, results, scan)
+		if scan.err != nil {
+			return scan.err
+		}
+		if !matched {
 			continue
 		}
 		results[ruleIdx] = true
