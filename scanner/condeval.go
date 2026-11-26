@@ -212,13 +212,13 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 		return evalAny(e.Inner, ctx)
 
 	case ast.AnyOf:
-		return evalAnyOf(e, ctx)
+		return ctx.quantified("any", 0, matchingStringIndices(e.Pattern, ctx.stringNames))
 
 	case ast.AllOf:
-		return evalAllOf(e, ctx)
+		return ctx.quantified("all", 0, matchingStringIndices(e.Pattern, ctx.stringNames))
 
 	case ast.NOf:
-		return evalNOf(e, ctx)
+		return ctx.quantified(e.Quant, e.N, ctx.setIndices(e.Patterns))
 
 	default:
 		return nil
@@ -674,20 +674,6 @@ func (ctx *evalContext) setIndices(patterns []string) []int {
 	return seen
 }
 
-func toInt(v any) (int64, bool) {
-	switch x := v.(type) {
-	case int64:
-		return x, true
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	default:
-		return 0, false
-	}
-}
-
 func compareInts(op string, l, r int64) any {
 	switch op {
 	case "==":
@@ -887,43 +873,24 @@ func (ctx *evalContext) stringIndex(name string) int {
 	return -1
 }
 
-// evalAnyOf evaluates "any of" expressions.
-func evalAnyOf(e ast.AnyOf, ctx *evalContext) bool {
-	return slices.ContainsFunc(matchingStringIndices(e.Pattern, ctx.stringNames), ctx.matched)
-}
-
-// evalAllOf evaluates "all of" expressions.
-func evalAllOf(e ast.AllOf, ctx *evalContext) bool {
-	indices := matchingStringIndices(e.Pattern, ctx.stringNames)
-	if len(indices) == 0 {
-		return false
+// quantified reports whether quant ("any", "all", "none" or "count" with
+// n) of the strings at indices matched. "all" of an empty set is false.
+func (ctx *evalContext) quantified(quant string, n int64, indices []int) bool {
+	switch quant {
+	case "any":
+		return slices.ContainsFunc(indices, ctx.matched)
+	case "none":
+		return !slices.ContainsFunc(indices, ctx.matched)
+	case "all":
+		return len(indices) > 0 && !slices.ContainsFunc(indices, func(idx int) bool { return !ctx.matched(idx) })
 	}
+	matched := int64(0)
 	for _, idx := range indices {
-		if !ctx.matched(idx) {
-			return false
-		}
-	}
-	return true
-}
-
-func evalNOf(e ast.NOf, ctx *evalContext) bool {
-	seen := ctx.setIndices(e.Patterns)
-	matched := 0
-	for _, idx := range seen {
 		if ctx.matched(idx) {
 			matched++
 		}
 	}
-	switch e.Quant {
-	case "none":
-		return matched == 0
-	case "any":
-		return matched >= 1
-	case "all":
-		return len(seen) > 0 && matched == len(seen)
-	default:
-		return matched >= int(e.N)
-	}
+	return matched >= n
 }
 
 // matchingStringIndices returns the indices of strings that match the pattern.
