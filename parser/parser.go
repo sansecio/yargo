@@ -92,11 +92,21 @@ func addModifier(m ast.StringModifiers, mod string) ast.StringModifiers {
 		addArgumentModifier(&m, mod)
 		return m
 	}
-	if *flag {
+	if *flag && !acceptedTwiceBefore(mod) {
 		m.Unsupported = append(m.Unsupported, mod+" "+mod)
 	}
 	*flag = true
 	return m
+}
+
+// acceptedTwiceBefore reports whether releases before libyara-style modifier
+// checks accepted mod repeated on one string; those strings keep compiling.
+func acceptedTwiceBefore(mod string) bool {
+	switch mod {
+	case "ascii", "fullword", "nocase", "private", "base64":
+		return true
+	}
+	return false
 }
 
 func boolModifier(m *ast.StringModifiers, mod string) *bool {
@@ -153,12 +163,15 @@ func invalidModifierCombination(m ast.StringModifiers) string {
 	case m.Base64Wide:
 		base64 = "base64wide"
 	}
+	// releases before these checks accepted base64 with nocase or fullword
+	// when no newer modifier was involved; those strings keep compiling
+	legacy := m.Base64 && !m.Base64Wide && m.Base64Alphabet == "" && !m.Wide && m.Xor == nil
 	switch {
 	case m.Xor != nil && m.Nocase:
 		return "xor nocase"
-	case base64 != "" && m.Nocase:
+	case base64 != "" && m.Nocase && !legacy:
 		return base64 + " nocase"
-	case base64 != "" && m.Fullword:
+	case base64 != "" && m.Fullword && !legacy:
 		return base64 + " fullword"
 	case base64 != "" && m.Xor != nil:
 		return base64 + " xor"

@@ -94,18 +94,13 @@ func TestParseInvalidModifierCombinationsAreUnsupported(t *testing.T) {
 	for _, mods := range []string{
 		"xor nocase",
 		"nocase xor(1-2)",
-		"base64 nocase",
 		"base64wide nocase",
-		"base64 fullword",
+		"base64 wide nocase",
+		"base64wide fullword",
 		"base64 xor",
 		"base64wide xor(3)",
 		"wide wide",
-		"ascii ascii",
-		"nocase nocase",
-		"fullword fullword",
-		"private private",
 		"xor xor(1)",
-		"base64 base64",
 		"base64wide base64wide",
 	} {
 		rs := mustParse(t, `rule t { strings: $a = "abc" `+mods+` condition: $a }`)
@@ -116,7 +111,7 @@ func TestParseInvalidModifierCombinationsAreUnsupported(t *testing.T) {
 			t.Errorf("%s: expected a warning", mods)
 		}
 	}
-	for _, mods := range []string{"base64 base64wide", "xor wide ascii", "nocase wide fullword", "base64 wide"} {
+	for _, mods := range []string{"base64 base64wide", "xor wide ascii", "nocase wide fullword", "base64 wide", "base64 nocase", "base64 fullword", "ascii ascii", "nocase nocase", "fullword fullword", "private private", "base64 base64"} {
 		rs := mustParse(t, `rule t { strings: $a = "abc" `+mods+` condition: $a }`)
 		if m := rs.Rules[0].Strings[0].Modifiers; len(m.Unsupported) != 0 {
 			t.Errorf("%s: expected supported, got %+v", mods, m)
