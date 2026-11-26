@@ -101,3 +101,35 @@ rule ok { condition: filesize > 0 }`)
 		t.Errorf("expected rule r reported as skipped, got %+v", skipped)
 	}
 }
+
+// libyara externals are integers, floats, booleans or strings; every Go
+// integer and float width maps onto them.
+// https://yara.readthedocs.io/en/stable/writingrules.html#external-variables
+func TestExternalNumericWidths(t *testing.T) {
+	rules, err := compileWith(t, `rule r { condition: level == 7 } rule f { condition: ratio > 0.5 and ratio < 0.75 }`,
+		CompileOptions{Externals: []string{"level", "ratio"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []any{int(7), int8(7), int16(7), int32(7), int64(7), uint(7), uint8(7), uint16(7), uint32(7), uint64(7), uintptr(7), float32(7), float64(7)} {
+		if got := scanNamesWith(t, rules, nil, Externals{"level": v, "ratio": 0.625}); !reflect.DeepEqual(got, []string{"r", "f"}) {
+			t.Errorf("%T: matches = %v", v, got)
+		}
+	}
+	if got := scanNamesWith(t, rules, nil, Externals{"ratio": float32(0.625)}); !reflect.DeepEqual(got, []string{"f"}) {
+		t.Errorf("float32 ratio: matches = %v", got)
+	}
+}
+
+func TestExternalOfInvalidTypeFailsTheScan(t *testing.T) {
+	rules, err := compileWith(t, `rule r { condition: level == 7 }`, CompileOptions{Externals: []string{"level"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []any{[]byte("7"), struct{}{}, uint64(1 << 63), complex(1, 0)} {
+		var matches MatchRules
+		if err := rules.ScanMemWith(nil, Externals{"level": v}, 0, time.Second, &matches); err == nil {
+			t.Errorf("%T(%v): expected an error", v, v)
+		}
+	}
+}

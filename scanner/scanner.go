@@ -184,8 +184,8 @@ func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
 }
 
 // Externals holds external variable values for one scan, keyed by name.
-// Values may be int, int32, uint32, int64, bool or string; values of any
-// other type leave the variable undefined.
+// Values may be of any Go integer, float, bool or string type; ScanMemWith
+// fails on other types and on unsigned values above math.MaxInt64.
 type Externals map[string]any
 
 // SkippedRule names a rule that Compile did not compile and why.
@@ -210,6 +210,11 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
 	if len(r.rules) == 0 {
 		return nil
+	}
+
+	ext, err := normalizeExternals(ext)
+	if err != nil {
+		return err
 	}
 
 	ctx := context.Background()

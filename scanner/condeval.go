@@ -3,6 +3,9 @@ package scanner
 import (
 	"cmp"
 	"context"
+	"fmt"
+	"math"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -755,7 +758,7 @@ func (ctx *evalContext) lookup(name string) any {
 		return ctx.lookupPE(name)
 	}
 	if v, ok := ctx.externals[name]; ok {
-		return normalizeExternal(v)
+		return v
 	}
 	if idx, ok := ctx.ruleIndex[name]; ok && int(idx) < len(ctx.results) {
 		return ctx.results[idx]
@@ -763,19 +766,41 @@ func (ctx *evalContext) lookup(name string) any {
 	return nil
 }
 
-func normalizeExternal(v any) any {
-	switch x := v.(type) {
-	case int:
-		return int64(x)
-	case int32:
-		return int64(x)
-	case uint32:
-		return int64(x)
-	case int64, string, bool:
-		return x
-	default:
-		return nil
+// normalizeExternals converts external values to the int64, float64,
+// bool and string values conditions work with, once per scan.
+func normalizeExternals(ext Externals) (Externals, error) {
+	if len(ext) == 0 {
+		return nil, nil
 	}
+	out := make(Externals, len(ext))
+	for name, v := range ext {
+		n, ok := normalizeExternal(v)
+		if !ok {
+			return nil, fmt.Errorf("external %q: unsupported value %v of type %T", name, v, v)
+		}
+		out[name] = n
+	}
+	return out, nil
+}
+
+func normalizeExternal(v any) (any, bool) {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if rv.Uint() > math.MaxInt64 {
+			return nil, false
+		}
+		return int64(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), true
+	case reflect.Bool:
+		return rv.Bool(), true
+	case reflect.String:
+		return rv.String(), true
+	}
+	return nil, false
 }
 
 func (ctx *evalContext) refIndex(name string) int {
