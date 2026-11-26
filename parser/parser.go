@@ -75,6 +75,97 @@ func hasDuplicateByte(s string) bool {
 	return false
 }
 
+// addModifier applies one string modifier. A modifier given twice is
+// unsupported, as libyara rejects it with "duplicated modifier".
+func addModifier(m ast.StringModifiers, mod string) ast.StringModifiers {
+	if mod == "base64" || mod == "base64wide" {
+		if m.Base64Alphabet != "" {
+			m.Unsupported = append(m.Unsupported, mod)
+			return m
+		}
+	}
+	flag := boolModifier(&m, mod)
+	if flag == nil {
+		// known-but-unimplemented modifiers, argument forms of supported
+		// modifiers, or future modifiers; recorded so the rule is skipped
+		// at compile time and reported as a warning
+		addArgumentModifier(&m, mod)
+		return m
+	}
+	if *flag {
+		m.Unsupported = append(m.Unsupported, mod+" "+mod)
+	}
+	*flag = true
+	return m
+}
+
+func boolModifier(m *ast.StringModifiers, mod string) *bool {
+	switch mod {
+	case "ascii":
+		return &m.Ascii
+	case "wide":
+		return &m.Wide
+	case "fullword":
+		return &m.Fullword
+	case "nocase":
+		return &m.Nocase
+	case "private":
+		return &m.Private
+	case "base64":
+		return &m.Base64
+	case "base64wide":
+		return &m.Base64Wide
+	}
+	return nil
+}
+
+func addArgumentModifier(m *ast.StringModifiers, mod string) {
+	if x, ok := parseXorModifier(mod); ok {
+		if m.Xor != nil {
+			m.Unsupported = append(m.Unsupported, "xor "+mod)
+		}
+		m.Xor = x
+		return
+	}
+	wide, alphabet, ok := parseBase64Modifier(mod)
+	if !ok {
+		m.Unsupported = append(m.Unsupported, mod)
+		return
+	}
+	switch {
+	case m.Base64Alphabet == "" && (m.Base64 || m.Base64Wide), m.Base64Alphabet != "" && m.Base64Alphabet != alphabet:
+		m.Unsupported = append(m.Unsupported, mod)
+	case wide && m.Base64Wide, !wide && m.Base64:
+		m.Unsupported = append(m.Unsupported, mod+" "+mod)
+	}
+	m.Base64Alphabet = alphabet
+	m.Base64 = m.Base64 || !wide
+	m.Base64Wide = m.Base64Wide || wide
+}
+
+// invalidModifierCombination names the modifier pair libyara refuses to
+// combine on one string (_yr_parser_check_string_modifiers), or "".
+func invalidModifierCombination(m ast.StringModifiers) string {
+	base64 := ""
+	switch {
+	case m.Base64:
+		base64 = "base64"
+	case m.Base64Wide:
+		base64 = "base64wide"
+	}
+	switch {
+	case m.Xor != nil && m.Nocase:
+		return "xor nocase"
+	case base64 != "" && m.Nocase:
+		return base64 + " nocase"
+	case base64 != "" && m.Fullword:
+		return base64 + " fullword"
+	case base64 != "" && m.Xor != nil:
+		return base64 + " xor"
+	}
+	return ""
+}
+
 // parseXorKey reads a libyara number: decimal, 0x hex or 0o octal.
 func parseXorKey(s string) (byte, bool) {
 	s = strings.TrimSpace(s)
@@ -150,6 +241,9 @@ func (p *Parser) Parse(input string) (*ast.RuleSet, error) {
 func collectWarnings(rs *ast.RuleSet) {
 	for _, r := range rs.Rules {
 		for _, s := range r.Strings {
+			if combo := invalidModifierCombination(s.Modifiers); combo != "" {
+				s.Modifiers.Unsupported = append(s.Modifiers.Unsupported, combo)
+			}
 			for _, mod := range s.Modifiers.Unsupported {
 				rs.Warnings = append(rs.Warnings, fmt.Sprintf(
 					"rule %q string %s: unsupported modifier %q, rule will not match", r.Name, s.Name, mod,

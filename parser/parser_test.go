@@ -143,7 +143,7 @@ func TestParseModifiers(t *testing.T) {
 	}{
 		{`"x" base64`, ast.StringModifiers{Base64: true}},
 		{`"x" fullword`, ast.StringModifiers{Fullword: true}},
-		{`"x" base64 fullword`, ast.StringModifiers{Base64: true, Fullword: true}},
+		{`"x" base64 fullword`, ast.StringModifiers{Base64: true, Fullword: true, Unsupported: []string{"base64 fullword"}}},
 		{`{ FF } base64`, ast.StringModifiers{Base64: true}},
 		{`"x" ascii`, ast.StringModifiers{Ascii: true}},
 		{`"x" nocase`, ast.StringModifiers{Nocase: true}},
@@ -153,7 +153,7 @@ func TestParseModifiers(t *testing.T) {
 		{`"x" base64wide`, ast.StringModifiers{Base64Wide: true}},
 		{`"x" base64 base64wide`, ast.StringModifiers{Base64: true, Base64Wide: true}},
 		{`"x" wide base64`, ast.StringModifiers{Wide: true, Base64: true}},
-		{`"x" wide xor nocase`, ast.StringModifiers{Wide: true, Nocase: true, Xor: &ast.XorRange{Min: 0, Max: 255}}},
+		{`"x" wide xor`, ast.StringModifiers{Wide: true, Xor: &ast.XorRange{Min: 0, Max: 255}}},
 		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 255}}},
 		{`"x" xor ( 0x01 )`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 1}}},
 		{`"x" base64("!@#$%^&*(){}")`, ast.StringModifiers{Unsupported: []string{`base64("!@#$%^&*(){}")`}}},

@@ -182,7 +182,7 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line yara.y:649
+//line yara.y:616
 
 //line yacctab:1
 var yyExca = [...]int16{
@@ -1157,74 +1157,41 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line yara.y:264
 		{
-			yyVAL.mods = yyDollar[1].mods
-			switch yyDollar[2].str {
-			case "ascii":
-				yyVAL.mods.Ascii = true
-			case "wide":
-				yyVAL.mods.Wide = true
-			case "base64", "base64wide":
-				if yyVAL.mods.Base64Alphabet != "" {
-					yyVAL.mods.Unsupported = append(yyVAL.mods.Unsupported, yyDollar[2].str)
-				} else if yyDollar[2].str == "base64" {
-					yyVAL.mods.Base64 = true
-				} else {
-					yyVAL.mods.Base64Wide = true
-				}
-			case "fullword":
-				yyVAL.mods.Fullword = true
-			case "nocase":
-				yyVAL.mods.Nocase = true
-			case "private":
-				yyVAL.mods.Private = true
-			default:
-				// known-but-unimplemented (base64wide, ...), argument forms of
-				// supported modifiers, or future modifiers; recorded so the
-				// rule is skipped at compile time and reported as a warning
-				if x, ok := parseXorModifier(yyDollar[2].str); ok {
-					yyVAL.mods.Xor = x
-				} else if wide, alphabet, ok := parseBase64Modifier(yyDollar[2].str); ok && (yyVAL.mods.Base64Alphabet == alphabet || (yyVAL.mods.Base64Alphabet == "" && !yyVAL.mods.Base64 && !yyVAL.mods.Base64Wide)) {
-					yyVAL.mods.Base64Alphabet = alphabet
-					yyVAL.mods.Base64 = yyVAL.mods.Base64 || !wide
-					yyVAL.mods.Base64Wide = yyVAL.mods.Base64Wide || wide
-				} else {
-					yyVAL.mods.Unsupported = append(yyVAL.mods.Unsupported, yyDollar[2].str)
-				}
-			}
+			yyVAL.mods = addModifier(yyDollar[1].mods, yyDollar[2].str)
 		}
 	case 33:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line yara.y:304
+//line yara.y:271
 		{
 			yyVAL.hexTokens = nil
 		}
 	case 34:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line yara.y:308
+//line yara.y:275
 		{
 			yyVAL.hexTokens = append(yyDollar[1].hexTokens, yyDollar[2].hexToken)
 		}
 	case 35:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:315
+//line yara.y:282
 		{
 			yyVAL.hexToken = ast.HexByte{Value: yyDollar[1].byt}
 		}
 	case 36:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:319
+//line yara.y:286
 		{
 			yyVAL.hexToken = ast.HexWildcard{}
 		}
 	case 37:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:323
+//line yara.y:290
 		{
 			yyVAL.hexToken = yyDollar[1].hexToken
 		}
 	case 38:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:327
+//line yara.y:294
 		{
 			jump, err := parseHexJump(yyDollar[1].str)
 			if err != nil {
@@ -1234,7 +1201,7 @@ yydefault:
 		}
 	case 39:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:335
+//line yara.y:302
 		{
 			alt, err := parseHexAlt(yyDollar[1].str)
 			if err != nil {
@@ -1244,200 +1211,200 @@ yydefault:
 		}
 	case 40:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:346
+//line yara.y:313
 		{
 			yyVAL.expr = yyDollar[3].expr
 		}
 	case 41:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:353
+//line yara.y:320
 		{
 			yyVAL.expr = yyDollar[1].expr
 		}
 	case 42:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:357
+//line yara.y:324
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "or", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 43:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:361
+//line yara.y:328
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "and", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 44:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line yara.y:365
+//line yara.y:332
 		{
 			yyVAL.expr = ast.NotExpr{Inner: yyDollar[2].expr}
 		}
 	case 45:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:369
+//line yara.y:336
 		{
 			yyVAL.expr = comparisonExpr(yylex, "==", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 46:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:373
+//line yara.y:340
 		{
 			yyVAL.expr = comparisonExpr(yylex, "!=", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 47:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:377
+//line yara.y:344
 		{
 			yyVAL.expr = comparisonExpr(yylex, "<", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 48:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:381
+//line yara.y:348
 		{
 			yyVAL.expr = comparisonExpr(yylex, ">", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 49:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:385
+//line yara.y:352
 		{
 			yyVAL.expr = comparisonExpr(yylex, "<=", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 50:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:389
+//line yara.y:356
 		{
 			yyVAL.expr = comparisonExpr(yylex, ">=", yyDollar[1].expr, yyDollar[3].expr)
 		}
 	case 51:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:393
+//line yara.y:360
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "+", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 52:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:397
+//line yara.y:364
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "-", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 53:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:401
+//line yara.y:368
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "*", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 54:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:405
+//line yara.y:372
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "/", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 55:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:409
+//line yara.y:376
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "%", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 56:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:413
+//line yara.y:380
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "&", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 57:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:417
+//line yara.y:384
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "|", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 58:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:421
+//line yara.y:388
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "^", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 59:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:425
+//line yara.y:392
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "<<", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 60:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:429
+//line yara.y:396
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: ">>", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 61:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line yara.y:433
+//line yara.y:400
 		{
 			yyVAL.expr = ast.UnaryExpr{Op: "-", Inner: yyDollar[2].expr}
 		}
 	case 62:
 		yyDollar = yyS[yypt-2 : yypt+1]
-//line yara.y:437
+//line yara.y:404
 		{
 			yyVAL.expr = ast.UnaryExpr{Op: "~", Inner: yyDollar[2].expr}
 		}
 	case 63:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:441
+//line yara.y:408
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "contains", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 64:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:445
+//line yara.y:412
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "icontains", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 65:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:449
+//line yara.y:416
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "startswith", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 66:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:453
+//line yara.y:420
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "istartswith", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 67:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:457
+//line yara.y:424
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "endswith", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 68:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:461
+//line yara.y:428
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "iendswith", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 69:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:465
+//line yara.y:432
 		{
 			yyVAL.expr = ast.BinaryExpr{Op: "iequals", Left: yyDollar[1].expr, Right: yyDollar[3].expr}
 		}
 	case 70:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:469
+//line yara.y:436
 		{
 			pattern, mods := parseRegex(yyDollar[3].str)
 			yyVAL.expr = ast.BinaryExpr{Op: "matches", Left: yyDollar[1].expr, Right: ast.RegexLit{Pattern: pattern, Modifiers: mods}}
 		}
 	case 71:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:477
+//line yara.y:444
 		{
 			yyVAL.expr = ast.ParenExpr{Inner: yyDollar[2].expr}
 		}
 	case 72:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:481
+//line yara.y:448
 		{
 			if len(yyDollar[3].strs) == 1 {
 				yyVAL.expr = ast.AnyOf{Pattern: yyDollar[3].strs[0]}
@@ -1447,7 +1414,7 @@ yydefault:
 		}
 	case 73:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:489
+//line yara.y:456
 		{
 			if len(yyDollar[3].strs) == 1 {
 				yyVAL.expr = ast.AllOf{Pattern: yyDollar[3].strs[0]}
@@ -1457,49 +1424,49 @@ yydefault:
 		}
 	case 74:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:497
+//line yara.y:464
 		{
 			yyVAL.expr = ast.NOf{Quant: "none", Patterns: yyDollar[3].strs}
 		}
 	case 75:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:501
+//line yara.y:468
 		{
 			yyVAL.expr = ast.NOf{Quant: "count", N: yyDollar[1].num, Patterns: yyDollar[3].strs}
 		}
 	case 76:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:505
+//line yara.y:472
 		{
 			yyVAL.expr = ast.AtExpr{Ref: ast.StringRef{Name: yyDollar[1].str}, Pos: yyDollar[3].expr}
 		}
 	case 77:
 		yyDollar = yyS[yypt-7 : yypt+1]
-//line yara.y:509
+//line yara.y:476
 		{
 			yyVAL.expr = ast.InExpr{Ref: ast.StringRef{Name: yyDollar[1].str}, Lo: yyDollar[4].expr, Hi: yyDollar[6].expr}
 		}
 	case 78:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:513
+//line yara.y:480
 		{
 			yyVAL.expr = ast.CountOf{Name: yyDollar[1].str}
 		}
 	case 79:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:517
+//line yara.y:484
 		{
 			yyVAL.expr = ast.OffsetOf{Name: yyDollar[1].str}
 		}
 	case 80:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:521
+//line yara.y:488
 		{
 			yyVAL.expr = ast.LenOf{Name: yyDollar[1].str}
 		}
 	case 81:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line yara.y:525
+//line yara.y:492
 		{
 			switch b := yyDollar[1].expr.(type) {
 			case ast.OffsetOf:
@@ -1512,151 +1479,151 @@ yydefault:
 		}
 	case 82:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:536
+//line yara.y:503
 		{
 			yyVAL.expr = ast.Field{Base: yyDollar[1].expr, Name: yyDollar[3].str}
 		}
 	case 83:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:540
+//line yara.y:507
 		{
 			yyVAL.expr = ast.FloatLit{Value: yyDollar[1].flt}
 		}
 	case 84:
 		yyDollar = yyS[yypt-13 : yypt+1]
-//line yara.y:544
+//line yara.y:511
 		{
 			yyVAL.expr = ast.ForExpr{Quant: yyDollar[2].quant.quant, N: yyDollar[2].quant.n, Var: yyDollar[3].str, Lo: yyDollar[6].expr, Hi: yyDollar[8].expr, Body: ast.ParenExpr{Inner: yyDollar[12].expr}}
 		}
 	case 85:
 		yyDollar = yyS[yypt-8 : yypt+1]
-//line yara.y:548
+//line yara.y:515
 		{
 			yyVAL.expr = ast.ForExpr{Quant: yyDollar[2].quant.quant, N: yyDollar[2].quant.n, Patterns: yyDollar[4].strs, Body: ast.ParenExpr{Inner: yyDollar[7].expr}}
 		}
 	case 86:
 		yyDollar = yyS[yypt-4 : yypt+1]
-//line yara.y:552
+//line yara.y:519
 		{
 			yyVAL.expr = ast.FuncCall{Name: yyDollar[1].str, Args: yyDollar[3].exprs}
 		}
 	case 87:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:556
+//line yara.y:523
 		{
 			yyVAL.expr = ast.Ident{Name: yyDollar[1].str}
 		}
 	case 88:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:560
+//line yara.y:527
 		{
 			yyVAL.expr = ast.StrLit{Value: unquoteString(yyDollar[1].str)}
 		}
 	case 89:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:564
+//line yara.y:531
 		{
 			yyVAL.expr = ast.BoolLit{Value: true}
 		}
 	case 90:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:568
+//line yara.y:535
 		{
 			yyVAL.expr = ast.BoolLit{Value: false}
 		}
 	case 91:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:572
+//line yara.y:539
 		{
 			yyVAL.expr = ast.StringRef{Name: yyDollar[1].str}
 		}
 	case 92:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:576
+//line yara.y:543
 		{
 			yyVAL.expr = ast.IntLit{Value: yyDollar[1].num}
 		}
 	case 93:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:580
+//line yara.y:547
 		{
 			yyVAL.expr = ast.Filesize{}
 		}
 	case 94:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:587
+//line yara.y:554
 		{
 			yyVAL.quant = forQuant{quant: "any"}
 		}
 	case 95:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:591
+//line yara.y:558
 		{
 			yyVAL.quant = forQuant{quant: "all"}
 		}
 	case 96:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:595
+//line yara.y:562
 		{
 			yyVAL.quant = forQuant{quant: "none"}
 		}
 	case 97:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:599
+//line yara.y:566
 		{
 			yyVAL.quant = forQuant{quant: "count", n: yyDollar[1].num}
 		}
 	case 98:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:606
+//line yara.y:573
 		{
 			yyVAL.strs = []string{"them"}
 		}
 	case 99:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:610
+//line yara.y:577
 		{
 			yyVAL.strs = yyDollar[2].strs
 		}
 	case 100:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:617
+//line yara.y:584
 		{
 			yyVAL.strs = []string{yyDollar[1].str}
 		}
 	case 101:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:621
+//line yara.y:588
 		{
 			yyVAL.strs = []string{yyDollar[1].str}
 		}
 	case 102:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:625
+//line yara.y:592
 		{
 			yyVAL.strs = append(yyDollar[1].strs, yyDollar[3].str)
 		}
 	case 103:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:629
+//line yara.y:596
 		{
 			yyVAL.strs = append(yyDollar[1].strs, yyDollar[3].str)
 		}
 	case 104:
 		yyDollar = yyS[yypt-0 : yypt+1]
-//line yara.y:636
+//line yara.y:603
 		{
 			yyVAL.exprs = nil
 		}
 	case 105:
 		yyDollar = yyS[yypt-1 : yypt+1]
-//line yara.y:640
+//line yara.y:607
 		{
 			yyVAL.exprs = []ast.Expr{yyDollar[1].expr}
 		}
 	case 106:
 		yyDollar = yyS[yypt-3 : yypt+1]
-//line yara.y:644
+//line yara.y:611
 		{
 			yyVAL.exprs = append(yyDollar[1].exprs, yyDollar[3].expr)
 		}

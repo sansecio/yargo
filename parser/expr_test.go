@@ -85,3 +85,41 @@ func TestParseXorModifierInvalidRange(t *testing.T) {
 		}
 	}
 }
+
+// libyara rejects duplicated modifiers and the combinations it does not
+// implement (_yr_parser_check_string_modifiers in libyara/parser.c); here
+// they leave the string unsupported so the rule is skipped and reported.
+// https://yara.readthedocs.io/en/stable/writingrules.html#string-modifier-summary
+func TestParseInvalidModifierCombinationsAreUnsupported(t *testing.T) {
+	for _, mods := range []string{
+		"xor nocase",
+		"nocase xor(1-2)",
+		"base64 nocase",
+		"base64wide nocase",
+		"base64 fullword",
+		"base64 xor",
+		"base64wide xor(3)",
+		"wide wide",
+		"ascii ascii",
+		"nocase nocase",
+		"fullword fullword",
+		"private private",
+		"xor xor(1)",
+		"base64 base64",
+		"base64wide base64wide",
+	} {
+		rs := mustParse(t, `rule t { strings: $a = "abc" `+mods+` condition: $a }`)
+		if m := rs.Rules[0].Strings[0].Modifiers; len(m.Unsupported) == 0 {
+			t.Errorf("%s: expected unsupported, got %+v", mods, m)
+		}
+		if len(rs.Warnings) == 0 {
+			t.Errorf("%s: expected a warning", mods)
+		}
+	}
+	for _, mods := range []string{"base64 base64wide", "xor wide ascii", "nocase wide fullword", "base64 wide"} {
+		rs := mustParse(t, `rule t { strings: $a = "abc" `+mods+` condition: $a }`)
+		if m := rs.Rules[0].Strings[0].Modifiers; len(m.Unsupported) != 0 {
+			t.Errorf("%s: expected supported, got %+v", mods, m)
+		}
+	}
+}
