@@ -74,3 +74,20 @@ func TestBase64AlphabetThatCannotEncodeIsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// libyara skips the one-byte lead for one-byte strings and strips the
+// characters touched by the padding, so "a" yields only "Y" and "h".
+// https://github.com/VirusTotal/yara/blob/master/libyara/base64.c
+func TestBase64OneByteStringFollowsLibyara(t *testing.T) {
+	got := base64Patterns([]byte("a"), base64.StdEncoding.WithPadding(base64.NoPadding))
+	if want := [][]byte{[]byte("Y"), []byte("h")}; !slices.EqualFunc(got, want, bytes.Equal) {
+		t.Errorf("patterns = %q, want %q", got, want)
+	}
+	rules := compileSource(t, `rule r { strings: $a = "a" base64 condition: $a }`)
+	if got := scanNames(t, rules, []byte("UWE=")); len(got) != 0 {
+		t.Errorf("UWE= matched %v; it is base64 of \"Qa\" and contains neither Y nor h", got)
+	}
+	if got := scanNames(t, rules, []byte("YQ==")); len(got) != 1 {
+		t.Errorf("YQ== matches = %v, want r", got)
+	}
+}
