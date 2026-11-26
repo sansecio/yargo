@@ -243,6 +243,38 @@ func unsupportedWide(s *ast.StringDef) bool {
 	return !ok
 }
 
+// maxVariantBytes caps the pattern bytes one wide or xor string expands
+// to. Every byte costs about 40 bytes of automaton at compile time, so the
+// cap is about 40 MB, where a 200 000 byte xor wide string needed 6 GB.
+const maxVariantBytes = 1 << 20
+
+// oversizedString returns the name of the first text string whose wide and
+// xor variants exceed maxVariantBytes, or "".
+func oversizedString(r *ast.Rule) string {
+	for _, s := range r.Strings {
+		text, ok := s.Value.(ast.TextString)
+		m := s.Modifiers
+		if !ok || isBase64(s) || (!m.Wide && m.Xor == nil) {
+			continue
+		}
+		forms := 0
+		if !m.Wide || m.Ascii {
+			forms++
+		}
+		if m.Wide {
+			forms += 2
+		}
+		keys := 1
+		if m.Xor != nil {
+			keys = int(m.Xor.Max) - int(m.Xor.Min) + 1
+		}
+		if len(text.Value) > maxVariantBytes/(forms*keys) {
+			return s.Name
+		}
+	}
+	return ""
+}
+
 type variant struct {
 	bytes []byte
 	wide  bool
