@@ -490,6 +490,32 @@ func (l *yaraLexer) lexHexAltToken(lval *yySymType) int {
 	return HEX_ALT
 }
 
+// conditionKeywords maps the reserved words of a condition to their tokens.
+var conditionKeywords = map[string]int{
+	"and":         AND,
+	"or":          OR,
+	"not":         NOT,
+	"at":          AT,
+	"any":         ANY,
+	"all":         ALL,
+	"none":        NONE,
+	"for":         FOR,
+	"in":          IN,
+	"of":          OF,
+	"them":        THEM,
+	"filesize":    FILESIZE,
+	"contains":    CONTAINS,
+	"icontains":   ICONTAINS,
+	"startswith":  STARTSWITH,
+	"istartswith": ISTARTSWITH,
+	"endswith":    ENDSWITH,
+	"iendswith":   IENDSWITH,
+	"iequals":     IEQUALS,
+	"matches":     MATCHES,
+	"true":        TRUE,
+	"false":       FALSE,
+}
+
 func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	ch := l.peek()
 
@@ -548,55 +574,11 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 
 	if isAlpha(ch) || ch == '_' {
 		word := l.readDottedIdent()
-		switch word {
-		case "and":
-			return AND
-		case "or":
-			return OR
-		case "not":
-			return NOT
-		case "at":
-			return AT
-		case "any":
-			return ANY
-		case "all":
-			return ALL
-		case "none":
-			return NONE
-		case "for":
-			return FOR
-		case "in":
-			return IN
-		case "of":
-			return OF
-		case "them":
-			return THEM
-		case "filesize":
-			return FILESIZE
-		case "contains":
-			return CONTAINS
-		case "icontains":
-			return ICONTAINS
-		case "startswith":
-			return STARTSWITH
-		case "istartswith":
-			return ISTARTSWITH
-		case "endswith":
-			return ENDSWITH
-		case "iendswith":
-			return IENDSWITH
-		case "iequals":
-			return IEQUALS
-		case "matches":
-			return MATCHES
-		case "true":
-			return TRUE
-		case "false":
-			return FALSE
-		default:
-			lval.str = word
-			return COND_IDENT
+		if tok, ok := conditionKeywords[word]; ok {
+			return tok
 		}
+		lval.str = word
+		return COND_IDENT
 	}
 
 	l.pos++
