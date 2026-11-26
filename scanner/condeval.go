@@ -118,25 +118,8 @@ func truthy(v any) bool {
 
 func evalAny(expr ast.Expr, ctx *evalContext) any {
 	switch e := expr.(type) {
-	case ast.StringRef:
-		idx := ctx.refIndex(e.Name)
-		if idx < 0 {
-			return false
-		}
-		return ctx.matched(idx)
-
-	case ast.AtExpr:
-		idx := ctx.refIndex(e.Ref.Name)
-		if idx < 0 {
-			return false
-		}
-		pos := evalExprInt(e.Pos, ctx)
-		for _, h := range ctx.hitsFor(idx) {
-			if int64(h.pos) == pos {
-				return true
-			}
-		}
-		return false
+	case ast.StringRef, ast.AtExpr, ast.CountOf, ast.OffsetOf, ast.LenOf, ast.InExpr, ast.AnyOf, ast.AllOf, ast.NOf:
+		return evalStringExpr(e, ctx)
 
 	case ast.IntLit:
 		return e.Value
@@ -146,30 +129,6 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 
 	case ast.FloatLit:
 		return e.Value
-
-	case ast.InExpr:
-		return evalIn(e, ctx)
-
-	case ast.CountOf:
-		idx := ctx.refIndex(e.Name)
-		if idx < 0 {
-			return nil
-		}
-		return int64(len(ctx.hitsFor(idx)))
-
-	case ast.OffsetOf:
-		h, ok := ctx.nthHit(e.Name, e.Index)
-		if !ok {
-			return nil
-		}
-		return int64(h.pos)
-
-	case ast.LenOf:
-		h, ok := ctx.nthHit(e.Name, e.Index)
-		if !ok {
-			return nil
-		}
-		return int64(h.n)
 
 	case ast.UnaryExpr:
 		return evalUnary(e, ctx)
@@ -208,6 +167,59 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	case ast.ParenExpr:
 		return evalAny(e.Inner, ctx)
 
+	default:
+		return nil
+	}
+}
+
+// evalStringExpr evaluates the expressions about the rule's strings:
+// references, counts, offsets, lengths and quantifiers.
+func evalStringExpr(expr ast.Expr, ctx *evalContext) any {
+	switch e := expr.(type) {
+	case ast.StringRef:
+		idx := ctx.refIndex(e.Name)
+		if idx < 0 {
+			return false
+		}
+		return ctx.matched(idx)
+
+	case ast.AtExpr:
+		idx := ctx.refIndex(e.Ref.Name)
+		if idx < 0 {
+			return false
+		}
+		pos := evalExprInt(e.Pos, ctx)
+		for _, h := range ctx.hitsFor(idx) {
+			if int64(h.pos) == pos {
+				return true
+			}
+		}
+		return false
+
+	case ast.InExpr:
+		return evalIn(e, ctx)
+
+	case ast.CountOf:
+		idx := ctx.refIndex(e.Name)
+		if idx < 0 {
+			return nil
+		}
+		return int64(len(ctx.hitsFor(idx)))
+
+	case ast.OffsetOf:
+		h, ok := ctx.nthHit(e.Name, e.Index)
+		if !ok {
+			return nil
+		}
+		return int64(h.pos)
+
+	case ast.LenOf:
+		h, ok := ctx.nthHit(e.Name, e.Index)
+		if !ok {
+			return nil
+		}
+		return int64(h.n)
+
 	case ast.AnyOf:
 		return ctx.quantified("any", 0, matchingStringIndices(e.Pattern, ctx.stringNames))
 
@@ -216,10 +228,8 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 
 	case ast.NOf:
 		return ctx.quantified(e.Quant, e.N, ctx.setIndices(e.Patterns))
-
-	default:
-		return nil
 	}
+	return nil
 }
 
 // evalFuncCall evaluates a function call and returns its result.
