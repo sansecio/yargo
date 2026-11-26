@@ -61,7 +61,6 @@ func TestExpressions(t *testing.T) {
 		{"for of all strings at", "for all of them : ($ at 0)", "ab", true},
 		{"for of any string in", "for any of ($a) : ($ in (1..3))", "xab", true},
 		{"for empty range", "for any i in (3..1) : (true)", "ab", false},
-		{"for loop variable restored", "(for any i in (1..2) : (i == 2)) and not i == 2", "ab", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,7 +129,7 @@ func TestMathAndHashFunctions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rules := compileSource(t, "rule r { condition: "+tt.cond+" }")
+			rules := compileSource(t, `import "math" import "hash" `+"rule r { condition: "+tt.cond+" }")
 			if got := reflect.DeepEqual(scanNames(t, rules, []byte(tt.data)), []string{"r"}); got != tt.want {
 				t.Errorf("expected match=%v, got %v", tt.want, got)
 			}

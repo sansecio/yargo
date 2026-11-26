@@ -30,7 +30,7 @@ func TestPEImportsByOrdinalUseTheLibyaraNameTables(t *testing.T) {
 			copy(b[at(0x2210):], tt.dll)
 			binary.LittleEndian.PutUint64(b[at(0x2120):], 0x8000000000000000|tt.ordinal)
 			sum := md5.Sum([]byte("kernel32.createfilea," + tt.want))
-			rules := compileSource(t, `rule r { condition: pe.imphash() == "`+hex.EncodeToString(sum[:])+`" }`)
+			rules := compileSource(t, `import "pe" rule r { condition: pe.imphash() == "`+hex.EncodeToString(sum[:])+`" }`)
 			if got := scanNames(t, rules, b); len(got) != 1 {
 				t.Errorf("imphash does not hash %q", tt.want)
 			}
@@ -45,7 +45,7 @@ func TestPEImportsByOrdinalMatchByLookedUpNameAndByOrdinal(t *testing.T) {
 	copy(b[at(0x2210):], "WS2_32.dll")
 	binary.LittleEndian.PutUint64(b[at(0x2120):], 0x8000000000000005)
 	for _, cond := range []string{`pe.imports("ws2_32.dll", "getpeername")`, `pe.imports("ws2_32.dll", 5)`} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if got := scanNames(t, rules, b); len(got) != 1 {
 			t.Errorf("%s did not match", cond)
 		}

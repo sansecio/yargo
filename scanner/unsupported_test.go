@@ -18,7 +18,7 @@ func TestUnsupportedModuleFieldsRejectedAtCompile(t *testing.T) {
 		`not pe.overlay.bogus == 1`,
 		`not pe.rich_signature.clear_data == "x"`,
 	} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
 			t.Errorf("%s: expected rejection, got %d rules, skipped %+v", cond, rules.NumRules(), rules.Skipped())
 		}

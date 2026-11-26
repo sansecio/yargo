@@ -151,7 +151,7 @@ func TestPEResourcesVersionInfoAndOverlay(t *testing.T) {
 }
 
 func TestPEOverlayIsZeroWithoutAppendedData(t *testing.T) {
-	rules := compileSource(t, "rule r { condition: pe.overlay.offset == 0 and pe.overlay.size == 0 }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.overlay.offset == 0 and pe.overlay.size == 0 }")
 	if got := scanNames(t, rules, buildPE(t)); len(got) != 1 {
 		t.Errorf("matches = %v", got)
 	}
@@ -159,7 +159,7 @@ func TestPEOverlayIsZeroWithoutAppendedData(t *testing.T) {
 
 func TestPEResourceTimestampIsUndefinedWithoutResourceDirectory(t *testing.T) {
 	for _, cond := range []string{"pe.resource_timestamp == 0", "not pe.resource_timestamp == 0"} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if got := scanNames(t, rules, buildPE(t)); len(got) != 0 {
 			t.Errorf("%s matched a PE without resources", cond)
 		}
@@ -174,16 +174,16 @@ func TestPEMembersOnNonPEAreUndefined(t *testing.T) {
 		"pe.resources[0].length == 0", "not pe.resources[0].length == 0",
 		"pe.number_of_signatures == 0", "not pe.number_of_signatures == 0",
 	} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if got := scanNames(t, rules, []byte("not a pe")); len(got) != 0 {
 			t.Errorf("%s matched a non-PE file", cond)
 		}
 	}
-	rules := compileSource(t, "rule r { condition: pe.is_pe }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.is_pe }")
 	if got := scanNames(t, rules, []byte("not a pe")); len(got) != 0 {
 		t.Error("pe.is_pe is true for a non-PE file")
 	}
-	rules = compileSource(t, "rule r { condition: not pe.is_pe }")
+	rules = compileSource(t, "import \"pe\" rule r { condition: not pe.is_pe }")
 	if got := scanNames(t, rules, []byte("not a pe")); len(got) != 1 {
 		t.Error("pe.is_pe is not zero for a non-PE file")
 	}
@@ -213,7 +213,7 @@ func TestPEResourceWalkIsBoundedAgainstSharedDirectories(t *testing.T) {
 	}
 	le.PutUint32(r[0x6000:], rsrcRVA+0x200)
 	le.PutUint32(r[0x6004:], 8)
-	rules := compileSource(t, "rule r { condition: pe.number_of_resources > 100000000 }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.number_of_resources > 100000000 }")
 	start := time.Now()
 	scanNames(t, rules, b)
 	if d := time.Since(start); d > time.Second {

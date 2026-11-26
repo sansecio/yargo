@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"maps"
 	"regexp/syntax"
 	"strings"
 
@@ -42,6 +41,10 @@ const (
 	minAtomLength = 3
 )
 
+func defaultCompile(pattern string) (Regexp, error) {
+	return experimental.CompileLatin1(pattern)
+}
+
 // Compile compiles an AST RuleSet into Rules ready for scanning.
 func Compile(rs *ast.RuleSet) (*Rules, error) {
 	return CompileWithOptions(rs, CompileOptions{})
@@ -50,9 +53,7 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 // CompileWithOptions compiles an AST RuleSet with the given options.
 func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	if opts.RegexCompiler == nil {
-		opts.RegexCompiler = func(pattern string) (Regexp, error) {
-			return experimental.CompileLatin1(pattern)
-		}
+		opts.RegexCompiler = defaultCompile
 	}
 	opts.RegexCompiler = recoverCompile(opts.RegexCompiler)
 
@@ -74,17 +75,26 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		}
 	}
 
+	check := newCondChecker(rules, rs.Imports)
 	for _, r := range rs.Rules {
 		if r.Condition == nil {
+			check.skipped[r.Name] = true
 			continue
 		}
-		if reason := unsupportedReason(r, rules); reason != "" {
+		reason, err := check.rule(r)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rule %q: %w", r.Name, err))
+			continue
+		}
+		if reason != "" {
+			check.skipped[r.Name] = true
 			rules.skipped = append(rules.skipped, SkippedRule{Rule: r.Name, Reason: reason})
 			continue
 		}
 
 		if len(skipSubtypes) > 0 {
 			if subtype := metaValue(r, "subtype"); subtype != "" && skipSubtypes[subtype] {
+				check.skipped[r.Name] = true
 				continue
 			}
 		}
@@ -100,6 +110,7 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 			}
 		}
 		if prepErr != nil {
+			check.skipped[r.Name] = true
 			if !opts.SkipInvalidRegex {
 				errs = append(errs, prepErr)
 				continue
@@ -200,111 +211,6 @@ func declaredExternals(extra []string) map[string]bool {
 		m[n] = true
 	}
 	return m
-}
-
-func unsupportedReason(r *ast.Rule, rules *Rules) string {
-	if hasUnsupportedModifier(r) {
-		return "unsupported string modifier"
-	}
-	return conditionReason(r.Condition, rules)
-}
-
-func conditionReason(expr ast.Expr, rules *Rules) string {
-	switch e := expr.(type) {
-	case ast.Ident:
-		if rules.externals[e.Name] {
-			return ""
-		}
-		if strings.HasPrefix(e.Name, "pe.") {
-			if supportedPEMember(e) {
-				return ""
-			}
-			return "unsupported pe member " + e.Name
-		}
-		if _, ok := rules.ruleIndex[e.Name]; ok {
-			return ""
-		}
-		return "unknown identifier " + e.Name
-	case ast.BinaryExpr:
-		if reason := conditionReason(e.Left, rules); reason != "" {
-			return reason
-		}
-		return conditionReason(e.Right, rules)
-	case ast.NotExpr:
-		return conditionReason(e.Inner, rules)
-	case ast.ParenExpr:
-		return conditionReason(e.Inner, rules)
-	case ast.AtExpr:
-		return conditionReason(e.Pos, rules)
-	case ast.UnaryExpr:
-		return conditionReason(e.Inner, rules)
-	case ast.OffsetOf:
-		return optionalReason(e.Index, rules)
-	case ast.LenOf:
-		return optionalReason(e.Index, rules)
-	case ast.InExpr:
-		return firstReason(rules, e.Lo, e.Hi)
-	case ast.ForExpr:
-		if e.Var == "" {
-			return conditionReason(e.Body, rules)
-		}
-		scoped := *rules
-		scoped.externals = maps.Clone(rules.externals)
-		scoped.externals[e.Var] = true
-		if reason := firstReason(rules, e.Lo, e.Hi); reason != "" {
-			return reason
-		}
-		return conditionReason(e.Body, &scoped)
-	case ast.Field:
-		if !supportedPEMember(e) {
-			return "unsupported module member " + e.Name
-		}
-		return conditionReason(e.Base.(ast.Index).Index, rules)
-	case ast.Index:
-		if base, ok := e.Base.(ast.Ident); ok && base.Name == "pe.version_info" {
-			return conditionReason(e.Index, rules)
-		}
-		if reason := conditionReason(e.Base, rules); reason != "" {
-			return reason
-		}
-		return "unsupported module field index"
-	case ast.FuncCall:
-		if strings.HasPrefix(e.Name, "pe.") {
-			if !supportedPEFunction(e.Name, len(e.Args)) {
-				return "unsupported pe function " + e.Name
-			}
-			return firstReason(rules, e.Args...)
-		}
-		if !knownFunction(e.Name) {
-			return "unsupported function " + e.Name
-		}
-		return firstReason(rules, e.Args...)
-	}
-	return ""
-}
-
-func optionalReason(expr ast.Expr, rules *Rules) string {
-	if expr == nil {
-		return ""
-	}
-	return conditionReason(expr, rules)
-}
-
-func firstReason(rules *Rules, exprs ...ast.Expr) string {
-	for _, e := range exprs {
-		if reason := conditionReason(e, rules); reason != "" {
-			return reason
-		}
-	}
-	return ""
-}
-
-func knownFunction(name string) bool {
-	if _, ok := integerReaders[name]; ok {
-		return true
-	}
-	_, ok := supportedFunctions[name]
-	return ok
 }
 
 // hasUnsupportedModifier reports whether any of the rule's strings carries a

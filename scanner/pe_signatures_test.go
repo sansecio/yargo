@@ -166,7 +166,7 @@ func TestPESignatures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.cond, func(t *testing.T) {
-			rules := compileSource(t, "rule r { condition: "+tt.cond+" }")
+			rules := compileSource(t, `import "pe" `+"rule r { condition: "+tt.cond+" }")
 			if rules.NumRules() != 1 {
 				t.Fatalf("rule skipped: %+v", rules.Skipped())
 			}
@@ -191,7 +191,7 @@ func TestPESignatureCounts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rules := compileSource(t, fmt.Sprintf("rule r { condition: pe.number_of_signatures == %d }", tt.want))
+			rules := compileSource(t, fmt.Sprintf("import \"pe\" rule r { condition: pe.number_of_signatures == %d }", tt.want))
 			if got := scanNames(t, rules, tt.data); len(got) != 1 {
 				t.Errorf("number_of_signatures != %d", tt.want)
 			}
@@ -205,7 +205,7 @@ func TestPESignatureCountsTimestampCountersignatureCertificates(t *testing.T) {
 	tsa := newTestCert(t, big.NewInt(3), pkix.Name{CommonName: "Timestamp"}, root)
 	counter := buildSignedData(tsa, []*testCert{root}, false)
 	data := attachSignature(t, buildSignedDataWithAttr(leaf, []*testCert{root}, true, asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 3, 3, 1}, counter))
-	rules := compileSource(t, "rule r { condition: pe.number_of_signatures == 1 and pe.signatures[0].number_of_certificates == 4 }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.number_of_signatures == 1 and pe.signatures[0].number_of_certificates == 4 }")
 	if got := scanNames(t, rules, data); len(got) != 1 {
 		t.Errorf("matches = %v", got)
 	}
@@ -215,7 +215,7 @@ func TestPESignatureWithoutIndirectContentHasNoSignerFields(t *testing.T) {
 	root := newTestCert(t, big.NewInt(1), pkix.Name{CommonName: "Root"}, nil)
 	leaf := newTestCert(t, big.NewInt(2), pkix.Name{CommonName: "Leaf"}, root)
 	data := attachSignature(t, buildSignedData(leaf, nil, false))
-	rules := compileSource(t, `rule counted { condition: pe.number_of_signatures == 1 }
+	rules := compileSource(t, `import "pe" rule counted { condition: pe.number_of_signatures == 1 }
 rule has_subject { condition: pe.signatures[0].subject contains "Leaf" }
 rule certificates { condition: pe.signatures[0].number_of_certificates == 1 }`)
 	got := scanNames(t, rules, data)
@@ -232,7 +232,7 @@ func TestPESignatureParsingIsBounded(t *testing.T) {
 		inner = buildSignedData(leaf, nil, true, inner)
 	}
 	data := attachSignature(t, inner)
-	rules := compileSource(t, "rule r { condition: pe.number_of_signatures > 0 }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.number_of_signatures > 0 }")
 	start := time.Now()
 	scanNames(t, rules, data)
 	if d := time.Since(start); d > time.Second {
@@ -249,7 +249,7 @@ func TestPESignatureDirectoryOutsideTheFileIsIgnored(t *testing.T) {
 	b := buildPE(t)
 	binary.LittleEndian.PutUint32(b[0x58+112+32:], 0xFFFFFF00)
 	binary.LittleEndian.PutUint32(b[0x58+112+36:], 0x1000)
-	rules := compileSource(t, "rule r { condition: pe.number_of_signatures == 0 }")
+	rules := compileSource(t, "import \"pe\" rule r { condition: pe.number_of_signatures == 0 }")
 	if got := scanNames(t, rules, b); len(got) != 1 {
 		t.Errorf("matches = %v", got)
 	}
@@ -260,7 +260,7 @@ func TestPEExtendedMembersSurviveCorruption(t *testing.T) {
 	leaf := newTestCert(t, big.NewInt(2), pkix.Name{CommonName: "Leaf"}, root)
 	signed := attachSignature(t, buildSignedData(leaf, []*testCert{root}, true, buildSignedData(leaf, nil, true)))
 	withResources := buildPEWithResources(t, [][2]string{{"CompanyName", "ACME"}, {"FileVersion", "1.2.3.4"}})
-	rules := compileSource(t, `rule r { condition:
+	rules := compileSource(t, `import "pe" rule r { condition:
 	pe.number_of_signatures > 100 or pe.signatures[0].issuer contains "x" or pe.signatures[1].serial == "x" or
 	pe.number_of_resources > 100 or pe.resources[0].type_string == "x" or pe.resources[1].offset == 1 or
 	pe.version_info["CompanyName"] == "x" or pe.version_info_list[0].value == "x" or pe.overlay.size > 1000000000 }`)

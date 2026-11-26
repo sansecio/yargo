@@ -48,7 +48,7 @@ func TestHostileConditionsDoNotPanicOrHang(t *testing.T) {
 	}
 	for _, cond := range conds {
 		t.Run(cond, func(t *testing.T) {
-			rules := compileSource(t, "rule r { condition: "+cond+" }")
+			rules := compileSource(t, `import "math" import "hash" `+"rule r { condition: "+cond+" }")
 			start := time.Now()
 			var matches MatchRules
 			_ = rules.ScanMem([]byte("abcdefgh"), 0, 500*time.Millisecond, &matches)

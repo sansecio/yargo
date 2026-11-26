@@ -160,7 +160,7 @@ func TestPEImportsAreCappedAgainstRepeatedThunkArrays(t *testing.T) {
 	if len(info.imports) > maxTotalImports || info.nameBytes > maxNameBytes+maxCString {
 		t.Errorf("imports %d, name bytes %d exceed caps", len(info.imports), info.nameBytes)
 	}
-	rules := compileSource(t, `rule r { condition: pe.imphash() == "x" }`)
+	rules := compileSource(t, `import "pe" rule r { condition: pe.imphash() == "x" }`)
 	start := time.Now()
 	scanNames(t, rules, b)
 	if d := time.Since(start); d > time.Second {
@@ -179,7 +179,7 @@ func TestPEImportsOfDLLsSharingAThunkArrayAreAllRecorded(t *testing.T) {
 		`pe.imports("kernel32.dll", "CreateFileA")`,
 		`pe.imports("msvcrt.dll", "CreateFileA")`,
 	} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if got := scanNames(t, rules, b); len(got) != 1 {
 			t.Errorf("%s: expected match, got %v", cond, got)
 		}
@@ -188,7 +188,7 @@ func TestPEImportsOfDLLsSharingAThunkArrayAreAllRecorded(t *testing.T) {
 
 func TestPEModuleOnNonPEIsUndefined(t *testing.T) {
 	for _, cond := range []string{"pe.is_dll()", "not pe.is_dll()", "pe.number_of_sections == 0", "not pe.number_of_sections == 0", "pe.exports(\"a\")"} {
-		rules := compileSource(t, "rule r { condition: "+cond+" }")
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
 		if got := scanNames(t, rules, []byte("MZ not a pe file at all")); len(got) != 0 {
 			t.Errorf("%s matched a non-PE file", cond)
 		}
@@ -196,14 +196,14 @@ func TestPEModuleOnNonPEIsUndefined(t *testing.T) {
 }
 
 func TestPEModuleSkipsUnsupportedMembers(t *testing.T) {
-	rules := compileSource(t, `rule r { condition: pe.is_signed }`)
+	rules := compileSource(t, `import "pe" rule r { condition: pe.is_signed }`)
 	if rules.NumRules() != 0 || len(rules.Skipped()) != 1 {
 		t.Errorf("expected skipped rule, got %d rules, %+v", rules.NumRules(), rules.Skipped())
 	}
 }
 
 func TestPEModuleSurvivesCorruptHeaders(t *testing.T) {
-	rules := compileSource(t, `rule r { condition: pe.imphash() == "x" or pe.exports("a") or pe.imports("a.dll") or pe.sections[0].name == "a" or pe.number_of_exports > 100 }`)
+	rules := compileSource(t, `import "pe" rule r { condition: pe.imphash() == "x" or pe.exports("a") or pe.imports("a.dll") or pe.sections[0].name == "a" or pe.number_of_exports > 100 }`)
 	rng := rand.New(rand.NewSource(1))
 	base := buildPE(t)
 	for i := range 3000 {
