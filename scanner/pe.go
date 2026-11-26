@@ -87,6 +87,7 @@ func (p *peInfo) full() bool {
 type scanState struct {
 	steps    int   // for loop iterations so far, see maxLoopSteps
 	err      error // why the scan stopped evaluating, if it did
+	funcs    map[funcKey]any
 	done     <-chan struct{}
 	buf      []byte
 	pe       *peInfo
