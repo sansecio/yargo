@@ -2,6 +2,7 @@ package parser
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sansecio/yargo/ast"
@@ -40,6 +41,8 @@ func TestParseSizeSuffixes(t *testing.T) {
 		{"filesize < 10KB", 10 * 1024},
 		{"filesize < 2MB", 2 * 1024 * 1024},
 		{"filesize < 5", 5},
+		{"filesize < 9007199254740991KB", 9007199254740991 * 1024},
+		{"filesize < 8796093022207MB", 8796093022207 * 1024 * 1024},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cond, func(t *testing.T) {
@@ -52,5 +55,19 @@ func TestParseSizeSuffixes(t *testing.T) {
 				t.Errorf("expected %d, got %#v", tt.want, got)
 			}
 		})
+	}
+}
+
+// libyara rejects size suffixes that overflow int64 with "integer overflow".
+// https://github.com/VirusTotal/yara/blob/master/libyara/lexer.l
+func TestParseSizeSuffixOverflow(t *testing.T) {
+	for _, cond := range []string{
+		"filesize < 9007199254740992KB",
+		"filesize < 9223372036854775807KB",
+		"filesize < 8796093022208MB",
+	} {
+		if _, err := New().Parse(`rule t { condition: ` + cond + ` }`); err == nil || !strings.Contains(err.Error(), "integer overflow") {
+			t.Errorf("%s: expected an integer overflow error, got %v", cond, err)
+		}
 	}
 }

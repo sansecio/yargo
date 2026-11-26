@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -693,6 +694,10 @@ func (l *yaraLexer) lexCondInt(lval *yySymType) int {
 		}
 	}
 	tok := l.intToken(lval, l.input[start:end])
+	if tok == INT_LIT && lval.num > math.MaxInt64/scale {
+		l.errorf("integer overflow %q", l.input[start:l.pos])
+		return 0
+	}
 	lval.num *= scale
 	return tok
 }
