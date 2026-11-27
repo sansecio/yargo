@@ -44,6 +44,9 @@ func (c *condChecker) rule(r *ast.Rule) (string, error) {
 	if hasUnsupportedModifier(r) {
 		return "unsupported string modifier", nil
 	}
+	if s := oversizedString(r); s != "" {
+		return "string " + s + " is too large for its wide or xor variants", nil
+	}
 	return reason, nil
 }
 
