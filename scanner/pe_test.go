@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 func buildPE(t *testing.T) []byte {
@@ -125,6 +126,63 @@ func TestPEModule(t *testing.T) {
 				t.Errorf("expected %v, got %v", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestPEImportsAreCappedAgainstRepeatedThunkArrays(t *testing.T) {
+	b := buildPE(t)
+	le := binary.LittleEndian
+	at := func(rva int) int { return 0x400 + rva - 0x2000 }
+	for i := range 2048 {
+		d := at(0x2000) + 20*i
+		if d+20 > len(b) {
+			b = append(b, make([]byte, d+20-len(b))...)
+		}
+		le.PutUint32(b[d:], 0x2100)
+		le.PutUint32(b[d+12:], 0x2200)
+		le.PutUint32(b[d+16:], 0x2100)
+	}
+	for i := range 40000 {
+		o := at(0x2100) + 8*i
+		if o+8 > len(b) {
+			b = append(b, make([]byte, o+8-len(b))...)
+		}
+		le.PutUint64(b[o:], 0x2300)
+	}
+	le.PutUint32(b[0x58+0x78:], 2048*20)
+	sec := 0x58 + 240 + 40
+	le.PutUint32(b[sec+8:], uint32(len(b)))
+	le.PutUint32(b[sec+16:], uint32(len(b)-0x400))
+	info := parsePE(b, nil)
+	if info == nil {
+		t.Fatal("crafted PE did not parse")
+	}
+	if len(info.imports) > maxTotalImports || info.nameBytes > maxNameBytes+maxCString {
+		t.Errorf("imports %d, name bytes %d exceed caps", len(info.imports), info.nameBytes)
+	}
+	rules := compileSource(t, `import "pe" rule r { condition: pe.imphash() == "x" }`)
+	start := time.Now()
+	scanNames(t, rules, b)
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("scan took %v", d)
+	}
+}
+
+func TestPEImportsOfDLLsSharingAThunkArrayAreAllRecorded(t *testing.T) {
+	b := buildPE(t)
+	le := binary.LittleEndian
+	at := func(rva int) int { return 0x400 + rva - 0x2000 }
+	d := at(0x2000) + 20
+	le.PutUint32(b[d:], 0x2100)
+	le.PutUint32(b[d+16:], 0x2100)
+	for _, cond := range []string{
+		`pe.imports("kernel32.dll", "CreateFileA")`,
+		`pe.imports("msvcrt.dll", "CreateFileA")`,
+	} {
+		rules := compileSource(t, `import "pe" `+"rule r { condition: "+cond+" }")
+		if got := scanNames(t, rules, b); len(got) != 1 {
+			t.Errorf("%s: expected match, got %v", cond, got)
+		}
 	}
 }
 

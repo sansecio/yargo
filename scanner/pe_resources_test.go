@@ -219,7 +219,7 @@ func TestPEResourceWalkIsBoundedAgainstSharedDirectories(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("scan took %v", d)
 	}
-	info := parsePE(b)
+	info := parsePE(b, nil)
 	info.ensureResources()
 	if len(info.resources) > maxResources {
 		t.Errorf("collected %d resources", len(info.resources))

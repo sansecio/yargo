@@ -496,7 +496,7 @@ func (r *Rules) globalsHold(ctx context.Context, buf []byte, hits []hit, ext Ext
 // match without hits, invokes the callback, and handles abort/timeout.
 func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
 	results := make([]bool, len(r.rules))
-	scan := &scanState{buf: buf}
+	scan := &scanState{buf: buf, done: ctx.Done()}
 	if !r.globalsHold(ctx, buf, hits, ext, results, scan) {
 		return scan.err
 	}

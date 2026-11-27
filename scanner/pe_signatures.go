@@ -128,7 +128,7 @@ func (p *peInfo) ensureSignatures() {
 		return
 	}
 	end := off + int(dir.Size)
-	for off+winCertHeaderBytes <= end && len(p.signatures) < maxSignatures {
+	for off+winCertHeaderBytes <= end && len(p.signatures) < maxSignatures && !p.stopped() {
 		length := int(binary.LittleEndian.Uint32(p.buf[off:]))
 		if length < winCertHeaderBytes || length > end-off {
 			return

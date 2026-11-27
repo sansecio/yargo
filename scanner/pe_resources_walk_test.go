@@ -7,7 +7,7 @@ import (
 
 func resourcesOf(t *testing.T, b []byte) []peResource {
 	t.Helper()
-	info := parsePE(b)
+	info := parsePE(b, nil)
 	if info == nil {
 		t.Fatal("PE did not parse")
 	}

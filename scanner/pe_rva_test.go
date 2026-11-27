@@ -26,7 +26,7 @@ func TestPERVAToOffsetFollowsLibyara(t *testing.T) {
 			b := append(buildPE(t), make([]byte, 0x1000)...)
 			binary.LittleEndian.PutUint32(b[sec+8:], tt.virtual)
 			binary.LittleEndian.PutUint32(b[sec+20:], tt.pointer)
-			info := parsePE(b)
+			info := parsePE(b, nil)
 			if info == nil {
 				t.Fatal("PE did not parse")
 			}

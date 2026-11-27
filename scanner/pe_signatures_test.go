@@ -238,7 +238,7 @@ func TestPESignatureParsingIsBounded(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("scan took %v", d)
 	}
-	info := parsePE(data)
+	info := parsePE(data, nil)
 	info.ensureSignatures()
 	if len(info.signatures) > maxSignatures {
 		t.Errorf("collected %d signatures", len(info.signatures))
