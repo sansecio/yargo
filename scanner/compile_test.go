@@ -529,6 +529,26 @@ func Test_hexStringToRegex(t *testing.T) {
 			want: `\x4d\x5a.{2}.{4,8}(?:\x90|\xcc)`,
 		},
 		{
+			name:   "high nibble",
+			tokens: []ast.HexToken{ast.HexByte{Value: 0x8B}, ast.HexMasked{Value: 0x40, Mask: 0xF0}},
+			want:   `\x8b[\x40-\x4f]`,
+		},
+		{
+			name:   "low nibble",
+			tokens: []ast.HexToken{ast.HexMasked{Value: 0x04, Mask: 0x0F}, ast.HexByte{Value: 0x8B}},
+			want:   `[\x04\x14\x24\x34\x44\x54\x64\x74\x84\x94\xa4\xb4\xc4\xd4\xe4\xf4]\x8b`,
+		},
+		{
+			name: "multi byte alternatives with wildcard and jump",
+			tokens: []ast.HexToken{
+				ast.HexAlternation{Alternatives: [][]ast.HexToken{
+					{ast.HexByte{Value: 0x41}, ast.HexByte{Value: 0xB8}},
+					{ast.HexByte{Value: 0x53}, ast.HexWildcard{}, ast.HexWildcard{}, ast.HexJump{Min: new(1), Max: new(2)}, ast.HexByte{Value: 0x54}},
+				}},
+			},
+			want: `(?:\x41\xb8|\x53.{2}.{1,2}\x54)`,
+		},
+		{
 			name:   "wildcards between bytes",
 			tokens: []ast.HexToken{ast.HexByte{Value: 0x41}, ast.HexWildcard{}, ast.HexByte{Value: 0x42}, ast.HexWildcard{}, ast.HexByte{Value: 0x43}},
 			want:   `\x41.\x42.\x43`,

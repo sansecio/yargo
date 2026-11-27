@@ -57,13 +57,19 @@ type (
 
 	// Rules holds compiled YARA rules ready for scanning.
 	Rules struct {
-		rules         []*compiledRule
-		zeroHitRules  []int32 // sorted indexes of rules that may match without hits
-		matcher       *ahocorasick.AhoCorasick
-		patterns      [][]byte
-		patternMap    []patternRef
-		slotRule      []int32 // string slot -> rule index
-		regexPatterns []*regexPattern
+		rules             []*compiledRule
+		zeroHitRules      []int32 // sorted indexes of rules that may match without hits
+		matcher           *ahocorasick.AhoCorasick
+		patterns          [][]byte
+		patternMap        []patternRef
+		slotRule          []int32 // string slot -> rule index
+		regexPatterns     []*regexPattern
+		fullBufferRegexes []int
+		globalRules       []int32
+		ruleIndex         map[string]int32
+		externals         map[string]bool
+		skipped           []SkippedRule
+		condRegexes       map[ast.RegexLit]*regexPattern
 	}
 )
 
@@ -72,6 +78,7 @@ type (
 	patternRef struct {
 		slot     int32
 		fullword bool
+		wide     bool
 		verify   bool // confirm the hit against the original buffer (case-folded scan)
 		regexIdx int
 	}
@@ -93,6 +100,8 @@ type (
 		condition      ast.Expr
 		stringNames    []string
 		stringPrivates []bool
+		private        bool
+		global         bool
 		slotBase       int32 // slot of this rule's first string
 	}
 
@@ -157,7 +166,13 @@ func isWordChar(b byte) bool {
 		b == '_'
 }
 
-func checkWordBoundary(buf []byte, start, end int) bool {
+func checkWordBoundary(buf []byte, start, end int, wide bool) bool {
+	if wide {
+		if start >= 2 && buf[start-1] == 0 && isWordChar(buf[start-2]) {
+			return false
+		}
+		return !(end+1 < len(buf) && buf[end+1] == 0 && isWordChar(buf[end]))
+	}
 	if start > 0 && isWordChar(buf[start-1]) {
 		return false
 	}
@@ -167,9 +182,35 @@ func checkWordBoundary(buf []byte, start, end int) bool {
 	return true
 }
 
+// Externals holds external variable values for one scan, keyed by name.
+// Values may be of any Go integer, float, bool or string type; ScanMemWith
+// fails on other types and on unsigned values above math.MaxInt64.
+type Externals map[string]any
+
+// SkippedRule names a rule that Compile did not compile and why.
+type SkippedRule struct {
+	Rule   string
+	Reason string
+}
+
+// Skipped returns the rules that were not compiled, with the reason.
+func (r *Rules) Skipped() []SkippedRule {
+	return r.skipped
+}
+
 // ScanMem scans a byte buffer for matching rules. A timeout of zero or less
 // means no timeout.
 func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
+	return r.ScanMemWith(buf, nil, flags, timeout, cb)
+}
+
+// ScanMemWith is like ScanMem but evaluates conditions with the given
+// external variable values, overriding the defaults declared at compile time.
+func (r *Rules) ScanMemWith(buf []byte, ext Externals, flags ScanFlags, timeout time.Duration, cb ScanCallback) error {
+	ext, err := normalizeExternals(ext)
+	if err != nil {
+		return err
+	}
 	if len(r.rules) == 0 {
 		return nil
 	}
@@ -185,7 +226,7 @@ func (r *Rules) ScanMem(buf []byte, flags ScanFlags, timeout time.Duration, cb S
 	if err != nil {
 		return err
 	}
-	return r.evaluateRules(ctx, buf, hits, cb)
+	return r.evaluateRules(ctx, buf, hits, ext, cb)
 }
 
 // ctxCheckInterval is how many AC matches (or regex verification windows)
@@ -234,7 +275,7 @@ func (r *Rules) collectMatches(ctx context.Context, buf []byte) ([]hit, error) {
 				continue
 			}
 
-			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End()) {
+			if ref.fullword && !checkWordBoundary(buf, match.Start(), match.End(), ref.wide) {
 				continue
 			}
 
@@ -243,6 +284,10 @@ func (r *Rules) collectMatches(ctx context.Context, buf []byte) ([]hit, error) {
 	}
 
 	hits, err := r.verifyAtoms(ctx, buf, atoms, hits)
+	if err != nil {
+		return nil, err
+	}
+	hits, err = r.scanFullBufferRegexes(ctx, buf, hits)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +397,7 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 			matchStart := start + loc[0]
 			matchEnd := start + loc[1]
 			lastEnd = matchEnd
-			if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd) {
+			if rp.fullword && !checkWordBoundary(buf, matchStart, matchEnd, false) {
 				continue
 			}
 			hits = append(hits, hit{pos: matchStart, slot: rp.slot, n: int32(matchEnd - matchStart)})
@@ -362,9 +407,98 @@ func (r *Rules) verifyAtoms(ctx context.Context, buf []byte, atoms []atomHit, hi
 	return hits, nil
 }
 
+const maxFullBufferMatches = 1 << 16
+
+type allIndexer interface {
+	FindAllIndex(b []byte, n int) [][]int
+}
+
+func (r *Rules) scanFullBufferRegexes(ctx context.Context, buf []byte, hits []hit) ([]hit, error) {
+	for _, idx := range r.fullBufferRegexes {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		rp := r.regexPatterns[idx]
+		re := rp.compiled()
+		if re == nil {
+			continue
+		}
+		for _, loc := range findAllIndex(ctx, re, buf) {
+			if loc[1] == loc[0] {
+				continue
+			}
+			if rp.fullword && !checkWordBoundary(buf, loc[0], loc[1], false) {
+				continue
+			}
+			hits = append(hits, hit{pos: loc[0], slot: rp.slot, n: int32(loc[1] - loc[0])})
+		}
+	}
+	return hits, nil
+}
+
+func findAllIndex(ctx context.Context, re Regexp, buf []byte) [][]int {
+	if all, ok := re.(allIndexer); ok {
+		return recoverFindAllIndex(all, buf)
+	}
+	var locs [][]int
+	for pos := 0; pos <= len(buf) && len(locs) < maxFullBufferMatches && ctx.Err() == nil; {
+		loc := recoverFindIndex(re, buf[pos:])
+		if loc == nil {
+			break
+		}
+		locs = append(locs, []int{pos + loc[0], pos + loc[1]})
+		pos += max(loc[1], loc[0]+1)
+	}
+	return locs
+}
+
+func recoverFindAllIndex(re allIndexer, b []byte) (locs [][]int) {
+	defer func() {
+		if r := recover(); r != nil {
+			locs = nil
+		}
+	}()
+	return re.FindAllIndex(b, maxFullBufferMatches)
+}
+
+func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool, scan *scanState) bool {
+	return evalExpr(cr.condition, &evalContext{
+		hits:        ruleHits,
+		slotBase:    cr.slotBase,
+		buf:         buf,
+		stringNames: cr.stringNames,
+		externals:   ext,
+		ruleIndex:   r.ruleIndex,
+		regexes:     r.condRegexes,
+		results:     results,
+		scan:        scan,
+	})
+}
+
+func compareSlot(h hit, slot int32) int {
+	return cmp.Compare(h.slot, slot)
+}
+
+func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
+	for _, idx := range r.globalRules {
+		cr := r.rules[idx]
+		lo, _ := slices.BinarySearchFunc(hits, cr.slotBase, compareSlot)
+		hi, _ := slices.BinarySearchFunc(hits, cr.slotBase+int32(len(cr.stringNames)), compareSlot)
+		if !r.evalRule(buf, cr, hits[lo:hi], ext, results, scan) {
+			return false
+		}
+	}
+	return true
+}
+
 // evaluateRules evaluates hit-bearing rules and rules whose conditions may
 // match without hits, invokes the callback, and handles abort/timeout.
-func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, cb ScanCallback) error {
+func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
+	results := make([]bool, len(r.rules))
+	scan := &scanState{buf: buf}
+	if !r.globalsHold(buf, hits, ext, results, scan) {
+		return nil
+	}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
 	// order. A rule present in both inputs is evaluated only once.
@@ -395,13 +529,11 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, cb Sc
 		}
 
 		cr := r.rules[ruleIdx]
-		evalCtx := &evalContext{
-			hits:        ruleHits,
-			slotBase:    cr.slotBase,
-			buf:         buf,
-			stringNames: cr.stringNames,
+		if !r.evalRule(buf, cr, ruleHits, ext, results, scan) {
+			continue
 		}
-		if !evalExpr(cr.condition, evalCtx) {
+		results[ruleIdx] = true
+		if cr.private {
 			continue
 		}
 
