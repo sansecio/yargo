@@ -22,6 +22,9 @@ import (
 	hexToken  ast.HexToken
 	expr      ast.Expr
 	exprs     []ast.Expr
+	strs      []string
+	flt       float64
+	quant     forQuant
 }
 
 %token RULE META STRINGS CONDITION
@@ -32,15 +35,32 @@ import (
 %token <byt> HEX_BYTE
 %token HEX_WILDCARD
 %token AND OR NOT AT ANY ALL OF THEM EQ NE LT GT LE GE FILESIZE
+%token IMPORT PRIVATE GLOBAL
+%token <flt> FLOAT_LIT
+%token <str> STR_COUNT STR_OFFSET STR_LEN
+%token FOR IN RANGE SHL SHR
+%token <hexToken> HEX_MASKED
+%token NONE
+%token CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES TRUE FALSE
 
+%nonassoc PRIMARY
 %left OR
 %left AND
 %right NOT
-%nonassoc EQ NE LT GT LE GE
-%nonassoc AT
+%nonassoc EQ NE LT GT LE GE CONTAINS ICONTAINS STARTSWITH ISTARTSWITH ENDSWITH IENDSWITH IEQUALS MATCHES
+%left '|'
+%left '^'
+%left '&'
+%nonassoc AT IN
+%left SHL SHR
+%left '+' '-'
+%left '*' '\\' '%'
+%right UMINUS '~'
+%left '[' '.'
 
 %type <rules> rule_list
-%type <rule> rule
+%type <rule> rule rule_head
+%type <strs> tags tag_list
 %type <meta> meta_section meta_entries
 %type <metaEntry> meta_entry
 %type <stringDefs> strings_section string_defs
@@ -51,13 +71,16 @@ import (
 %type <hexToken> hex_token
 %type <expr> expr primary_expr condition_section
 %type <exprs> func_args
+%type <strs> string_set set_items
+%type <quant> for_quant
 
 %%
 
 file:
 	rule_list
 	{
-		yylex.(*yaraLexer).ruleSet = &ast.RuleSet{Rules: $1}
+		l := yylex.(*yaraLexer)
+		l.ruleSet = &ast.RuleSet{Imports: l.imports, Rules: $1}
 	}
 	;
 
@@ -70,40 +93,79 @@ rule_list:
 	{
 		$$ = append($1, $2)
 	}
+	| rule_list IMPORT STRING_LIT
+	{
+		$$ = $1
+		l := yylex.(*yaraLexer)
+		l.imports = append(l.imports, unquoteString($3))
+	}
+	;
+
+rule_head:
+	RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $2, Tags: $3}
+	}
+	| PRIVATE RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $3, Tags: $4, Private: true}
+	}
+	| GLOBAL RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $3, Tags: $4, Global: true}
+	}
+	| PRIVATE GLOBAL RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $4, Tags: $5, Private: true, Global: true}
+	}
+	| GLOBAL PRIVATE RULE IDENT tags
+	{
+		$$ = &ast.Rule{Name: $4, Tags: $5, Private: true, Global: true}
+	}
+	;
+
+tags:
+
+	{
+		$$ = nil
+	}
+	| ':' tag_list
+	{
+		$$ = $2
+	}
+	;
+
+tag_list:
+	IDENT
+	{
+		$$ = []string{$1}
+	}
+	| tag_list IDENT
+	{
+		$$ = append($1, $2)
+	}
 	;
 
 rule:
-	RULE IDENT '{' meta_section strings_section condition_section '}'
+	rule_head '{' meta_section strings_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Meta:      $4,
-			Strings:   $5,
-			Condition: $6,
-		}
+		$$ = $1
+		$$.Meta, $$.Strings, $$.Condition = $3, $4, $5
 	}
-	| RULE IDENT '{' strings_section condition_section '}'
+	| rule_head '{' strings_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Strings:   $4,
-			Condition: $5,
-		}
+		$$ = $1
+		$$.Strings, $$.Condition = $3, $4
 	}
-	| RULE IDENT '{' meta_section condition_section '}'
+	| rule_head '{' meta_section condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Meta:      $4,
-			Condition: $5,
-		}
+		$$ = $1
+		$$.Meta, $$.Condition = $3, $4
 	}
-	| RULE IDENT '{' condition_section '}'
+	| rule_head '{' condition_section '}'
 	{
-		$$ = &ast.Rule{
-			Name:      $2,
-			Condition: $4,
-		}
+		$$ = $1
+		$$.Condition = $3
 	}
 	;
 
@@ -133,6 +195,18 @@ meta_entry:
 	| IDENT '=' INT_LIT
 	{
 		$$ = &ast.MetaEntry{Key: $1, Value: $3}
+	}
+	| IDENT '=' IDENT
+	{
+		switch $3 {
+		case "true":
+			$$ = &ast.MetaEntry{Key: $1, Value: true}
+		case "false":
+			$$ = &ast.MetaEntry{Key: $1, Value: false}
+		default:
+			yylex.Error("invalid meta value " + $3)
+			$$ = &ast.MetaEntry{Key: $1}
+		}
 	}
 	;
 
@@ -188,24 +262,7 @@ modifiers:
 	}
 	| modifiers MODIFIER
 	{
-		$$ = $1
-		switch $2 {
-		case "ascii":
-			$$.Ascii = true
-		case "base64":
-			$$.Base64 = true
-		case "fullword":
-			$$.Fullword = true
-		case "nocase":
-			$$.Nocase = true
-		case "private":
-			$$.Private = true
-		default:
-			// known-but-unimplemented (wide, xor, ...), argument forms of
-			// supported modifiers, or future modifiers; recorded so the
-			// rule is skipped at compile time and reported as a warning
-			$$.Unsupported = append($$.Unsupported, $2)
-		}
+		$$ = addModifier($1, $2)
 	}
 	;
 
@@ -228,6 +285,10 @@ hex_token:
 	| HEX_WILDCARD
 	{
 		$$ = ast.HexWildcard{}
+	}
+	| HEX_MASKED
+	{
+		$$ = $1
 	}
 	| HEX_JUMP
 	{
@@ -255,7 +316,7 @@ condition_section:
 	;
 
 expr:
-	primary_expr
+	primary_expr %prec PRIMARY
 	{
 		$$ = $1
 	}
@@ -295,6 +356,87 @@ expr:
 	{
 		$$ = comparisonExpr(yylex, ">=", $1, $3)
 	}
+	| expr '+' expr
+	{
+		$$ = ast.BinaryExpr{Op: "+", Left: $1, Right: $3}
+	}
+	| expr '-' expr
+	{
+		$$ = ast.BinaryExpr{Op: "-", Left: $1, Right: $3}
+	}
+	| expr '*' expr
+	{
+		$$ = ast.BinaryExpr{Op: "*", Left: $1, Right: $3}
+	}
+	| expr '\\' expr
+	{
+		$$ = ast.BinaryExpr{Op: "/", Left: $1, Right: $3}
+	}
+	| expr '%' expr
+	{
+		$$ = ast.BinaryExpr{Op: "%", Left: $1, Right: $3}
+	}
+	| expr '&' expr
+	{
+		$$ = ast.BinaryExpr{Op: "&", Left: $1, Right: $3}
+	}
+	| expr '|' expr
+	{
+		$$ = ast.BinaryExpr{Op: "|", Left: $1, Right: $3}
+	}
+	| expr '^' expr
+	{
+		$$ = ast.BinaryExpr{Op: "^", Left: $1, Right: $3}
+	}
+	| expr SHL expr
+	{
+		$$ = ast.BinaryExpr{Op: "<<", Left: $1, Right: $3}
+	}
+	| expr SHR expr
+	{
+		$$ = ast.BinaryExpr{Op: ">>", Left: $1, Right: $3}
+	}
+	| '-' expr %prec UMINUS
+	{
+		$$ = ast.UnaryExpr{Op: "-", Inner: $2}
+	}
+	| '~' expr
+	{
+		$$ = ast.UnaryExpr{Op: "~", Inner: $2}
+	}
+	| expr CONTAINS expr
+	{
+		$$ = ast.BinaryExpr{Op: "contains", Left: $1, Right: $3}
+	}
+	| expr ICONTAINS expr
+	{
+		$$ = ast.BinaryExpr{Op: "icontains", Left: $1, Right: $3}
+	}
+	| expr STARTSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "startswith", Left: $1, Right: $3}
+	}
+	| expr ISTARTSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "istartswith", Left: $1, Right: $3}
+	}
+	| expr ENDSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "endswith", Left: $1, Right: $3}
+	}
+	| expr IENDSWITH expr
+	{
+		$$ = ast.BinaryExpr{Op: "iendswith", Left: $1, Right: $3}
+	}
+	| expr IEQUALS expr
+	{
+		$$ = ast.BinaryExpr{Op: "iequals", Left: $1, Right: $3}
+	}
+	| expr MATCHES REGEX_LIT
+	{
+		pattern, mods := parseRegex($3)
+		$$ = ast.BinaryExpr{Op: "matches", Left: $1, Right: ast.RegexLit{Pattern: pattern, Modifiers: mods}}
+	}
 	;
 
 primary_expr:
@@ -302,29 +444,89 @@ primary_expr:
 	{
 		$$ = ast.ParenExpr{Inner: $2}
 	}
-	| ANY OF THEM
+	| ANY OF string_set
 	{
-		$$ = ast.AnyOf{Pattern: "them"}
+		if len($3) == 1 {
+			$$ = ast.AnyOf{Pattern: $3[0]}
+		} else {
+			$$ = ast.NOf{Quant: "any", Patterns: $3}
+		}
 	}
-	| ANY OF '(' STRING_PATTERN ')'
+	| ALL OF string_set
 	{
-		$$ = ast.AnyOf{Pattern: $4}
+		if len($3) == 1 {
+			$$ = ast.AllOf{Pattern: $3[0]}
+		} else {
+			$$ = ast.NOf{Quant: "all", Patterns: $3}
+		}
 	}
-	| ALL OF THEM
+	| NONE OF string_set
 	{
-		$$ = ast.AllOf{Pattern: "them"}
+		$$ = ast.NOf{Quant: "none", Patterns: $3}
 	}
-	| ALL OF '(' STRING_PATTERN ')'
+	| INT_LIT OF string_set
 	{
-		$$ = ast.AllOf{Pattern: $4}
+		$$ = ast.NOf{Quant: "count", N: $1, Patterns: $3}
 	}
-	| COND_STRING_ID AT primary_expr
+	| COND_STRING_ID AT expr %prec AT
 	{
 		$$ = ast.AtExpr{Ref: ast.StringRef{Name: $1}, Pos: $3}
+	}
+	| COND_STRING_ID IN '(' expr RANGE expr ')'
+	{
+		$$ = ast.InExpr{Ref: ast.StringRef{Name: $1}, Lo: $4, Hi: $6}
+	}
+	| STR_COUNT
+	{
+		$$ = ast.CountOf{Name: $1}
+	}
+	| STR_OFFSET
+	{
+		$$ = ast.OffsetOf{Name: $1}
+	}
+	| STR_LEN
+	{
+		$$ = ast.LenOf{Name: $1}
+	}
+	| primary_expr '[' expr ']'
+	{
+		$$ = indexExpr(yylex, $1, $3)
+	}
+	| primary_expr '.' COND_IDENT
+	{
+		$$ = fieldExpr(yylex, $1, $3)
+	}
+	| FLOAT_LIT
+	{
+		$$ = ast.FloatLit{Value: $1}
+	}
+	| FOR for_quant COND_IDENT IN '(' expr RANGE expr ')' ':' '(' expr ')'
+	{
+		$$ = ast.ForExpr{Quant: $2.quant, N: $2.n, Var: $3, Lo: $6, Hi: $8, Body: ast.ParenExpr{Inner: $12}}
+	}
+	| FOR for_quant OF string_set ':' '(' expr ')'
+	{
+		$$ = ast.ForExpr{Quant: $2.quant, N: $2.n, Patterns: $4, Body: ast.ParenExpr{Inner: $7}}
 	}
 	| COND_IDENT '(' func_args ')'
 	{
 		$$ = ast.FuncCall{Name: $1, Args: $3}
+	}
+	| COND_IDENT
+	{
+		$$ = ast.Ident{Name: $1}
+	}
+	| STRING_LIT
+	{
+		$$ = ast.StrLit{Value: unquoteString($1)}
+	}
+	| TRUE
+	{
+		$$ = ast.BoolLit{Value: true}
+	}
+	| FALSE
+	{
+		$$ = ast.BoolLit{Value: false}
 	}
 	| COND_STRING_ID
 	{
@@ -340,16 +542,65 @@ primary_expr:
 	}
 	;
 
+for_quant:
+	ANY
+	{
+		$$ = forQuant{quant: "any"}
+	}
+	| ALL
+	{
+		$$ = forQuant{quant: "all"}
+	}
+	| NONE
+	{
+		$$ = forQuant{quant: "none"}
+	}
+	| INT_LIT
+	{
+		$$ = forQuant{quant: "count", n: $1}
+	}
+	;
+
+string_set:
+	THEM
+	{
+		$$ = []string{"them"}
+	}
+	| '(' set_items ')'
+	{
+		$$ = $2
+	}
+	;
+
+set_items:
+	STRING_PATTERN
+	{
+		$$ = []string{$1}
+	}
+	| COND_STRING_ID
+	{
+		$$ = []string{$1}
+	}
+	| set_items ',' STRING_PATTERN
+	{
+		$$ = append($1, $3)
+	}
+	| set_items ',' COND_STRING_ID
+	{
+		$$ = append($1, $3)
+	}
+	;
+
 func_args:
 	/* empty */
 	{
 		$$ = nil
 	}
-	| primary_expr
+	| expr
 	{
 		$$ = []ast.Expr{$1}
 	}
-	| func_args ',' primary_expr
+	| func_args ',' expr
 	{
 		$$ = append($1, $3)
 	}

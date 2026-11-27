@@ -75,6 +75,8 @@ func TestParseMeta(t *testing.T) {
 	}
 }
 
+const alphabet64 = "ZYXWVUTSRQPONMLKJIHGFEDCBAzyxwvutsrqponmlkjihgfedcba9876543210+/"
+
 func TestParseHexStrings(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -90,6 +92,12 @@ func TestParseHexStrings(t *testing.T) {
 		{"jump max only", "{ FF [-16] D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexJump{Max: new(16)}, ast.HexByte{Value: 0xD8}}},
 		{"alternation", "{ FF (41|42) D8 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x41))}, {Byte: new(byte(0x42))}}}, ast.HexByte{Value: 0xD8}}},
 		{"alt with wildcard", "{ (41|??) }", []ast.HexToken{ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x41))}, {Wildcard: true}}}}},
+		{"high nibble", "{ 4? FF }", []ast.HexToken{ast.HexMasked{Value: 0x40, Mask: 0xF0}, ast.HexByte{Value: 0xFF}}},
+		{"low nibble", "{ FF ?4 }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexMasked{Value: 0x04, Mask: 0x0F}}},
+		{"multi byte alternatives", "{ (41 B8 | 68) 00 }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexByte{Value: 0xB8}}, {ast.HexByte{Value: 0x68}}}}, ast.HexByte{Value: 0x00}}},
+		{"nibbles in alternatives", "{ FF ( D? | 5? | ?1 ) }", []ast.HexToken{ast.HexByte{Value: 0xFF}, ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexMasked{Value: 0xD0, Mask: 0xF0}}, {ast.HexMasked{Value: 0x50, Mask: 0xF0}}, {ast.HexMasked{Value: 0x01, Mask: 0x0F}}}}}},
+		{"jump and wildcard in alternative", "{ (FF 75 ?? | 53 [1-2] 54) }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0xFF}, ast.HexByte{Value: 0x75}, ast.HexWildcard{}}, {ast.HexByte{Value: 0x53}, ast.HexJump{Min: new(1), Max: new(2)}, ast.HexByte{Value: 0x54}}}}}},
+		{"nested alternation", "{ (41 (42|43) | 44) }", []ast.HexToken{ast.HexAlternation{Alternatives: [][]ast.HexToken{{ast.HexByte{Value: 0x41}, ast.HexAlt{Alternatives: []ast.HexAltItem{{Byte: new(byte(0x42))}, {Byte: new(byte(0x43))}}}}, {ast.HexByte{Value: 0x44}}}}}},
 	}
 
 	for _, tt := range tests {
@@ -140,13 +148,19 @@ func TestParseModifiers(t *testing.T) {
 		{`"x" ascii`, ast.StringModifiers{Ascii: true}},
 		{`"x" nocase`, ast.StringModifiers{Nocase: true}},
 		{`"x" private`, ast.StringModifiers{Private: true}},
-		{`"x" wide`, ast.StringModifiers{Unsupported: []string{"wide"}}},
-		{`"x" xor`, ast.StringModifiers{Unsupported: []string{"xor"}}},
-		{`"x" base64wide`, ast.StringModifiers{Unsupported: []string{"base64wide"}}},
-		{`"x" wide xor nocase`, ast.StringModifiers{Nocase: true, Unsupported: []string{"wide", "xor"}}},
-		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Unsupported: []string{"xor(0x01-0xff)"}}},
-		{`"x" xor ( 0x01 )`, ast.StringModifiers{Unsupported: []string{"xor( 0x01 )"}}},
+		{`"x" wide`, ast.StringModifiers{Wide: true}},
+		{`"x" xor`, ast.StringModifiers{Xor: &ast.XorRange{Min: 0, Max: 255}}},
+		{`"x" base64wide`, ast.StringModifiers{Base64Wide: true}},
+		{`"x" base64 base64wide`, ast.StringModifiers{Base64: true, Base64Wide: true}},
+		{`"x" wide base64`, ast.StringModifiers{Wide: true, Base64: true}},
+		{`"x" wide xor`, ast.StringModifiers{Wide: true, Xor: &ast.XorRange{Min: 0, Max: 255}}},
+		{`"x" xor(0x01-0xff)`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 255}}},
+		{`"x" xor ( 0x01 )`, ast.StringModifiers{Xor: &ast.XorRange{Min: 1, Max: 1}}},
 		{`"x" base64("!@#$%^&*(){}")`, ast.StringModifiers{Unsupported: []string{`base64("!@#$%^&*(){}")`}}},
+		{`"x" base64("` + alphabet64 + `")`, ast.StringModifiers{Base64: true, Base64Alphabet: alphabet64}},
+		{`"x" base64wide("` + alphabet64 + `")`, ast.StringModifiers{Base64Wide: true, Base64Alphabet: alphabet64}},
+		{`"x" base64("` + alphabet64 + `") base64wide("` + alphabet64 + `")`, ast.StringModifiers{Base64: true, Base64Wide: true, Base64Alphabet: alphabet64}},
+		{`"x" base64("` + alphabet64 + `") base64wide`, ast.StringModifiers{Base64: true, Base64Alphabet: alphabet64, Unsupported: []string{"base64wide"}}},
 		{`"x" base64wide("abc") fullword`, ast.StringModifiers{Fullword: true, Unsupported: []string{`base64wide("abc")`}}},
 		{`"x" frobnicate`, ast.StringModifiers{Unsupported: []string{"frobnicate"}}},
 	}
@@ -172,12 +186,23 @@ func TestParseModifiers(t *testing.T) {
 	}
 }
 
+func TestParseWideModifier(t *testing.T) {
+	rs := mustParse(t, `rule t { strings: $a = "x" wide ascii $b = "y" condition: any of them }`)
+	m := rs.Rules[0].Strings[0].Modifiers
+	if !m.Wide || !m.Ascii || len(m.Unsupported) != 0 {
+		t.Errorf("expected wide and ascii without unsupported, got %+v", m)
+	}
+	if len(rs.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", rs.Warnings)
+	}
+}
+
 func TestParseModifierWarnings(t *testing.T) {
 	rs := mustParse(t, `
 rule first {
 	strings:
-		$a = "one" wide nocase
-		$ = "two" xor(0x10-0x20)
+		$a = "one" base64wide("abc") nocase
+		$ = "two" xor(0x300)
 	condition:
 		any of them
 }
@@ -190,8 +215,8 @@ rule second {
 }`)
 
 	want := []string{
-		`rule "first" string $a: unsupported modifier "wide", rule will not match`,
-		`rule "first" string $: unsupported modifier "xor(0x10-0x20)", rule will not match`,
+		`rule "first" string $a: unsupported modifier "base64wide(\"abc\")", rule will not match`,
+		`rule "first" string $: unsupported modifier "xor(0x300)", rule will not match`,
 	}
 	if !reflect.DeepEqual(rs.Warnings, want) {
 		t.Errorf("expected warnings %q, got %q", want, rs.Warnings)
@@ -568,7 +593,7 @@ func TestParseInvalidInputs(t *testing.T) {
 		input   string
 		errPart string
 	}{
-		{"multi-byte hex alternative", `rule t { strings: $ = { (4142|43) } condition: any of them }`, "alternative"},
+		{"odd digit hex alternative", `rule t { strings: $ = { (4142|4) } condition: any of them }`, "alternative"},
 		{"garbage hex alternative", `rule t { strings: $ = { (GG|41) } condition: any of them }`, "alternative"},
 		{"garbage hex jump", `rule t { strings: $ = { FF [1-x] 41 } condition: any of them }`, "jump"},
 		{"inverted hex jump", `rule t { strings: $ = { FF [5-2] 41 } condition: any of them }`, "jump"},
@@ -579,7 +604,7 @@ func TestParseInvalidInputs(t *testing.T) {
 		{"unterminated block comment", `rule t { /* comment`, "unterminated"},
 		{"integer overflow", `rule t { condition: 99999999999999999999 }`, "integer"},
 		{"hex integer overflow", `rule t { condition: 0xFFFFFFFFFFFFFFFFFF }`, "integer"},
-		{"unsupported bare identifier", `rule t { condition: entrypoint }`, "syntax error"},
+		{"unterminated condition string", `rule t { condition: filename == "abc`, "unterminated"},
 		{"string comparison left operand", `rule t { strings: $a = "a" condition: $a >= 0 }`, "integer operands"},
 		{"string comparison right operand", `rule t { strings: $a = "a" condition: 0 <= $a }`, "integer operands"},
 		{"quantifier comparison operand", `rule t { strings: $a = "a" condition: any of them == 1 }`, "integer operands"},
@@ -601,7 +626,7 @@ func TestParseInvalidInputs(t *testing.T) {
 }
 
 func TestParseErrorMessagePreserved(t *testing.T) {
-	_, err := New().Parse(`rule t { condition: @ }`)
+	_, err := New().Parse(`rule t { condition: ? }`)
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -622,4 +647,24 @@ func hexTokensEqual(a, b []ast.HexToken) bool {
 		}
 	}
 	return true
+}
+
+func TestParseHexRejectsMalformedAlternatives(t *testing.T) {
+	deep := strings.Repeat("(41|", 40) + "42" + strings.Repeat(")", 40)
+	for name, hex := range map[string]string{
+		"empty branch":           "{ (41 | ) }",
+		"leading jump":           "{ (41 | [2] 42) }",
+		"trailing jump":          "{ (41 [2] | 42) }",
+		"unterminated":           "{ (41 | 42 }",
+		"unterminated nested":    "{ (41 | (42|43) }",
+		"lone nibble marker":     "{ 4 }",
+		"double wildcard nibble": "{ ?? ?? ? }",
+		"too deep":               "{ " + deep + " }",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := New().Parse("rule r { strings: $a = " + hex + " condition: $a }"); err == nil {
+				t.Errorf("expected an error for %s", hex)
+			}
+		})
+	}
 }
