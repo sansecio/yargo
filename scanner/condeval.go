@@ -16,6 +16,7 @@ type evalContext struct {
 	slotBase    int32    // slot of the rule's first string
 	buf         []byte   // the buffer being scanned
 	stringNames []string // all string names defined in the rule
+	scan        *scanState
 	vars        map[string]int64
 	cur         int
 	inSet       bool
@@ -141,6 +142,12 @@ func evalAny(expr ast.Expr, ctx *evalContext) any {
 	case ast.Ident:
 		return ctx.lookup(e.Name)
 
+	case ast.Field:
+		return evalPEField(e, ctx)
+
+	case ast.Index:
+		return evalPEIndex(e, ctx)
+
 	case ast.FuncCall:
 		return evalFuncCall(e, ctx)
 
@@ -224,7 +231,7 @@ func evalStringExpr(expr ast.Expr, ctx *evalContext) any {
 
 // evalFuncCall evaluates a function call and returns its result.
 func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
-	if len(fn.Args) == 0 {
+	if len(fn.Args) == 0 && !strings.HasPrefix(fn.Name, "pe.") {
 		return nil
 	}
 	args := make([]any, len(fn.Args))
@@ -233,6 +240,16 @@ func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 		if args[i] == nil {
 			return nil
 		}
+	}
+	if strings.HasPrefix(fn.Name, "pe.") {
+		if ctx.scan == nil {
+			return nil
+		}
+		info := ctx.scan.peInfo()
+		if info == nil {
+			return nil
+		}
+		return info.call(fn.Name, args)
 	}
 	if v, ok := readInteger(fn.Name, args[0], ctx.buf); ok {
 		return v
@@ -658,9 +675,69 @@ func evalMatches(e ast.BinaryExpr, ctx *evalContext) any {
 	return recoverFindIndex(re, []byte(s)) != nil
 }
 
+func (ctx *evalContext) lookupPE(name string) any {
+	if v, ok := peConstants[name]; ok {
+		return v
+	}
+	if ctx.scan == nil {
+		return nil
+	}
+	info := ctx.scan.peInfo()
+	if info == nil {
+		if name == "pe.is_pe" {
+			return int64(0)
+		}
+		return nil
+	}
+	return info.scalar(name)
+}
+
+func evalPEField(e ast.Field, ctx *evalContext) any {
+	idx, ok := e.Base.(ast.Index)
+	if !ok || ctx.scan == nil {
+		return nil
+	}
+	array, ok := idx.Base.(ast.Ident)
+	if !ok {
+		return nil
+	}
+	i, ok := evalAny(idx.Index, ctx).(int64)
+	info := ctx.scan.peInfo()
+	if !ok || info == nil {
+		return nil
+	}
+	switch array.Name {
+	case "pe.sections":
+		return info.sectionField(i, e.Name)
+	case "pe.resources":
+		return info.resourceField(i, e.Name)
+	case "pe.version_info_list":
+		return info.versionInfoListField(i, e.Name)
+	case "pe.signatures":
+		return info.signatureField(i, e.Name)
+	}
+	return nil
+}
+
+func evalPEIndex(e ast.Index, ctx *evalContext) any {
+	base, ok := e.Base.(ast.Ident)
+	if !ok || base.Name != "pe.version_info" || ctx.scan == nil {
+		return nil
+	}
+	key, ok := evalAny(e.Index, ctx).(string)
+	info := ctx.scan.peInfo()
+	if !ok || info == nil {
+		return nil
+	}
+	return info.versionInfoField(key)
+}
+
 func (ctx *evalContext) lookup(name string) any {
 	if v, ok := ctx.vars[name]; ok {
 		return v
+	}
+	if strings.HasPrefix(name, "pe.") {
+		return ctx.lookupPE(name)
 	}
 	if v, ok := ctx.externals[name]; ok {
 		return v

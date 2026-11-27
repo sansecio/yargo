@@ -198,18 +198,21 @@ func (c *condChecker) ident(e ast.Ident) string {
 	if reason := c.module(module); reason != "" {
 		return reason
 	}
-	return "unsupported module member " + e.Name
+	if module != "pe" || !supportedPEMember(e) {
+		return "unsupported module member " + e.Name
+	}
+	return ""
 }
 
 // module returns why identifiers of module cannot be evaluated: libyara
-// rejects a module that was not imported, and only math and hash are
+// rejects a module that was not imported, and only pe, math and hash are
 // implemented here.
 func (c *condChecker) module(module string) string {
 	if !c.imports[module] {
 		return c.fail("undefined identifier %q", module)
 	}
 	switch module {
-	case "math", "hash":
+	case "pe", "math", "hash":
 		return ""
 	}
 	return "unsupported module " + module
@@ -223,12 +226,18 @@ func (c *condChecker) field(e ast.Field) string {
 	if reason := c.indexBase(idx); reason != "" {
 		return reason
 	}
-	return "unsupported module member " + e.Name
+	if !supportedPEMember(e) {
+		return "unsupported module member " + e.Name
+	}
+	return c.reason(idx.Index)
 }
 
 func (c *condChecker) index(e ast.Index) string {
 	if reason := c.indexBase(e); reason != "" {
 		return reason
+	}
+	if base, ok := e.Base.(ast.Ident); ok && base.Name == "pe.version_info" {
+		return c.reason(e.Index)
 	}
 	return "unsupported module field index"
 }
@@ -255,6 +264,12 @@ func (c *condChecker) callee(name string, args []ast.Expr) string {
 	}
 	if reason := c.module(module); reason != "" {
 		return reason
+	}
+	if module == "pe" {
+		if !supportedPEFunction(name, len(args)) {
+			return "unsupported pe function " + name
+		}
+		return ""
 	}
 	signatures, ok := supportedFunctions[name]
 	if !ok {

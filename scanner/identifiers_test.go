@@ -53,9 +53,9 @@ func TestKnownButUnsupportedIdentifiersAreSkipped(t *testing.T) {
 }
 
 func TestDefinedIdentifiersCompile(t *testing.T) {
-	src := `import "math" import "hash"
+	src := `import "pe" import "math" import "hash"
 rule a { condition: true }
-rule r { condition: a and math.entropy(0, filesize) >= 0 and hash.md5(0, 0) != "" and for any i in (0..1): (i == 1) and filename != "" }`
+rule r { condition: a and pe.is_pe == 0 and math.entropy(0, filesize) >= 0 and hash.md5(0, 0) != "" and for any i in (0..1): (i == 1) and filename != "" }`
 	rules := compileSource(t, src)
 	if rules.NumRules() != 2 || len(rules.Skipped()) != 0 {
 		t.Errorf("expected both rules compiled, got %d, skipped %+v", rules.NumRules(), rules.Skipped())

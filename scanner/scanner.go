@@ -461,7 +461,7 @@ func recoverFindAllIndex(re allIndexer, b []byte) (locs [][]int) {
 	return re.FindAllIndex(b, maxFullBufferMatches)
 }
 
-func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool) bool {
+func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool, scan *scanState) bool {
 	return evalExpr(cr.condition, &evalContext{
 		hits:        ruleHits,
 		slotBase:    cr.slotBase,
@@ -471,6 +471,7 @@ func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Exter
 		ruleIndex:   r.ruleIndex,
 		regexes:     r.condRegexes,
 		results:     results,
+		scan:        scan,
 	})
 }
 
@@ -478,12 +479,12 @@ func compareSlot(h hit, slot int32) int {
 	return cmp.Compare(h.slot, slot)
 }
 
-func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []bool) bool {
+func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
 	for _, idx := range r.globalRules {
 		cr := r.rules[idx]
 		lo, _ := slices.BinarySearchFunc(hits, cr.slotBase, compareSlot)
 		hi, _ := slices.BinarySearchFunc(hits, cr.slotBase+int32(len(cr.stringNames)), compareSlot)
-		if !r.evalRule(buf, cr, hits[lo:hi], ext, results) {
+		if !r.evalRule(buf, cr, hits[lo:hi], ext, results, scan) {
 			return false
 		}
 	}
@@ -494,7 +495,8 @@ func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []boo
 // match without hits, invokes the callback, and handles abort/timeout.
 func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
 	results := make([]bool, len(r.rules))
-	if !r.globalsHold(buf, hits, ext, results) {
+	scan := &scanState{buf: buf}
+	if !r.globalsHold(buf, hits, ext, results, scan) {
 		return nil
 	}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
@@ -527,7 +529,7 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 		}
 
 		cr := r.rules[ruleIdx]
-		if !r.evalRule(buf, cr, ruleHits, ext, results) {
+		if !r.evalRule(buf, cr, ruleHits, ext, results, scan) {
 			continue
 		}
 		results[ruleIdx] = true
