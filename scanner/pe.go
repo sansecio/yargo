@@ -65,6 +65,9 @@ type peInfo struct {
 	hasResourceDir    bool
 	versionInfo       map[string]string
 	versionList       []versionEntry
+	versionParsed     map[uint32]bool
+	imphashValue      string
+	imphashDone       bool
 	signaturesParsed  bool
 	signatures        []peSignature
 }
@@ -339,6 +342,10 @@ func (p *peInfo) parseThunks(dll string, rva uint32) {
 }
 
 func (p *peInfo) imphash() string {
+	if p.imphashDone {
+		return p.imphashValue
+	}
+	p.imphashDone = true
 	var sb strings.Builder
 	for i, imp := range p.imports {
 		if i > 0 {
@@ -353,7 +360,8 @@ func (p *peInfo) imphash() string {
 		sb.WriteString(strings.ToLower(imp.name))
 	}
 	sum := md5.Sum([]byte(sb.String()))
-	return hex.EncodeToString(sum[:])
+	p.imphashValue = hex.EncodeToString(sum[:])
+	return p.imphashValue
 }
 
 var peConstants = map[string]int64{
