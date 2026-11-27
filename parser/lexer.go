@@ -26,6 +26,50 @@ type yaraLexer struct {
 	imports []string
 	err     string
 	errLine int
+	// depth counts the open brackets and pending prefix operators of the
+	// current condition; prefix counts the prefix operators still waiting
+	// for their operand, and afterOperand whether the last token ended one.
+	depth        int
+	prefix       int
+	afterOperand bool
+}
+
+// maxConditionDepth caps nesting in a condition. Real rules nest a handful
+// of levels; without a cap, a million parentheses or not operators keep the
+// parser and every recursive pass over the condition busy.
+const maxConditionDepth = 1000
+
+// trackNesting updates the nesting depth for tok and fails the parse when
+// it exceeds maxConditionDepth. A minus is a prefix operator unless it
+// follows an operand.
+func (l *yaraLexer) trackNesting(tok int) int {
+	switch {
+	case tok == '(' || tok == '[':
+		l.depth++
+	case tok == ')' || tok == ']':
+		l.depth--
+	case tok == NOT || tok == '~' || (tok == '-' && !l.afterOperand):
+		l.depth++
+		l.prefix++
+	case isOperand(tok):
+		l.depth -= l.prefix
+		l.prefix = 0
+	}
+	l.afterOperand = tok == ')' || tok == ']' || isOperand(tok)
+	if l.depth > maxConditionDepth {
+		l.errorf("condition nested too deeply (more than %d levels)", maxConditionDepth)
+		return 0
+	}
+	return tok
+}
+
+func isOperand(tok int) bool {
+	switch tok {
+	case COND_IDENT, INT_LIT, FLOAT_LIT, STRING_LIT, REGEX_LIT, COND_STRING_ID,
+		STR_COUNT, STR_OFFSET, STR_LEN, FILESIZE, TRUE, FALSE, THEM:
+		return true
+	}
+	return false
 }
 
 func newLexer(input string) *yaraLexer {
@@ -70,7 +114,7 @@ func (l *yaraLexer) Lex(lval *yySymType) int {
 		case modeHexString:
 			return l.lexHexString(lval)
 		case modeCondition:
-			return l.lexCondition(lval)
+			return l.trackNesting(l.lexCondition(lval))
 		}
 	}
 	return 0 // EOF
