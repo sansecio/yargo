@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -17,6 +19,7 @@ type evalContext struct {
 	buf         []byte   // the buffer being scanned
 	stringNames []string // all string names defined in the rule
 	scan        *scanState
+	deadline    context.Context
 	vars        map[string]int64
 	cur         int
 	inSet       bool
@@ -255,6 +258,15 @@ func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 		return v
 	}
 	return evalModuleFunc(fn.Name, args, ctx.buf)
+}
+
+// state returns the scan state, creating one for contexts built without a
+// scan.
+func (ctx *evalContext) state() *scanState {
+	if ctx.scan == nil {
+		ctx.scan = &scanState{}
+	}
+	return ctx.scan
 }
 
 var integerReaders = map[string]struct {
@@ -527,10 +539,45 @@ func evalIn(e ast.InExpr, ctx *evalContext) any {
 	return false
 }
 
+// ErrLoopBudgetExceeded is returned by a scan whose for loops, across all
+// rules, ran more than maxLoopSteps iterations.
+var ErrLoopBudgetExceeded = errors.New("scanner: for loop iteration budget exceeded")
+
+const (
+	// maxLoopSteps bounds the for loop iterations of one scan, nested loops
+	// and all rules included; a trivial body costs about 40 ns, so the
+	// budget runs out in about a second.
+	maxLoopSteps      = 1 << 25
+	loopCheckInterval = 1 << 10
+)
+
+// step counts one loop iteration against the scan's budget and deadline.
+// Once either runs out it records the scan error and returns false, and
+// every loop of the scan stops.
+func (ctx *evalContext) step() bool {
+	s := ctx.state()
+	if s.err != nil {
+		return false
+	}
+	s.steps++
+	switch {
+	case s.steps > maxLoopSteps:
+		s.err = ErrLoopBudgetExceeded
+	case s.steps%loopCheckInterval == 0 && ctx.deadline != nil:
+		s.err = ctx.deadline.Err()
+	}
+	return s.err == nil
+}
+
 func evalFor(e ast.ForExpr, ctx *evalContext) any {
 	satisfied := 0
 	total := 0
+	aborted := false
 	tally := func() bool {
+		if !ctx.step() {
+			aborted = true
+			return false
+		}
 		total++
 		if evalExpr(e.Body, ctx) {
 			satisfied++
@@ -577,6 +624,9 @@ func evalFor(e ast.ForExpr, ctx *evalContext) any {
 			}
 		}
 		ctx.cur, ctx.inSet = prevCur, prevIn
+	}
+	if aborted {
+		return nil
 	}
 	switch e.Quant {
 	case "any":

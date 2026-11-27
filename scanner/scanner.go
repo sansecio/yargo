@@ -461,7 +461,7 @@ func recoverFindAllIndex(re allIndexer, b []byte) (locs [][]int) {
 	return re.FindAllIndex(b, maxFullBufferMatches)
 }
 
-func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool, scan *scanState) bool {
+func (r *Rules) evalRule(ctx context.Context, buf []byte, cr *compiledRule, ruleHits []hit, ext Externals, results []bool, scan *scanState) bool {
 	return evalExpr(cr.condition, &evalContext{
 		hits:        ruleHits,
 		slotBase:    cr.slotBase,
@@ -471,6 +471,7 @@ func (r *Rules) evalRule(buf []byte, cr *compiledRule, ruleHits []hit, ext Exter
 		ruleIndex:   r.ruleIndex,
 		regexes:     r.condRegexes,
 		results:     results,
+		deadline:    ctx,
 		scan:        scan,
 	})
 }
@@ -479,12 +480,12 @@ func compareSlot(h hit, slot int32) int {
 	return cmp.Compare(h.slot, slot)
 }
 
-func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
+func (r *Rules) globalsHold(ctx context.Context, buf []byte, hits []hit, ext Externals, results []bool, scan *scanState) bool {
 	for _, idx := range r.globalRules {
 		cr := r.rules[idx]
 		lo, _ := slices.BinarySearchFunc(hits, cr.slotBase, compareSlot)
 		hi, _ := slices.BinarySearchFunc(hits, cr.slotBase+int32(len(cr.stringNames)), compareSlot)
-		if !r.evalRule(buf, cr, hits[lo:hi], ext, results, scan) {
+		if !r.evalRule(ctx, buf, cr, hits[lo:hi], ext, results, scan) {
 			return false
 		}
 	}
@@ -496,8 +497,8 @@ func (r *Rules) globalsHold(buf []byte, hits []hit, ext Externals, results []boo
 func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext Externals, cb ScanCallback) error {
 	results := make([]bool, len(r.rules))
 	scan := &scanState{buf: buf}
-	if !r.globalsHold(buf, hits, ext, results, scan) {
-		return nil
+	if !r.globalsHold(ctx, buf, hits, ext, results, scan) {
+		return scan.err
 	}
 	// Both inputs are sorted by rule index. Merge them so the common case stays
 	// hit-driven while zero-hit-capable conditions are still evaluated in rule
@@ -529,7 +530,11 @@ func (r *Rules) evaluateRules(ctx context.Context, buf []byte, hits []hit, ext E
 		}
 
 		cr := r.rules[ruleIdx]
-		if !r.evalRule(buf, cr, ruleHits, ext, results, scan) {
+		matched := r.evalRule(ctx, buf, cr, ruleHits, ext, results, scan)
+		if scan.err != nil {
+			return scan.err
+		}
+		if !matched {
 			continue
 		}
 		results[ruleIdx] = true

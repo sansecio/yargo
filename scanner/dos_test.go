@@ -3,6 +3,7 @@ package scanner
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestWindowRejectsOverflowingOffsets(t *testing.T) {
@@ -31,6 +32,30 @@ func TestIntegerReadersRejectOverflowingOffsets(t *testing.T) {
 	}
 	if v, _ := readInteger("uint32", int64(1), []byte{1, 2}); v != int64(0) {
 		t.Errorf("short buffer read = %v", v)
+	}
+}
+
+func TestHostileConditionsDoNotPanicOrHang(t *testing.T) {
+	conds := []string{
+		"uint32(0x7fffffffffffffff) == 0",
+		"uint8(0x7fffffffffffffff - 1) == 0",
+		"hash.md5(0x7fffffffffffffff, 2) == \"x\"",
+		"math.entropy(1, 0x7fffffffffffffff) > 1",
+		"for all i in (0..0x7fffffffffffffff) : (true)",
+		"for all i in (0x7ffffffffffffff0..0x7fffffffffffffff) : (true)",
+		"for any i in (0..0x7fffffffffffffff) : (false)",
+		"for all i in (0..0x7fffffffffffffff) : (for all j in (0..0x7fffffffffffffff) : (true))",
+	}
+	for _, cond := range conds {
+		t.Run(cond, func(t *testing.T) {
+			rules := compileSource(t, `import "math" import "hash" `+"rule r { condition: "+cond+" }")
+			start := time.Now()
+			var matches MatchRules
+			_ = rules.ScanMem([]byte("abcdefgh"), 0, 500*time.Millisecond, &matches)
+			if d := time.Since(start); d > 5*time.Second {
+				t.Errorf("scan took %v", d)
+			}
+		})
 	}
 }
 
