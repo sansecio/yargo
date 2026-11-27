@@ -257,7 +257,7 @@ func evalFuncCall(fn ast.FuncCall, ctx *evalContext) any {
 	if v, ok := readInteger(fn.Name, args[0], ctx.buf); ok {
 		return v
 	}
-	return evalModuleFunc(fn.Name, args, ctx.buf)
+	return ctx.state().moduleFunc(fn.Name, args, ctx.buf)
 }
 
 // state returns the scan state, creating one for contexts built without a
@@ -268,6 +268,34 @@ func (ctx *evalContext) state() *scanState {
 	}
 	return ctx.scan
 }
+
+// funcKey identifies a math or hash call by name and argument values.
+type funcKey struct {
+	name string
+	args [3]any
+}
+
+// moduleFunc evaluates a math or hash function once per distinct call in a
+// scan: loops tend to repeat the same hash.md5(0, filesize) many times.
+func (s *scanState) moduleFunc(name string, args []any, buf []byte) any {
+	key := funcKey{name: name}
+	copy(key.args[:], args)
+	if v, ok := s.funcs[key]; ok {
+		return v
+	}
+	v := evalModuleFunc(name, args, buf)
+	if s.funcs == nil {
+		s.funcs = make(map[funcKey]any)
+	}
+	if len(s.funcs) < maxMemoizedCalls {
+		s.funcs[key] = v
+	}
+	return v
+}
+
+// maxMemoizedCalls bounds the memo: a loop over many distinct windows
+// gains nothing from it and would otherwise fill memory.
+const maxMemoizedCalls = 1 << 12
 
 var integerReaders = map[string]struct {
 	size   int

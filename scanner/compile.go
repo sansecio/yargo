@@ -375,6 +375,12 @@ func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*rege
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
+	// Atoms of one repeated byte hit on every run of that byte, which costs
+	// millions of verification windows on padded files. A full buffer scan
+	// is cheaper there, but only when the caller opted into it.
+	if hasAtoms && opts.FullBufferRegex && allRepeatedByte(atoms) {
+		hasAtoms = false
+	}
 	if !hasAtoms || caseInsensitive {
 		if opts.FullBufferRegex {
 			return &regexPrep{pattern: rePattern, fullScan: true}, nil
@@ -382,6 +388,17 @@ func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*rege
 		return nil, fmt.Errorf("rule %q string %s: regex requires full buffer scan", ruleName, s.Name)
 	}
 	return &regexPrep{pattern: rePattern, atoms: atoms}, nil
+}
+
+func allRepeatedByte(atoms [][]byte) bool {
+	for _, atom := range atoms {
+		for _, b := range atom {
+			if b != atom[0] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, allPatterns [][]byte, opts CompileOptions) [][]byte {

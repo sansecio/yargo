@@ -38,6 +38,40 @@ func TestFullBufferRegexIsOptIn(t *testing.T) {
 	}
 }
 
+func TestStringWhoseOnlyAtomIsARepeatedByteUsesFullBufferScanWhenEnabled(t *testing.T) {
+	src := "rule r { strings: $a = { 60 [0-8] E8 ?? 00 00 00 [0-8] 58 } condition: $a }"
+	data := []byte{9, 0x60, 0xe8, 1, 0, 0, 0, 0x58}
+	rules := compileFullBuffer(t, src)
+	if got := scanNames(t, rules, data); len(got) != 1 {
+		t.Errorf("matches = %v", got)
+	}
+	if len(rules.fullBufferRegexes) != 1 {
+		t.Errorf("full buffer regexes = %d, want 1", len(rules.fullBufferRegexes))
+	}
+}
+
+func TestStringWhoseOnlyAtomIsARepeatedByteKeepsAtomsWithoutFullBufferScan(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		data []byte
+	}{
+		{"rule r { strings: $a = { 60 [0-8] E8 ?? 00 00 00 [0-8] 58 } condition: $a }", []byte{9, 0x60, 0xe8, 1, 0, 0, 0, 0x58}},
+		{"rule r { strings: $a = /aaaaaaaa[0-9]/ condition: $a }", []byte("xxaaaaaaaa5yy")},
+	} {
+		rs, err := parser.New().Parse(tc.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rules, err := Compile(rs)
+		if err != nil {
+			t.Fatalf("%s: Compile() error = %v", tc.src, err)
+		}
+		if got := scanNames(t, rules, tc.data); len(got) != 1 {
+			t.Errorf("%s: matches = %v", tc.src, got)
+		}
+	}
+}
+
 func TestFullBufferRegexMatches(t *testing.T) {
 	rules := compileFullBuffer(t, `
 rule class { strings: $a = /[0-9][a-f][0-9]/ condition: $a }
