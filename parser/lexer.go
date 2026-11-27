@@ -2,7 +2,9 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 
 	"github.com/sansecio/yargo/ast"
 )
@@ -21,7 +23,53 @@ type yaraLexer struct {
 	pos     int
 	modes   []int
 	ruleSet *ast.RuleSet
+	imports []string
 	err     string
+	errLine int
+	// depth counts the open brackets and pending prefix operators of the
+	// current condition; prefix counts the prefix operators still waiting
+	// for their operand, and afterOperand whether the last token ended one.
+	depth        int
+	prefix       int
+	afterOperand bool
+}
+
+// maxConditionDepth caps nesting in a condition. Real rules nest a handful
+// of levels; without a cap, a million parentheses or not operators keep the
+// parser and every recursive pass over the condition busy.
+const maxConditionDepth = 1000
+
+// trackNesting updates the nesting depth for tok and fails the parse when
+// it exceeds maxConditionDepth. A minus is a prefix operator unless it
+// follows an operand.
+func (l *yaraLexer) trackNesting(tok int) int {
+	switch {
+	case tok == '(' || tok == '[':
+		l.depth++
+	case tok == ')' || tok == ']':
+		l.depth--
+	case tok == NOT || tok == '~' || (tok == '-' && !l.afterOperand):
+		l.depth++
+		l.prefix++
+	case isOperand(tok):
+		l.depth -= l.prefix
+		l.prefix = 0
+	}
+	l.afterOperand = tok == ')' || tok == ']' || isOperand(tok)
+	if l.depth > maxConditionDepth {
+		l.errorf("condition nested too deeply (more than %d levels)", maxConditionDepth)
+		return 0
+	}
+	return tok
+}
+
+func isOperand(tok int) bool {
+	switch tok {
+	case COND_IDENT, INT_LIT, FLOAT_LIT, STRING_LIT, REGEX_LIT, COND_STRING_ID,
+		STR_COUNT, STR_OFFSET, STR_LEN, FILESIZE, TRUE, FALSE, THEM:
+		return true
+	}
+	return false
 }
 
 func newLexer(input string) *yaraLexer {
@@ -66,7 +114,7 @@ func (l *yaraLexer) Lex(lval *yySymType) int {
 		case modeHexString:
 			return l.lexHexString(lval)
 		case modeCondition:
-			return l.lexCondition(lval)
+			return l.trackNesting(l.lexCondition(lval))
 		}
 	}
 	return 0 // EOF
@@ -77,7 +125,12 @@ func (l *yaraLexer) Lex(lval *yySymType) int {
 func (l *yaraLexer) Error(s string) {
 	if l.err == "" {
 		l.err = s
+		l.errLine = l.line()
 	}
+}
+
+func (l *yaraLexer) line() int {
+	return 1 + strings.Count(l.input[:min(l.pos, len(l.input))], "\n")
 }
 
 func (l *yaraLexer) errorf(format string, args ...any) {
@@ -190,12 +243,23 @@ func (l *yaraLexer) lexRoot(lval *yySymType) int {
 	ch := l.peek()
 	if isAlpha(ch) || ch == '_' {
 		word := l.readIdent()
-		if word == "rule" {
+		switch word {
+		case "rule":
 			l.pushMode(modeRuleBody)
 			return RULE
+		case "import":
+			return IMPORT
+		case "private":
+			return PRIVATE
+		case "global":
+			return GLOBAL
 		}
 		lval.str = word
 		return IDENT
+	}
+	if ch == '"' {
+		lval.str = l.readQuotedString()
+		return STRING_LIT
 	}
 	l.pos++
 	l.errorf("unexpected character %q at position %d", ch, l.pos-1)
@@ -359,17 +423,28 @@ func (l *yaraLexer) lexHexString(lval *yySymType) int {
 			l.pos += 2
 			return HEX_WILDCARD
 		}
+		if l.pos+1 < len(l.input) && isHexDigit(l.input[l.pos+1]) {
+			lval.hexToken = ast.HexMasked{Value: hexVal(l.input[l.pos+1]), Mask: 0x0F}
+			l.pos += 2
+			return HEX_MASKED
+		}
 	case '[':
 		return l.lexHexJumpToken(lval)
 	case '(':
 		return l.lexHexAltToken(lval)
 	}
 
-	if isHexDigit(ch) {
-		if l.pos+1 < len(l.input) && isHexDigit(l.input[l.pos+1]) {
-			lval.byt = hexVal(l.input[l.pos])<<4 | hexVal(l.input[l.pos+1])
+	if isHexDigit(ch) && l.pos+1 < len(l.input) {
+		next := l.input[l.pos+1]
+		if isHexDigit(next) {
+			lval.byt = hexVal(l.input[l.pos])<<4 | hexVal(next)
 			l.pos += 2
 			return HEX_BYTE
+		}
+		if next == '?' {
+			lval.hexToken = ast.HexMasked{Value: hexVal(ch) << 4, Mask: 0xF0}
+			l.pos += 2
+			return HEX_MASKED
 		}
 	}
 
@@ -394,16 +469,51 @@ func (l *yaraLexer) lexHexJumpToken(lval *yySymType) int {
 
 func (l *yaraLexer) lexHexAltToken(lval *yySymType) int {
 	start := l.pos
-	for l.pos < len(l.input) && l.input[l.pos] != ')' {
+	depth := 0
+	for l.pos < len(l.input) {
+		switch l.input[l.pos] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
 		l.pos++
+		if depth == 0 {
+			break
+		}
 	}
-	if l.pos >= len(l.input) {
+	if depth != 0 {
 		l.errorf("unterminated hex alternation")
 		return 0
 	}
-	l.pos++ // skip )
 	lval.str = l.input[start:l.pos]
 	return HEX_ALT
+}
+
+// conditionKeywords maps the reserved words of a condition to their tokens.
+var conditionKeywords = map[string]int{
+	"and":         AND,
+	"or":          OR,
+	"not":         NOT,
+	"at":          AT,
+	"any":         ANY,
+	"all":         ALL,
+	"none":        NONE,
+	"for":         FOR,
+	"in":          IN,
+	"of":          OF,
+	"them":        THEM,
+	"filesize":    FILESIZE,
+	"contains":    CONTAINS,
+	"icontains":   ICONTAINS,
+	"startswith":  STARTSWITH,
+	"istartswith": ISTARTSWITH,
+	"endswith":    ENDSWITH,
+	"iendswith":   IENDSWITH,
+	"iequals":     IEQUALS,
+	"matches":     MATCHES,
+	"true":        TRUE,
+	"false":       FALSE,
 }
 
 func (l *yaraLexer) lexCondition(lval *yySymType) int {
@@ -428,10 +538,30 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	case ',':
 		l.pos++
 		return ','
-	case '!', '<', '>', '=':
+	case '!':
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] != '=' {
+			return l.lexCondStringOp(lval, STR_LEN)
+		}
+		return l.lexConditionOp()
+	case '<', '>', '=':
 		return l.lexConditionOp()
 	case '$':
 		return l.lexCondStringRef(lval)
+	case '"':
+		lval.str = l.readQuotedString()
+		return STRING_LIT
+	case '/':
+		lval.str = l.readRegex()
+		return REGEX_LIT
+	case '+', '*', '\\', '%', '&', '|', '^', '~', '[', ']', '-':
+		l.pos++
+		return int(ch)
+	case '#':
+		return l.lexCondStringOp(lval, STR_COUNT)
+	case '@':
+		return l.lexCondStringOp(lval, STR_OFFSET)
+	case '.':
+		return l.lexDot()
 	}
 
 	if ch == '0' && l.pos+1 < len(l.input) && (l.input[l.pos+1] == 'x' || l.input[l.pos+1] == 'X') {
@@ -443,30 +573,12 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 	}
 
 	if isAlpha(ch) || ch == '_' {
-		word := l.readIdent()
-		switch word {
-		case "and":
-			return AND
-		case "or":
-			return OR
-		case "not":
-			return NOT
-		case "at":
-			return AT
-		case "any":
-			return ANY
-		case "all":
-			return ALL
-		case "of":
-			return OF
-		case "them":
-			return THEM
-		case "filesize":
-			return FILESIZE
-		default:
-			lval.str = word
-			return COND_IDENT
+		word := l.readDottedIdent()
+		if tok, ok := conditionKeywords[word]; ok {
+			return tok
 		}
+		lval.str = word
+		return COND_IDENT
 	}
 
 	l.pos++
@@ -477,6 +589,12 @@ func (l *yaraLexer) lexCondition(lval *yySymType) int {
 func (l *yaraLexer) lexConditionOp() int {
 	if l.pos+1 < len(l.input) {
 		switch l.input[l.pos : l.pos+2] {
+		case "<<":
+			l.pos += 2
+			return SHL
+		case ">>":
+			l.pos += 2
+			return SHR
 		case "!=":
 			l.pos += 2
 			return NE
@@ -507,6 +625,35 @@ func (l *yaraLexer) lexConditionOp() int {
 		l.errorf("unexpected character %q in condition", l.input[l.pos-1])
 		return 0
 	}
+}
+
+func (l *yaraLexer) readDottedIdent() string {
+	start := l.pos
+	l.readIdent()
+	for l.pos+1 < len(l.input) && l.input[l.pos] == '.' && (isAlpha(l.input[l.pos+1]) || l.input[l.pos+1] == '_') {
+		l.pos++
+		l.readIdent()
+	}
+	return l.input[start:l.pos]
+}
+
+func (l *yaraLexer) lexDot() int {
+	if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
+		l.pos += 2
+		return RANGE
+	}
+	l.pos++
+	return '.'
+}
+
+func (l *yaraLexer) lexCondStringOp(lval *yySymType, tok int) int {
+	l.pos++
+	start := l.pos
+	for l.pos < len(l.input) && (l.input[l.pos] == '_' || isAlnum(l.input[l.pos])) {
+		l.pos++
+	}
+	lval.str = "$" + l.input[start:l.pos]
+	return tok
 }
 
 func (l *yaraLexer) lexCondStringRef(lval *yySymType) int {
@@ -546,7 +693,39 @@ func (l *yaraLexer) lexCondInt(lval *yySymType) int {
 	for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
 		l.pos++
 	}
-	return l.intToken(lval, l.input[start:l.pos])
+	if l.pos+1 < len(l.input) && l.input[l.pos] == '.' && isDigit(l.input[l.pos+1]) {
+		l.pos++
+		for l.pos < len(l.input) && isDigit(l.input[l.pos]) {
+			l.pos++
+		}
+		v, err := strconv.ParseFloat(l.input[start:l.pos], 64)
+		if err != nil {
+			l.errorf("invalid float literal %q", l.input[start:l.pos])
+			return 0
+		}
+		lval.flt = v
+		return FLOAT_LIT
+	}
+	end := l.pos
+	scale := int64(1)
+	if l.pos+1 < len(l.input) && l.input[l.pos+1] == 'B' {
+		switch l.input[l.pos] {
+		case 'K':
+			scale = 1 << 10
+		case 'M':
+			scale = 1 << 20
+		}
+		if scale > 1 {
+			l.pos += 2
+		}
+	}
+	tok := l.intToken(lval, l.input[start:end])
+	if tok == INT_LIT && lval.num > math.MaxInt64/scale {
+		l.errorf("integer overflow %q", l.input[start:l.pos])
+		return 0
+	}
+	lval.num *= scale
+	return tok
 }
 
 func (l *yaraLexer) lexInt(lval *yySymType) int {

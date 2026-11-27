@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,10 +20,14 @@ type CompileOptions struct {
 	// a full buffer scan, instead of returning an error.
 	SkipInvalidRegex bool
 
+	FullBufferRegex bool
+
 	// SkipSubtypes filters out rules whose meta "subtype" field matches
 	// any of the given values. Rules without a "subtype" meta or with an
 	// empty subtype value are never filtered.
 	SkipSubtypes []string
+
+	Externals []string
 
 	// RegexCompiler overrides the function used to compile regex patterns.
 	// When nil, defaults to go-re2's experimental.CompileLatin1.
@@ -36,6 +41,10 @@ const (
 	minAtomLength = 3
 )
 
+func defaultCompile(pattern string) (Regexp, error) {
+	return experimental.CompileLatin1(pattern)
+}
+
 // Compile compiles an AST RuleSet into Rules ready for scanning.
 func Compile(rs *ast.RuleSet) (*Rules, error) {
 	return CompileWithOptions(rs, CompileOptions{})
@@ -44,14 +53,15 @@ func Compile(rs *ast.RuleSet) (*Rules, error) {
 // CompileWithOptions compiles an AST RuleSet with the given options.
 func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	if opts.RegexCompiler == nil {
-		opts.RegexCompiler = func(pattern string) (Regexp, error) {
-			return experimental.CompileLatin1(pattern)
-		}
+		opts.RegexCompiler = defaultCompile
 	}
 	opts.RegexCompiler = recoverCompile(opts.RegexCompiler)
 
 	rules := &Rules{
-		rules: make([]*compiledRule, 0, len(rs.Rules)),
+		rules:       make([]*compiledRule, 0, len(rs.Rules)),
+		ruleIndex:   make(map[string]int32, len(rs.Rules)),
+		condRegexes: map[ast.RegexLit]*regexPattern{},
+		externals:   declaredExternals(opts.Externals),
 	}
 
 	var allPatterns [][]byte
@@ -59,67 +69,55 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 	var hasNocase bool
 	ruleIdx := 0
 
-	skipSubtypes := make(map[string]bool, len(opts.SkipSubtypes))
-	for _, t := range opts.SkipSubtypes {
-		if t != "" {
-			skipSubtypes[t] = true
-		}
-	}
+	skipSubtypes := subtypeSet(opts.SkipSubtypes)
 
+	check := newCondChecker(rules, rs.Imports, opts.RegexCompiler)
 	for _, r := range rs.Rules {
-		if r.Condition == nil || hasUnsupportedModifier(r) {
+		if r.Condition == nil {
+			check.skipped[r.Name] = true
+			continue
+		}
+		reason, err := check.rule(r)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rule %q: %w", r.Name, err))
+			continue
+		}
+		if reason != "" {
+			check.skipped[r.Name] = true
+			rules.skipped = append(rules.skipped, SkippedRule{Rule: r.Name, Reason: reason})
 			continue
 		}
 
 		if len(skipSubtypes) > 0 {
 			if subtype := metaValue(r, "subtype"); subtype != "" && skipSubtypes[subtype] {
+				check.skipped[r.Name] = true
 				continue
 			}
 		}
 
-		cr := &compiledRule{
-			name:      r.Name,
-			metas:     make([]Meta, len(r.Meta)),
-			condition: r.Condition,
-			slotBase:  int32(len(rules.slotRule)),
-		}
-		for i, m := range r.Meta {
-			cr.metas[i] = Meta{Identifier: m.Key, Value: m.Value}
-		}
-		for _, s := range r.Strings {
-			cr.stringNames = append(cr.stringNames, s.Name)
-			cr.stringPrivates = append(cr.stringPrivates, s.Modifiers.Private)
-			rules.slotRule = append(rules.slotRule, int32(ruleIdx))
-		}
-		rules.rules = append(rules.rules, cr)
-		if mayMatchWithoutHits(cr.condition) {
-			rules.zeroHitRules = append(rules.zeroHitRules, int32(ruleIdx))
+		preps, prepErr := prepareRegexes(r, opts)
+		if prepErr != nil {
+			check.skipped[r.Name] = true
+			if !opts.SkipInvalidRegex {
+				errs = append(errs, prepErr)
+				continue
+			}
+			rules.skipped = append(rules.skipped, SkippedRule{Rule: r.Name, Reason: prepErr.Error()})
+			continue
 		}
 
+		cr := rules.addRule(r, int32(ruleIdx))
 		for si, s := range r.Strings {
 			slot := cr.slotBase + int32(si)
-
-			patterns, isRegex := generatePatterns(s)
-			if isRegex {
-				var err error
-				allPatterns, err = compileRegex(rules, s, slot, r.Name, allPatterns, opts)
-				if err != nil {
-					errs = append(errs, err)
+			if _, isRegex := generatePatterns(s); isRegex {
+				if preps[si] != nil {
+					allPatterns = compileRegex(rules, s, preps[si], slot, allPatterns, opts)
 				}
 				continue
 			}
-			for _, p := range patterns {
-				rules.patternMap = append(rules.patternMap, patternRef{
-					slot:     slot,
-					fullword: s.Modifiers.Fullword,
-					verify:   !s.Modifiers.Nocase && hasASCIILetter(p),
-					regexIdx: -1,
-				})
-				allPatterns = append(allPatterns, p)
-				if s.Modifiers.Nocase {
-					hasNocase = true
-				}
-			}
+			before := len(allPatterns)
+			allPatterns = rules.addTextPatterns(s, slot, allPatterns)
+			hasNocase = hasNocase || (s.Modifiers.Nocase && len(allPatterns) > before)
 		}
 		ruleIdx++
 	}
@@ -128,6 +126,21 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		return nil, errors.Join(errs...)
 	}
 
+	rules.buildMatcher(allPatterns, hasNocase)
+	return rules, nil
+}
+
+func subtypeSet(subtypes []string) map[string]bool {
+	set := make(map[string]bool, len(subtypes))
+	for _, t := range subtypes {
+		if t != "" {
+			set[t] = true
+		}
+	}
+	return set
+}
+
+func (rules *Rules) buildMatcher(allPatterns [][]byte, hasNocase bool) {
 	if !hasNocase {
 		// without nocase patterns the automaton matches exactly, so no
 		// hit ever needs verifying against the original buffer
@@ -145,8 +158,85 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 		ac := builder.BuildByte(allPatterns)
 		rules.matcher = &ac
 	}
+}
 
-	return rules, nil
+// prepareRegexes checks and prepares the regex and complex hex strings of r,
+// leaving nil for the other strings.
+func prepareRegexes(r *ast.Rule, opts CompileOptions) ([]*regexPrep, error) {
+	preps := make([]*regexPrep, len(r.Strings))
+	for si, s := range r.Strings {
+		if _, isRegex := generatePatterns(s); !isRegex {
+			continue
+		}
+		var err error
+		if preps[si], err = prepareRegex(s, r.Name, opts); err != nil {
+			return nil, err
+		}
+	}
+	return preps, nil
+}
+
+// addRule registers r as rule ruleIdx with its metas and string slots.
+func (rules *Rules) addRule(r *ast.Rule, ruleIdx int32) *compiledRule {
+	cr := &compiledRule{
+		name:      r.Name,
+		metas:     make([]Meta, len(r.Meta)),
+		condition: r.Condition,
+		private:   r.Private,
+		global:    r.Global,
+		slotBase:  int32(len(rules.slotRule)),
+	}
+	for i, m := range r.Meta {
+		cr.metas[i] = Meta{Identifier: m.Key, Value: m.Value}
+	}
+	for _, s := range r.Strings {
+		cr.stringNames = append(cr.stringNames, s.Name)
+		cr.stringPrivates = append(cr.stringPrivates, s.Modifiers.Private)
+		rules.slotRule = append(rules.slotRule, ruleIdx)
+	}
+	rules.rules = append(rules.rules, cr)
+	rules.ruleIndex[r.Name] = ruleIdx
+	if r.Global {
+		rules.globalRules = append(rules.globalRules, ruleIdx)
+	}
+	if r.Global || mayMatchWithoutHits(cr.condition) {
+		rules.zeroHitRules = append(rules.zeroHitRules, ruleIdx)
+	}
+	return cr
+}
+
+// addTextPatterns adds the automaton patterns of a text or simple hex
+// string: its wide, xor or base64 variants.
+func (rules *Rules) addTextPatterns(s *ast.StringDef, slot int32, allPatterns [][]byte) [][]byte {
+	patterns, _ := generatePatterns(s)
+	variants := withWideVariants(patterns, s.Modifiers)
+	if isBase64(s) {
+		variants = base64Variants([]byte(s.Value.(ast.TextString).Value), s.Modifiers)
+	}
+	for _, p := range variants {
+		rules.patternMap = append(rules.patternMap, patternRef{
+			slot:     slot,
+			fullword: s.Modifiers.Fullword,
+			wide:     p.wide,
+			verify:   !s.Modifiers.Nocase && hasASCIILetter(p.bytes),
+			regexIdx: -1,
+		})
+		allPatterns = append(allPatterns, p.bytes)
+	}
+	return allPatterns
+}
+
+var builtinExternals = []string{"filename", "filepath", "extension", "filetype", "owner"}
+
+func declaredExternals(extra []string) map[string]bool {
+	m := make(map[string]bool, len(builtinExternals)+len(extra))
+	for _, n := range builtinExternals {
+		m[n] = true
+	}
+	for _, n := range extra {
+		m[n] = true
+	}
+	return m
 }
 
 // hasUnsupportedModifier reports whether any of the rule's strings carries a
@@ -155,11 +245,93 @@ func CompileWithOptions(rs *ast.RuleSet, opts CompileOptions) (*Rules, error) {
 // positives, and matching without a modifier like xor would be plain wrong.
 func hasUnsupportedModifier(r *ast.Rule) bool {
 	for _, s := range r.Strings {
-		if len(s.Modifiers.Unsupported) > 0 {
+		if len(s.Modifiers.Unsupported) > 0 || unsupportedWide(s) {
 			return true
 		}
 	}
 	return false
+}
+
+func isBase64(s *ast.StringDef) bool {
+	return s.Modifiers.Base64 || s.Modifiers.Base64Wide
+}
+
+func unsupportedWide(s *ast.StringDef) bool {
+	if isBase64(s) {
+		_, text := s.Value.(ast.TextString)
+		return !text || s.Modifiers.Xor != nil
+	}
+	if !s.Modifiers.Wide && s.Modifiers.Xor == nil {
+		return false
+	}
+	_, ok := s.Value.(ast.TextString)
+	return !ok
+}
+
+// maxVariantBytes caps the pattern bytes one wide or xor string expands
+// to. Every byte costs about 40 bytes of automaton at compile time, so the
+// cap is about 40 MB, where a 200 000 byte xor wide string needed 6 GB.
+const maxVariantBytes = 1 << 20
+
+// oversizedString returns the name of the first text string whose wide and
+// xor variants exceed maxVariantBytes, or "".
+func oversizedString(r *ast.Rule) string {
+	for _, s := range r.Strings {
+		text, ok := s.Value.(ast.TextString)
+		m := s.Modifiers
+		if !ok || isBase64(s) || (!m.Wide && m.Xor == nil) {
+			continue
+		}
+		forms := 0
+		if !m.Wide || m.Ascii {
+			forms++
+		}
+		if m.Wide {
+			forms += 2
+		}
+		keys := 1
+		if m.Xor != nil {
+			keys = int(m.Xor.Max) - int(m.Xor.Min) + 1
+		}
+		if len(text.Value) > maxVariantBytes/(forms*keys) {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+type variant struct {
+	bytes []byte
+	wide  bool
+}
+
+func withWideVariants(patterns [][]byte, m ast.StringModifiers) []variant {
+	out := make([]variant, 0, len(patterns)*2)
+	if !m.Wide || m.Ascii {
+		for _, p := range patterns {
+			out = append(out, variant{bytes: p})
+		}
+	}
+	if m.Wide {
+		for _, p := range patterns {
+			out = append(out, variant{bytes: widenBytes(p), wide: true})
+		}
+	}
+	if m.Xor == nil {
+		return out
+	}
+	keys := int(m.Xor.Max) - int(m.Xor.Min) + 1
+	xored := make([]variant, 0, len(out)*keys)
+	for _, v := range out {
+		for key := int(m.Xor.Min); key <= int(m.Xor.Max); key++ {
+			b := make([]byte, len(v.bytes))
+			for i, c := range v.bytes {
+				b[i] = c ^ byte(key)
+			}
+			xored = append(xored, variant{bytes: b, wide: v.wide})
+		}
+	}
+	return xored
 }
 
 // hasASCIILetter reports whether folding can make p match bytes it otherwise
@@ -174,7 +346,13 @@ func hasASCIILetter(p []byte) bool {
 	return false
 }
 
-func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, allPatterns [][]byte, opts CompileOptions) ([][]byte, error) {
+type regexPrep struct {
+	pattern  string
+	atoms    [][]byte
+	fullScan bool
+}
+
+func prepareRegex(s *ast.StringDef, ruleName string, opts CompileOptions) (*regexPrep, error) {
 	var rePattern string
 	var caseInsensitive bool
 
@@ -188,54 +366,69 @@ func compileRegex(rules *Rules, s *ast.StringDef, slot int32, ruleName string, a
 		caseInsensitive = v.Modifiers.CaseInsensitive
 	case ast.HexString:
 		rePattern = "(?s)" + hexStringToRegex(v)
-		caseInsensitive = false
 	default:
-		return allPatterns, nil
+		return nil, nil
 	}
 	// The regex itself is compiled lazily on first use, which discards
 	// errors, so reject invalid patterns here.
 	if err := checkRegex(rePattern, opts.RegexCompiler); err != nil {
-		if opts.SkipInvalidRegex {
-			return allPatterns, nil
-		}
 		return nil, fmt.Errorf("rule %q string %s: invalid regex: %w", ruleName, s.Name, err)
 	}
 	atoms, hasAtoms := extractAtoms(rePattern, minAtomLength)
-	requiresFullScan := !hasAtoms || caseInsensitive
-	if requiresFullScan {
-		if opts.SkipInvalidRegex {
-			return allPatterns, nil
+	// Atoms of one repeated byte hit on every run of that byte, which costs
+	// millions of verification windows on padded files. A full buffer scan
+	// is cheaper there, but only when the caller opted into it.
+	if hasAtoms && opts.FullBufferRegex && allRepeatedByte(atoms) {
+		hasAtoms = false
+	}
+	if !hasAtoms || caseInsensitive {
+		if opts.FullBufferRegex {
+			return &regexPrep{pattern: rePattern, fullScan: true}, nil
 		}
 		return nil, fmt.Errorf("rule %q string %s: regex requires full buffer scan", ruleName, s.Name)
 	}
+	return &regexPrep{pattern: rePattern, atoms: atoms}, nil
+}
 
+func allRepeatedByte(atoms [][]byte) bool {
+	for _, atom := range atoms {
+		for _, b := range atom {
+			if b != atom[0] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func compileRegex(rules *Rules, s *ast.StringDef, prep *regexPrep, slot int32, allPatterns [][]byte, opts CompileOptions) [][]byte {
 	rp := &regexPattern{
-		pattern:  rePattern,
+		pattern:  prep.pattern,
 		compile:  opts.RegexCompiler,
 		slot:     slot,
 		fullword: s.Modifiers.Fullword,
 	}
 	regexIdx := len(rules.regexPatterns)
 	rules.regexPatterns = append(rules.regexPatterns, rp)
-
+	if prep.fullScan {
+		rules.fullBufferRegexes = append(rules.fullBufferRegexes, regexIdx)
+		return allPatterns
+	}
 	// a case-insensitive regex always requires a full scan (see above), so
 	// every atom that reaches here belongs to a case-sensitive regex
-	for _, atom := range atoms {
+	for _, atom := range prep.atoms {
 		rules.patternMap = append(rules.patternMap, patternRef{
 			regexIdx: regexIdx,
 			verify:   hasASCIILetter(atom),
 		})
 		allPatterns = append(allPatterns, atom)
 	}
-	return allPatterns, nil
+	return allPatterns
 }
 
 func generatePatterns(s *ast.StringDef) ([][]byte, bool) {
 	switch v := s.Value.(type) {
 	case ast.TextString:
-		if s.Modifiers.Base64 {
-			return generateBase64Patterns([]byte(v.Value)), false
-		}
 		return [][]byte{[]byte(v.Value)}, false
 	case ast.RegexString:
 		return nil, true
@@ -283,18 +476,24 @@ func checkRegex(pattern string, compile CompileFunc) error {
 
 func hexStringToRegex(h ast.HexString) string {
 	var sb strings.Builder
+	writeHexTokens(&sb, h.Tokens)
+	return sb.String()
+}
 
+func writeHexTokens(sb *strings.Builder, tokens []ast.HexToken) {
 	// Coalesce consecutive wildcards into a single .{n}
 	i := 0
-	for i < len(h.Tokens) {
-		switch t := h.Tokens[i].(type) {
+	for i < len(tokens) {
+		switch t := tokens[i].(type) {
 		case ast.HexByte:
-			fmt.Fprintf(&sb, "\\x%02x", t.Value)
+			fmt.Fprintf(sb, "\\x%02x", t.Value)
+		case ast.HexMasked:
+			writeMasked(sb, t)
 		case ast.HexWildcard:
 			// Count consecutive wildcards
 			count := 1
-			for i+count < len(h.Tokens) {
-				if _, ok := h.Tokens[i+count].(ast.HexWildcard); ok {
+			for i+count < len(tokens) {
+				if _, ok := tokens[i+count].(ast.HexWildcard); ok {
 					count++
 				} else {
 					break
@@ -303,18 +502,30 @@ func hexStringToRegex(h ast.HexString) string {
 			if count == 1 {
 				sb.WriteByte('.')
 			} else {
-				fmt.Fprintf(&sb, ".{%d}", count)
+				fmt.Fprintf(sb, ".{%d}", count)
 			}
 			i += count - 1 // -1 because the loop will increment
 		case ast.HexJump:
-			writeJump(&sb, t)
+			writeJump(sb, t)
 		case ast.HexAlt:
-			writeAlt(&sb, t)
+			writeAlt(sb, t)
+		case ast.HexAlternation:
+			writeAlternation(sb, t)
 		}
 		i++
 	}
+}
 
-	return sb.String()
+func writeMasked(sb *strings.Builder, m ast.HexMasked) {
+	sb.WriteByte('[')
+	if m.Mask == 0xF0 {
+		fmt.Fprintf(sb, "\\x%02x-\\x%02x", m.Value, m.Value|0x0F)
+	} else {
+		for hi := 0; hi < 16; hi++ {
+			fmt.Fprintf(sb, "\\x%02x", byte(hi<<4)|m.Value)
+		}
+	}
+	sb.WriteByte(']')
 }
 
 func writeJump(sb *strings.Builder, j ast.HexJump) {
@@ -347,43 +558,79 @@ func writeAlt(sb *strings.Builder, a ast.HexAlt) {
 	sb.WriteByte(')')
 }
 
-func generateBase64Patterns(data []byte) [][]byte {
-	// Each offset aligns data differently within the base64 3-byte groups.
-	// The prefix padding bytes and the number of leading base64 chars to skip
-	// (which depend on the unknown preceding context) vary per offset.
-	offsets := [3]struct{ pad, skip int }{{0, 0}, {1, 2}, {2, 3}}
-	patterns := make([][]byte, 0, 3)
-
-	for _, o := range offsets {
-		padded := append(make([]byte, o.pad), data...)
-		enc := base64.StdEncoding.EncodeToString(padded)
-		if len(enc) <= o.skip {
-			continue
+func writeAlternation(sb *strings.Builder, a ast.HexAlternation) {
+	sb.WriteString("(?:")
+	for i, branch := range a.Alternatives {
+		if i > 0 {
+			sb.WriteByte('|')
 		}
-		trimmed := strings.TrimRight(enc[o.skip:], "=")
-		if trim := trailingUnstableChars(len(data) + o.pad); trim > 0 && len(trimmed) > trim {
-			trimmed = trimmed[:len(trimmed)-trim]
-		}
-		if len(trimmed) > 0 {
-			patterns = append(patterns, []byte(trimmed))
-		}
+		writeHexTokens(sb, branch)
 	}
-
-	return patterns
+	sb.WriteByte(')')
 }
 
-// trailingUnstableChars returns how many trailing base64 chars depend on
-// what follows the data. When data length isn't a multiple of 3, the final
-// base64 chars encode partial bytes that include bits from following data.
-func trailingUnstableChars(dataLen int) int {
-	switch dataLen % 3 {
-	case 1:
-		return 1 // last char encodes 2 bits of data + 4 bits of next byte
-	case 2:
-		return 1 // last char encodes 4 bits of data + 2 bits of next byte
-	default:
-		return 0 // complete 3-byte groups, fully stable
+func base64Variants(text []byte, m ast.StringModifiers) []variant {
+	enc := base64.StdEncoding.WithPadding(base64.NoPadding)
+	if m.Base64Alphabet != "" {
+		enc = base64.NewEncoding(m.Base64Alphabet).WithPadding(base64.NoPadding)
 	}
+	var sources [][]byte
+	if m.Wide {
+		sources = append(sources, widenBytes(text))
+	}
+	if m.Ascii || !m.Wide {
+		sources = append(sources, text)
+	}
+	var out []variant
+	for _, src := range sources {
+		if m.Base64 {
+			for _, p := range base64Patterns(src, enc) {
+				out = append(out, variant{bytes: p})
+			}
+		}
+		if m.Base64Wide {
+			for _, p := range base64Patterns(src, enc) {
+				out = append(out, variant{bytes: widenBytes(p)})
+			}
+		}
+	}
+	return out
+}
+
+func widenBytes(b []byte) []byte {
+	w := make([]byte, 0, len(b)*2)
+	for _, c := range b {
+		w = append(w, c, 0)
+	}
+	return w
+}
+
+// base64Patterns returns the substrings that every base64 encoding of data
+// contains, whatever precedes or follows it. Each of the three lead offsets
+// aligns data differently within the base64 3-byte groups; the leading chars
+// that encode the unknown preceding bytes are skipped, and when the input is
+// not a multiple of 3 the last char also encodes bits of the following data,
+// so it is dropped.
+func base64Patterns(data []byte, enc *base64.Encoding) [][]byte {
+	patterns := make([][]byte, 0, 3)
+	for lead := range 3 {
+		if lead == 1 && len(data) == 1 {
+			continue
+		}
+		padded := append(bytes.Repeat([]byte{'A'}, lead), data...)
+		encoded := enc.EncodeToString(padded)
+		skip := 0
+		if lead > 0 {
+			skip = lead + 1
+		}
+		if len(padded)%3 != 0 {
+			encoded = encoded[:len(encoded)-1]
+		}
+		if len(encoded) > skip {
+			patterns = append(patterns, []byte(encoded[skip:]))
+		}
+	}
+	return patterns
 }
 
 func buildRE2Pattern(pattern string, mods ast.RegexModifiers) string {

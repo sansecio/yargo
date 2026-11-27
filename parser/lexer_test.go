@@ -171,7 +171,7 @@ func TestLexMeta(t *testing.T) {
 }
 
 func TestLexError(t *testing.T) {
-	l := newLexer(`rule t { condition: @ }`)
+	l := newLexer(`rule t { condition: ? }`)
 	for {
 		var lval yySymType
 		tok := l.Lex(&lval)
